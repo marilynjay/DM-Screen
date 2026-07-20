@@ -1647,9 +1647,10 @@ function DieFace({ sides, val, flick, cls, dropped, size, rolling }) {
 /* one synchronized flicker + tumble for a whole roll — no slot-machine chaos.
    The number lands as the die's rotation settles (~.95s animation). */
 function DiceGroup({ dice, size, delayMs = 0 }) {
-  const [flick, setFlick] = useState(0);
-  const [rolling, setRolling] = useState(delayMs === 0);
+  const [flick, setFlick] = useState(ANIM.on ? 0 : null);
+  const [rolling, setRolling] = useState(ANIM.on && delayMs === 0);
   useEffect(() => {
+    if (!ANIM.on) return undefined;
     const ts = [setTimeout(() => setRolling(true), delayMs),
                 setTimeout(() => setFlick(1), delayMs + 150), setTimeout(() => setFlick(2), delayMs + 330),
                 setTimeout(() => setFlick(3), delayMs + 520), setTimeout(() => setFlick(null), delayMs + 720),
@@ -1666,9 +1667,11 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
 }
 
 /* Staged reveal for a roll's result chips: dice tumble first, then the modifier,
-   then the total, then verdict/damage chips — one element per REVEAL_BEAT.
-   REVEAL_BEAT is the single knob for the pacing of the whole sequence. */
-const REVEAL_BEAT = 1.5;
+   then the total, then verdict/damage chips — one element per beat.
+   ANIM is module-level so the render-time helpers below can read it; App assigns
+   it from the persisted animation-speed setting during render, before children. */
+const ANIM_SPEEDS = { fast: 1.5, medium: 3, slow: 6 };
+const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -1678,27 +1681,28 @@ function diceTextStages(chip) {
 }
 function chipDelays(chips) {
   const out = []; let t = 0;
-  for (const ch of chips) { out.push(t); t += (ch.dice ? 1 + diceTextStages(ch) : 1) * REVEAL_BEAT; }
+  for (const ch of chips) { out.push(t); if (ANIM.on) t += (ch.dice ? 1 + diceTextStages(ch) : 1) * ANIM.beat; }
   return out;
 }
 function ChipText({ chip, base }) {
   if (!chip.t) return null;
-  if (!chip.dice) return chip.t; // container's own reveal covers plain text chips
+  if (!chip.dice || !ANIM.on) return chip.t; // container's own reveal covers plain text chips
   const s = String(chip.t);
   const k = s.indexOf("= ");
-  if (k < 0) return <span className="chip-reveal" style={{ animationDelay: `${base + REVEAL_BEAT}s` }}>{s}</span>;
+  if (k < 0) return <span className="chip-reveal" style={{ animationDelay: `${base + ANIM.beat}s` }}>{s}</span>;
   const hasMod = !!s.slice(0, k).trim();
   return (<>
-    {hasMod && <span className="chip-reveal" style={{ animationDelay: `${base + REVEAL_BEAT}s` }}>{s.slice(0, k)}</span>}
-    <span className="chip-reveal" style={{ animationDelay: `${base + (hasMod ? 2 : 1) * REVEAL_BEAT}s` }}>{s.slice(k)}</span>
+    {hasMod && <span className="chip-reveal" style={{ animationDelay: `${base + ANIM.beat}s` }}>{s.slice(0, k)}</span>}
+    <span className="chip-reveal" style={{ animationDelay: `${base + (hasMod ? 2 : 1) * ANIM.beat}s` }}>{s.slice(k)}</span>
   </>);
 }
 function ResultChips({ chips, onApply }) {
   const D = chipDelays(chips);
+  const rev = ANIM.on ? "chip-reveal" : "";
   return chips.map((chip, j) => (
     chip.applyTo && onApply
-      ? <button key={chip.id || j} className="chip cond chip-reveal" style={{ cursor: "pointer", animationDelay: `${D[j]}s` }} onClick={() => onApply(chip)}>⚔ {chip.t}</button>
-      : <span key={chip.id || j} className={`chip chip-reveal ${chip.k || ""}`} style={{ animationDelay: `${D[j]}s` }}>
+      ? <button key={chip.id || j} className={`chip cond ${rev}`} style={{ cursor: "pointer", animationDelay: `${D[j]}s` }} onClick={() => onApply(chip)}>⚔ {chip.t}</button>
+      : <span key={chip.id || j} className={`chip ${rev} ${chip.k || ""}`} style={{ animationDelay: `${D[j]}s` }}>
           {chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} delayMs={Math.round(D[j] * 1000)} />}
           <ChipText chip={chip} base={D[j]} />
         </span>
@@ -4144,6 +4148,11 @@ export default function App() {
   const [restoreBanner, setRestoreBanner] = useState(null);
   const [myBestiary, setMyBestiary] = useState([]);
   const [myItems, setMyItems] = useState([]);
+  const [animSpeed, setAnimSpeedState] = useState("medium");
+  const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
+  // assign during render so components created in this same pass read the fresh values
+  ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
+  ANIM.on = animSpeed !== "off";
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
@@ -4271,6 +4280,8 @@ export default function App() {
       if (pt) setParty(pt);
       const its = await stGet("dm5e:items");
       if (Array.isArray(its)) setMyItems(its);
+      const asp = await stGet("dm5e:animSpeed");
+      if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -5243,6 +5254,7 @@ export default function App() {
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
+              <button onClick={() => setModal({ type: "anim" })}>✨ Animations…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
@@ -5434,6 +5446,28 @@ export default function App() {
       )}
       {modal?.type === "init-ties" && (
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
+      )}
+      {modal?.type === "anim" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>✨ Animations</h3>
+            <div className="trait" style={{ marginBottom: 8 }}>
+              How roll results reveal: the die tumbles, then the modifier, total, hit/miss, and damage drop in one at a time.
+            </div>
+            {[["fast", "Fast", "1.5s between elements"],
+              ["medium", "Medium", "3s between elements"],
+              ["slow", "Slow", "6s between elements"],
+              ["off", "Off", "No dice tumble — everything appears instantly"]].map(([k, label, hint]) => (
+              <button key={k} className={`btn ${animSpeed === k ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+                onClick={() => setAnimSpeed(k)}>
+                {label}{animSpeed === k ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: animSpeed === k ? "inherit" : "var(--faint)" }}>{hint}</span>
+              </button>
+            ))}
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn" onClick={() => setModal(null)}>Done</button>
+            </div>
+          </div>
+        </div>
       )}
       {modal?.type === "roll-init" && (
         <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type === "player")}
