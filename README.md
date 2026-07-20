@@ -56,4 +56,6 @@ The app is deployed to GitHub Pages automatically on every push to `main` (see `
 
 This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
-The same notice is displayed in the app's footer and must be preserved in both places.
+The optional expanded bestiary (`src/data/bestiaryTob.js`, lazy-loaded when enabled) contains open game content from Tome of Beasts, Copyright 2016, Open Design; used under the Open Game License v 1.0a, converted from the Open5e project's data (`tools/convert-tob.mjs` regenerates it). The full OGL text and Section 15 notice ship inside that module and display in the app's Licenses panel (footer → "full licenses").
+
+The same notices are displayed in the app's footer and must be preserved in both places.

@@ -470,6 +470,12 @@ const BESTIARY_CATS = [
   ["giant", "Giants & Brutes"], ["elem", "Elementals & Constructs"], ["aber", "Aberrations & Oozes"],
   ["monst", "Monstrosities"], ["crawl", "Plants, Fey & Crawlies"],
 ];
+/* Optional expanded bestiary (Tome of Beasts, OGL) — lazy-loaded so the main
+   bundle stays lean. App assigns .on from the persisted setting during render;
+   fullBestiary() is the one lookup every consumer goes through. */
+const EXPANDED = { on: false, list: [], pools: {} };
+const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? BESTIARY.concat(EXPANDED.list) : BESTIARY);
+
 function bestiaryBadges(b) {
   const spd = b.spd || "";
   const walk = parseInt((spd.match(/^(\d+)/) || [])[1] || "0", 10);
@@ -1269,8 +1275,10 @@ const ENC_TEMPLATES = {
 };
 function suggestEncounter({ biome, level, size, difficulty, template, balanced, rng }) {
   const R = rng || Math.random;
-  const pool = (ENCOUNTER_POOLS[biome] || []).map((n) => {
-    const sb = BESTIARY.find((b) => b.name === n);
+  const all = fullBestiary();
+  const names = (ENCOUNTER_POOLS[biome] || []).concat(EXPANDED.on && EXPANDED.list.length ? EXPANDED.pools[biome] || [] : []);
+  const pool = names.map((n) => {
+    const sb = all.find((b) => b.name === n);
     return sb ? { name: n, cr: crNumOf(sb.cr), leg: !!sb.legendary, xp: XP_BY_CR[crNumOf(sb.cr)] || 10 } : null;
   }).filter(Boolean);
   if (!pool.length) return { picks: [], note: "No pool for this lair." };
@@ -3311,7 +3319,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   );
 }
 
-function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
+function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
   const [q, setQ] = useState("");
   const [count, setCount] = useState(1);
   const [rollHp, setRollHp] = useState(false);
@@ -3321,7 +3329,8 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
   const [ioMsg, setIoMsg] = useState("");
   const ql = q.toLowerCase();
   const mine = (custom || []).filter((b) => b.name.toLowerCase().includes(ql));
-  const builtIn = BESTIARY.filter((b) => b.name.toLowerCase().includes(ql));
+  const all = fullBestiary();
+  const builtIn = all.filter((b) => b.name.toLowerCase().includes(ql));
 
   const doImport = () => {
     try {
@@ -3349,6 +3358,12 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
             <input type="checkbox" checked={rollHp} onChange={(e) => setRollHp(e.target.checked)} /> Roll HP from formula (varied HP per monster)
           </label>
         </div>
+        <div className="frow">
+          <label style={{ minWidth: 0 }}>
+            <input type="checkbox" checked={!!expanded} onChange={(e) => onToggleExpanded(e.target.checked)} /> Include <b>Tome of Beasts</b> (Kobold Press, OGL) — 391 more monsters, here and in suggested encounters
+          </label>
+        </div>
+        {expanded && !expandedReady && <div className="trait">Loading Tome of Beasts…</div>}
 
         {mine.length > 0 && (<>
           <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>My bestiary</div>
@@ -3371,12 +3386,12 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
 
         {q.trim() ? (
           <>
-            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD — {builtIn.length} match{builtIn.length === 1 ? "" : "es"}</div>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>{expanded ? "SRD + Tome of Beasts" : "SRD"} — {builtIn.length} match{builtIn.length === 1 ? "" : "es"}</div>
             <div className="mlist">
               {builtIn.map((b) => (
                 <span key={b.name} style={{ position: "relative" }}>
                   <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
-                    {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                    {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                   </button>
                   <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                     title="Clone & tweak — start a custom monster from this statblock"
@@ -3387,9 +3402,9 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
           </>
         ) : (
           <>
-            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD bestiary — {BESTIARY.length} monsters</div>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>{expanded ? `Bestiary — ${all.length} monsters (SRD + Tome of Beasts)` : `SRD bestiary — ${all.length} monsters`}</div>
             {BESTIARY_CATS.map(([key, label]) => {
-              const members = BESTIARY.filter((b) => b.cat === key);
+              const members = all.filter((b) => b.cat === key);
               const open = openCats.has(key);
               return (
                 <div key={key}>
@@ -3402,7 +3417,7 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
                         <span key={b.name} style={{ position: "relative" }}>
                           <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
-                            {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                            {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                           </button>
                           <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                             title="Clone & tweak — start a custom monster from this statblock"
@@ -3682,6 +3697,35 @@ function TouchViz() {
     };
   }, []);
   return <div ref={layerRef} className="touchlayer" />;
+}
+
+function LicensesModal({ onClose }) {
+  const [tob, setTob] = useState(null);
+  useEffect(() => { let live = true; import("./data/bestiaryTob.js").then((m) => { if (live) setTob(m.TOB_META); }); return () => { live = false; }; }, []);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Licenses</h3>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>SRD 5.2.1</div>
+        <div className="trait">
+          This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at
+          https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License.
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Tome of Beasts (optional expanded bestiary)</div>
+        {!tob ? <div className="trait">Loading…</div> : (<>
+          <div className="trait">{tob.copyright} Used under the {tob.licenseName}. Converted via the Open5e project.</div>
+          <div className="trait" style={{ marginTop: 6 }}><b>Section 15 — Copyright Notice:</b> {tob.s15.join(" ")}</div>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 2px" }}>{tob.licenseName}</div>
+          <div style={{ maxHeight: 240, overflowY: "auto", fontSize: 11, color: "var(--dim)", whiteSpace: "pre-wrap", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px" }}>
+            {tob.licenseText}
+          </div>
+        </>)}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function InitTieModal({ groups, onConfirm }) {
@@ -4295,10 +4339,25 @@ export default function App() {
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   const [showTouches, setShowTouchesState] = useState(false);
   const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
+  const [expandedOn, setExpandedOnState] = useState(false);
+  const [expReady, setExpReady] = useState(false);
+  const setExpandedOn = (v) => { setExpandedOnState(v); stSet("dm5e:expandedBestiary", v ? 1 : 0); };
+  useEffect(() => {
+    if (!expandedOn || EXPANDED.list.length) { setExpReady(EXPANDED.list.length > 0); return undefined; }
+    let live = true;
+    import("./data/bestiaryTob.js").then((m) => {
+      if (!live) return;
+      EXPANDED.list = m.BESTIARY_TOB;
+      EXPANDED.pools = m.TOB_POOLS;
+      setExpReady(true);
+    });
+    return () => { live = false; };
+  }, [expandedOn]);
   // assign during render so components created in this same pass read the fresh values
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
+  EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
@@ -4430,6 +4489,7 @@ export default function App() {
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
+      setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -5531,6 +5591,8 @@ export default function App() {
         available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The
         SRD 5.2.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">Creative
         Commons Attribution 4.0 International License</a>.
+        {" "}Optional expanded bestiary content from <b>Tome of Beasts</b> © Kobold Press, used under the Open Game License v 1.0a —{" "}
+        <a href="#licenses" onClick={(e) => { e.preventDefault(); setModal({ type: "licenses" }); }}>full licenses</a>.
       </div>
 
       {showTouches && <TouchViz />}
@@ -5559,6 +5621,7 @@ export default function App() {
           onImport={(arr) => upsertBestiary(arr)}
           onEdit={(b) => setModal({ type: "custom", edit: b })}
           onClone={(b) => setModal({ type: "custom", from: b })}
+          expanded={expandedOn} expandedReady={expReady} onToggleExpanded={setExpandedOn}
           onClose={() => setModal(null)} />
       )}
       {modal?.type === "slots" && (
@@ -5601,6 +5664,7 @@ export default function App() {
       {modal?.type === "init-ties" && (
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
       )}
+      {modal?.type === "licenses" && <LicensesModal onClose={() => setModal(null)} />}
       {modal?.type === "manual-roll" && (() => {
         const mc = state.combatants.find((x) => x.uid === modal.p.uid);
         const ma = mc?.actions?.[modal.p.ai];
@@ -5841,7 +5905,7 @@ export default function App() {
           mutate((d, L, T) => {
             const added = [];
             picks.forEach((p) => {
-              const sb = BESTIARY.find((b) => b.name === p.name); if (!sb) return;
+              const sb = fullBestiary().find((b) => b.name === p.name); if (!sb) return;
               const m = makeMonster(sb, d);
               d.combatants.push(m);
               added.push({ m, band: p.band });
