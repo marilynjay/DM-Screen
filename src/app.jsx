@@ -536,6 +536,7 @@ const PLAYTEST_ENCOUNTERS = [
   { key: "spiders", name: "Spider Hollow", blurb: "A giant spider and her wolf-spider brood — webs, poison, restrained checks. Moderate for two players.", list: [["Giant Spider", 1], ["Giant Wolf Spider", 3]] },
   { key: "troll", name: "Bridge Troll", blurb: "One regenerating troll with scout archers on the banks. Hard.", list: [["Troll", 1], ["Scout", 2]] },
   { key: "dragon", name: "Young White Dragon", blurb: "Solo boss — cold breath, flight, and a bad attitude. Hard, expect blood.", list: [["Young White Dragon", 1]] },
+  { key: "allgoblins", name: "All Goblins", blurb: "Goblin civil war — four warriors, two on each side, no players. Great for testing ally-side monsters.", noPlayers: true, list: [["Goblin Warrior", 2], ["Goblin Warrior", 2, "ally"]] },
 ];
 const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? BESTIARY.concat(EXPANDED.list) : BESTIARY);
 
@@ -5590,15 +5591,15 @@ export default function App() {
     });
     if (enc.special) { addPlaytest(); pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]); return; }
     mutate((d, L) => {
-      [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
+      if (!enc.noPlayers) [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
         const p = makePlayer(pp);
         d.combatants.push(p);
         L.push(`Added <b>${p.name}</b> (initiative ${pp.init}, AC ${pp.ac}, ${pp.hp} HP tracked)`);
       });
-      enc.list.forEach(([nm, n]) => {
+      enc.list.forEach(([nm, n, side]) => {
         const sb = BESTIARY.find((b) => b.name === nm); if (!sb) return;
-        for (let i = 0; i < n; i++) d.combatants.push(makeMonster(sb, d));
-        L.push(`Added <b>${n}× ${nm}</b>`);
+        for (let i = 0; i < n; i++) d.combatants.push(makeMonster(sb, d, side ? { side } : {}));
+        L.push(`Added <b>${n}× ${nm}</b>${side === "ally" ? " (allies)" : ""}`);
       });
     });
     pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]);
