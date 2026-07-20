@@ -63,7 +63,17 @@ input[type=number]{width:64px}
 .mono{font-family:var(--mono);font-size:12px}
 .chip{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:12px;background:var(--ink);
   border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
-.die{flex-shrink:0}
+.die{flex-shrink:0;transform-origin:50% 50%}
+.die.rolling{animation:dietumble .95s cubic-bezier(.3,.7,.3,1)}
+@keyframes dietumble{
+  0%{transform:rotate(0deg) scale(.8)}
+  20%{transform:rotate(160deg) scale(1.1)}
+  35%{transform:rotate(128deg) scale(1)}
+  60%{transform:rotate(-150deg) scale(1.07)}
+  75%{transform:rotate(-116deg) scale(1)}
+  100%{transform:rotate(0deg) scale(1)}
+}
+@media (prefers-reduced-motion: reduce){.die.rolling{animation:none}}
 .die .facet{fill:none;stroke-width:.8}
 .die.plain .shell{fill:#2a2333;stroke:#8a7f96}
 .die.plain .facet{stroke:#57506388}
@@ -1612,12 +1622,12 @@ const DIE_SHAPES = {
                  ["21.5,17.5", "18.6,15.6"], ["2.5,17.5", "5.4,15.6"], ["12,23", "12,19.5"]] },
 };
 
-function DieFace({ sides, val, flick, cls, dropped, size }) {
+function DieFace({ sides, val, flick, cls, dropped, size, rolling }) {
   const sh = DIE_SHAPES[sides] || DIE_SHAPES[6];
   const shown = flick != null ? ((val * 7 + flick * 13) % sides) + 1 : val;
   const px = size || 30;
   return (
-    <svg className={`die ${dropped ? "dropped" : ""} ${cls || "plain"}`} viewBox="0 0 24 24" width={px} height={px * 0.95} aria-hidden="true">
+    <svg className={`die ${dropped ? "dropped" : ""} ${cls || "plain"} ${rolling ? "rolling" : ""}`} viewBox="0 0 24 24" width={px} height={px * 0.95} aria-hidden="true">
       {sh.rect
         ? <rect className="shell" x="3.5" y="3.5" width="17" height="17" rx="2.5" strokeWidth="1.3" />
         : <polygon className="shell" points={sh.pts} strokeWidth="1.3" />}
@@ -1631,18 +1641,21 @@ function DieFace({ sides, val, flick, cls, dropped, size }) {
   );
 }
 
-/* one synchronized flicker for a whole roll — no slot-machine chaos */
+/* one synchronized flicker + tumble for a whole roll — no slot-machine chaos.
+   The number lands as the die's rotation settles (~.95s animation). */
 function DiceGroup({ dice, size }) {
   const [flick, setFlick] = useState(0);
+  const [rolling, setRolling] = useState(true);
   useEffect(() => {
-    const t1 = setTimeout(() => setFlick(1), 140);
-    const t2 = setTimeout(() => setFlick(null), 300);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    const ts = [setTimeout(() => setFlick(1), 150), setTimeout(() => setFlick(2), 330),
+                setTimeout(() => setFlick(3), 520), setTimeout(() => setFlick(null), 720),
+                setTimeout(() => setRolling(false), 1000)]; // outlives the .95s tumble so the class never cuts it short
+    return () => ts.forEach(clearTimeout);
   }, []);
   return (
     <>
       {dice.map((d, i) => (
-        <DieFace key={i} sides={d.s} val={d.v} flick={flick} cls={d.cls} dropped={d.dropped} size={size} />
+        <DieFace key={i} sides={d.s} val={d.v} flick={flick} cls={d.cls} dropped={d.dropped} size={size} rolling={rolling} />
       ))}
     </>
   );
