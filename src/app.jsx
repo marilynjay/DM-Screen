@@ -37,6 +37,7 @@ input[type=number]{width:64px}
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
 .activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
 .dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
+.tobtag{font-size:9px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:2px;letter-spacing:.05em}
 .dmgbanners{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:10px;right:10px;z-index:95;
   display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .dmgbanner{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 12px;
@@ -490,6 +491,18 @@ const BESTIARY_CATS = [
    bundle stays lean. App assigns .on from the persisted setting during render;
    fullBestiary() is the one lookup every consumer goes through. */
 const EXPANDED = { on: false, list: [], pools: {} };
+
+/* Curated playtest encounters, balanced for the two-hero test party (~2× level 5,
+   moderate budget ≈1500 XP unless noted). 'showcase' is the bespoke scaled trio. */
+const PLAYTEST_ENCOUNTERS = [
+  { key: "showcase", name: "Legendary Showcase", blurb: "Goblin chaff, a spellcaster, and a legendary dragon — exercises every system at once.", special: true },
+  { key: "goblins", name: "Goblin War Party", blurb: "Boss, six warriors, two bugbears — nine bodies of action economy. Moderate.", list: [["Goblin Boss", 1], ["Goblin Warrior", 6], ["Bugbear Warrior", 2]] },
+  { key: "crypt", name: "Crypt of the Restless", blurb: "A wight commanding ghouls and skeletons — paralysis and life drain. Moderate.", list: [["Wight", 1], ["Ghoul", 2], ["Skeleton", 4]] },
+  { key: "bandits", name: "Bandit Ambush", blurb: "Captain, berserker muscle, bandits, and wolves — a classic roadside mugging. Moderate.", list: [["Bandit Captain", 1], ["Berserker", 1], ["Bandit", 4], ["Wolf", 2]] },
+  { key: "cult", name: "Cult Cell", blurb: "A priest, a ghast enforcer, and six chanting cultists — saves and stench. Moderate.", list: [["Priest", 1], ["Ghast", 1], ["Cultist", 6]] },
+  { key: "troll", name: "Bridge Troll", blurb: "One regenerating troll with scout archers on the banks. Hard.", list: [["Troll", 1], ["Scout", 2]] },
+  { key: "dragon", name: "Young White Dragon", blurb: "Solo boss — cold breath, flight, and a bad attitude. Hard, expect blood.", list: [["Young White Dragon", 1]] },
+];
 const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? BESTIARY.concat(EXPANDED.list) : BESTIARY);
 
 function bestiaryBadges(b) {
@@ -3438,6 +3451,7 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
       {sb.reactions?.length ? (<div className="sect"><div className="lbl">Reactions</div>{sb.reactions.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       {sb.legendary ? (<div className="sect"><div className="lbl">Legendary Actions ({sb.legendary.count}/round)</div>{(sb.legendary.options || []).map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+        <button className="btn" onClick={onBack}>← Back</button>
         <button className="btn" onClick={() => onClone(sb)}>⧉ Clone & tweak</button>
         <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add to combat{count > 1 ? ` ×${count}` : ""}</button>
       </div>
@@ -3567,7 +3581,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
               {builtIn.map((b) => (
                 <span key={b.name} style={{ position: "relative" }}>
                   <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
-                    {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                    {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                   </button>
                   <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                     title="Clone & tweak — start a custom monster from this statblock"
@@ -3599,7 +3613,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
                         <span key={b.name} style={{ position: "relative" }}>
                           <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
-                            {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                            {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                           </button>
                           <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                             title="Clone & tweak — start a custom monster from this statblock"
@@ -3641,6 +3655,9 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
             </div>
           </div>
         )}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
         </>)}
       </div>
     </div>
@@ -5238,6 +5255,27 @@ export default function App() {
     pushToasts([{ kind: "good", text: `"${sb.name}" updated in your bestiary.` }]);
     maybeShowBackupNotice();
   };
+  const loadPlaytest = (enc) => {
+    setModal(null);
+    mutate((d, L) => {
+      d.combatants = []; d.log = []; d.mode = "setup"; d.round = 0; d.activeUid = null;
+      L.push(`— 🧪 Playtest: <b>${enc.name}</b> —`);
+    });
+    if (enc.special) { addPlaytest(); pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]); return; }
+    mutate((d, L) => {
+      [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
+        const p = makePlayer(pp);
+        d.combatants.push(p);
+        L.push(`Added <b>${p.name}</b> (initiative ${pp.init}, AC ${pp.ac}, ${pp.hp} HP tracked)`);
+      });
+      enc.list.forEach(([nm, n]) => {
+        const sb = BESTIARY.find((b) => b.name === nm); if (!sb) return;
+        for (let i = 0; i < n; i++) d.combatants.push(makeMonster(sb, d));
+        L.push(`Added <b>${n}× ${nm}</b>`);
+      });
+    });
+    pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]);
+  };
   const addPlaytest = () => mutate((d, L) => {
     [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
       const p = makePlayer(pp);
@@ -5656,7 +5694,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "suggest-enc" })}>🎲 Suggest encounter…</button>
               <button onClick={addEffectPrompt}>Effect / lair actions…</button>
               <button onClick={() => setModal({ type: "object-prompt" })}>Object (pillar, door…)…</button>
-              <button onClick={addPlaytest} style={{ color: "var(--fx)" }}>🧪 Playtest encounter</button>
+              <button onClick={() => setModal({ type: "playtest" })} style={{ color: "var(--fx)" }}>🧪 Playtest encounters…</button>
             </div>
           )}
         </span>
@@ -5891,6 +5929,25 @@ export default function App() {
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
       )}
       {modal?.type === "licenses" && <LicensesModal onClose={() => setModal(null)} />}
+      {modal?.type === "playtest" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>🧪 Playtest encounters</h3>
+            <div className="trait" style={{ marginBottom: 8 }}>
+              Each loads a fresh test party (two level-5 heroes with HP tracked) plus a balanced enemy lineup —
+              <b> replacing whatever's on screen</b>. Saved encounters are untouched.
+            </div>
+            {PLAYTEST_ENCOUNTERS.map((e) => (
+              <button key={e.key} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => loadPlaytest(e)}>
+                {e.name}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{e.blurb}</span>
+              </button>
+            ))}
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn" onClick={() => setModal(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal?.type === "manual-roll" && (() => {
         const mc = state.combatants.find((x) => x.uid === modal.p.uid);
         const ma = mc?.actions?.[modal.p.ai];
