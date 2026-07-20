@@ -2471,7 +2471,10 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
               )}
             </div>
           ))}
-          <div className="ad" style={{ marginTop: 8 }}>{resolved.pending && resolved.pending.length ? "mark each player as they report — then tap outside to close" : "tap anywhere to dismiss — results are recorded in the log"}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+            <span className="ad" style={{ flex: 1 }}>{resolved.pending && resolved.pending.length ? "mark each player as they report" : "results are recorded in the log"}</span>
+            <button className="btn small" onClick={onClose}>Close</button>
+          </div>
         </div>
       </div>
     );
@@ -4975,6 +4978,7 @@ export default function App() {
         effAc = t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
         if (effAc != null) isHit = atk.crit || (!atk.fumble && atk.total >= effAc);
         if (isHit != null) chips.push({ t: `${isHit ? "HIT" : "MISS"} — ${t.name} AC ${effAc}`, k: isHit ? "sgood" : "sbad" });
+        else if (!atk.fumble) chips.push({ t: `${t.name}'s AC unknown — ask if ${atk.total} hits`, k: "cond" });
       }
       const dmgChip = (roll, critRoll, dtype) => {
         const total = roll.total + (critRoll ? critRoll.total : 0);
@@ -5029,7 +5033,7 @@ export default function App() {
           }
           holdGhost(t, snap, flashAt);
         } else if (isHit == null && t.maxHp != null) {
-          chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
+          chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Hit? Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
         }
       }
       setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
