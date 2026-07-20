@@ -37,6 +37,19 @@ input[type=number]{width:64px}
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
 .activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
 .dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
+.dmgbanners{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:10px;right:10px;z-index:95;
+  display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.dmgbanner{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 12px;
+  box-shadow:0 6px 18px rgba(0,0,0,.5);animation:dbin .25s ease,dbout .35s ease 2.25s forwards}
+@keyframes dbin{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes dbout{100%{opacity:0;transform:translateY(-8px)}}
+.dbline{display:flex;align-items:center;gap:8px;padding:2px 0;min-width:0}
+.dbline .hpheart{width:20px;height:18px;flex:none}
+.dbname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1}
+.dbamt{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.dbamt.hurt{color:var(--danger)}
+.dbamt.heal{color:var(--ok)}
+.dbhp{font-family:var(--mono);color:var(--dim);font-size:12px;white-space:nowrap}
 .turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
   padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--ink);border-top:1px solid var(--line)}
@@ -1753,6 +1766,38 @@ function HeartGauge({ pct, title }) {
       <path d={d} fill="#463743" />
       {pct > 0 && <path d={d} fill="#e0645a" style={{ clipPath: `inset(${100 - pct}% 0 0 0)`, transition: "clip-path .8s ease" }} />}
     </svg>
+  );
+}
+
+/* Damage banner: brings the hit home wherever you're scrolled — heart drains
+   from old HP to new, damage amount in type color, status tags. Skipped for
+   combatants whose HP isn't tracked. */
+function DrainHeart({ from, to, max }) {
+  const [pct, setPct] = useState(Math.max(0, Math.min(100, (from / max) * 100)));
+  useEffect(() => {
+    const t = setTimeout(() => setPct(Math.max(0, Math.min(100, (to / max) * 100))), 300);
+    return () => clearTimeout(t);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <HeartGauge pct={pct} title={`${to}/${max}`} />;
+}
+function DmgBanners({ banners }) {
+  if (!banners.length) return null;
+  return (
+    <div className="dmgbanners">
+      {banners.map((b) => (
+        <div key={b.id} className="dmgbanner">
+          {b.lines.map((ln, i) => (
+            <div key={i} className="dbline">
+              <DrainHeart from={ln.from} to={ln.to} max={ln.max} />
+              <b className="dbname">{ln.name}</b>
+              <span className={`dbamt ${ln.heal ? "heal" : "hurt"}`}>{ln.heal ? "+" : "−"}{ln.amt}{ln.dtype ? ` ${ln.dtype}` : ""}</span>
+              <span className="dbhp">{ln.from}→{ln.to}/{ln.max}</span>
+              {ln.dead ? <span className="chip bad">☠</span> : ln.unconscious ? <span className="chip bad">down</span> : ln.bloodied ? <span className="bloodtag">Bloodied</span> : null}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -4631,6 +4676,27 @@ export default function App() {
     ? state.combatants.filter((c) => c.legendary && !c.dead && c.uid !== state.activeUid && c.legendary.rem > 0)
     : [];
 
+  const [dmgBanners, setDmgBanners] = useState([]);
+  const bannerLine = (c, hpBefore, dtype) => {
+    if (c.maxHp == null || hpBefore == null) return null; // HP untracked — no banner
+    const delta = hpBefore - c.hp;
+    if (delta === 0) return null;
+    return {
+      name: c.name, amt: Math.abs(delta), heal: delta < 0, dtype: delta > 0 ? dtype || "" : "",
+      from: hpBefore, to: c.hp, max: c.maxHp,
+      dead: c.dead, unconscious: c.unconscious, bloodied: !c.dead && !c.unconscious && isBloodied(c),
+    };
+  };
+  const pushDmgBanner = (lines, delayMs = 0) => {
+    const valid = (lines || []).filter(Boolean);
+    if (!valid.length) return;
+    const id = Math.random();
+    setTimeout(() => {
+      setDmgBanners((bs) => [...bs.slice(-2), { id, lines: valid }]);
+      setTimeout(() => setDmgBanners((bs) => bs.filter((b) => b.id !== id)), 2650);
+    }, delayMs);
+  };
+
   const attackRollCore = (d, L, uid, ai, opts = {}) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const a = c.actions[ai];
@@ -4709,6 +4775,7 @@ export default function App() {
           const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
           const flashAt = Math.round((chipDelays(chips).at(-1) + 0.5) * 1000); // after the last chip reveals — don't spoil the staged result
           setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
+          pushDmgBanner([bannerLine(t, hpBefore, parts.find((p) => p.dtype)?.dtype)], flashAt);
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
         }
@@ -4840,8 +4907,12 @@ export default function App() {
         let amt = null, note = "";
         if (ctx.dmgTotal != null) {
           amt = ok ? (ctx.halfOn ? Math.floor(ctx.dmgTotal / 2) : 0) : ctx.dmgTotal;
-          if (amt > 0 && c.maxHp != null) { applyDamage(c, amt, ctx.dtype || null, L, T); if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)"; }
-          else if (amt > 0) note = "(HP untracked — apply at table)";
+          if (amt > 0 && c.maxHp != null) {
+            const hp0 = c.hp;
+            applyDamage(c, amt, ctx.dtype || null, L, T);
+            pushDmgBanner([bannerLine(c, hp0, ctx.dtype)], 250);
+            if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
+          } else if (amt > 0) note = "(HP untracked — apply at table)";
         }
         if (ctx.cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === ctx.cond)) {
           c.conditions.push({ name: ctx.cond, rounds: ctx.condR ?? null, src: ctx.concSrc || null, spell: ctx.concCast || null, rpt: ctx.rpt ? { ab: ctx.ability, dc: ctx.dc, note: ctx.rptNote || null } : null });
@@ -5052,6 +5123,7 @@ export default function App() {
           if (gain > 0) applyHeal(atkC, gain, L);
         }
         setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`, id: Math.random() }), 0);
+        pushDmgBanner([bannerLine(t, hpBefore, parts.find((p) => p.dtype)?.dtype)], 150);
       });
       setResults((r) => {
         const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ applied", k: "sgood" } : ch));
@@ -5372,15 +5444,17 @@ export default function App() {
       const rows = [];
       const chipUpdates = {};
       const pending = [];
+      const bLines = [];
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c || c.dead) return;
         if (!noSave && c.type === "player") {
           pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null });
           return;
         }
+        const hp0 = c.hp;
         if (noSave) {
           let amt = dmgRoll ? dmgRoll.total : 0;
-          if (amt > 0) applyDamage(c, amt, dtype || null, L, T);
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0, dtype)); }
           L.push(`<b>${c.name}</b> takes ${amt}${dtype ? ` ${dtype}` : ""} (no save)${c.dead ? " ☠" : c.unconscious ? " (down)" : ""}`);
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: amt, note: c.dead ? "☠" : c.unconscious ? "(down)" : "" });
           return;
@@ -5392,7 +5466,7 @@ export default function App() {
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
-          if (amt > 0) applyDamage(c, amt, dtype || null, L, T);
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0, dtype)); }
           if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
         }
         if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
@@ -5428,6 +5502,7 @@ export default function App() {
         setResults((res) => ({ ...res, ...chipUpdates }));
         setModal((mm) => (mm && mm.type === "group-save" ? { ...mm, resolved } : mm));
       }, 0);
+      pushDmgBanner(bLines, 500);
     });
   };
 
@@ -5523,6 +5598,7 @@ export default function App() {
     <div className="dm-app" style={{ paddingBottom: botPad }}>
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
+      <DmgBanners banners={dmgBanners} />
 
       <div className="hdr">
         <span className={`title ${state.mode === "combat" ? "incombat" : ""}`}>DM Screen</span>
