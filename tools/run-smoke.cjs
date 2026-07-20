@@ -9,7 +9,23 @@ const path = process.argv[2];
 if (!path) { console.error("usage: node tools/run-smoke.cjs <transpiled app.js>"); process.exit(2); }
 const React = require("./react-stub.cjs");
 global.React = React;
-global.require = (m) => (m === "react" ? React : require(m));
+const pathmod = require("path");
+/* Relative imports (the src/data modules) land next to the transpiled app.js as
+   CommonJS, but package.json's "type":"module" makes Node misread .js files as
+   ESM — so load them by hand instead of through require(). */
+const relCache = {};
+function loadRelative(abs) {
+  if (relCache[abs]) return relCache[abs].exports;
+  const mod = { exports: {} };
+  relCache[abs] = mod;
+  new Function("exports", "module", "require", fs.readFileSync(abs, "utf8"))(mod.exports, mod, global.require);
+  return mod.exports;
+}
+global.require = (m) => {
+  if (m === "react") return React;
+  if (m.startsWith(".")) return loadRelative(pathmod.resolve(pathmod.dirname(path), m));
+  return require(m);
+};
 global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {}, key: () => null, length: 0 };
 global.window = { storage: null, addEventListener: () => {}, removeEventListener: () => {} };
 global.document = { addEventListener: () => {}, removeEventListener: () => {} };

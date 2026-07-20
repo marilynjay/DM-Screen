@@ -1,0 +1,111 @@
+const LAIR_THEMES = {
+  "Swamp": [
+    { n: "Grasping Mud", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "Sucking mud and tangled roots erupt, clutching at legs and dragging the unwary down." },
+    { n: "Toxic Bubbles", mech: "save", ab: "con", dc: 13, dmg: "2d6", dtype: "poison", half: true, desc: "Fetid gas belches up from the murk in bursting, rainbow-slicked bubbles." },
+    { n: "Biting Swarm", mech: "save", ab: "con", dc: 12, dmg: "2d4", dtype: "piercing", half: true, desc: "A whining cloud of stinging insects boils out of the reeds." },
+    { n: "Rolling Fog", mech: "note", desc: "Thick grey fog crawls across the water — the area is heavily obscured until initiative 20 next round." },
+  ],
+  "Forest": [
+    { n: "Lashing Branches", mech: "save", ab: "dex", dc: 13, dmg: "2d6", dtype: "bludgeoning", half: true, desc: "The canopy convulses — boughs whip down like flails." },
+    { n: "Entangling Roots", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "Roots shrug up out of the loam and coil around boots and greaves." },
+    { n: "Hornet Burst", mech: "save", ab: "con", dc: 12, dmg: "2d4", dtype: "piercing", half: true, desc: "A papery nest splits open; the air turns to furious, glittering static." },
+    { n: "Deepwood Gloom", mech: "note", desc: "The light dies between the trunks — the area is dim light and lightly obscured until initiative 20 next round." },
+  ],
+  "Jungle": [
+    { n: "Strangler Vines", mech: "save", ab: "str", dc: 14, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "Green cables drop soundlessly from the canopy and cinch tight." },
+    { n: "Venom Drip", mech: "save", ab: "con", dc: 13, dmg: "2d6", dtype: "poison", half: true, desc: "The canopy shivers and sheds a rain of stinging, milky sap." },
+    { n: "Screaming Canopy", mech: "save", ab: "wis", dc: 12, dmg: "", half: false, cond: "Frightened", condR: 1, desc: "A hundred unseen throats shriek at once from the green dark overhead." },
+    { n: "Sudden Sinkhole", mech: "save", ab: "dex", dc: 13, dmg: "2d6", dtype: "bludgeoning", half: true, cond: "Prone", condR: null, desc: "The ground simply stops being there — a mouth of wet earth yawns open." },
+  ],
+  "Desert": [
+    { n: "Sinking Sands", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "The dune underfoot turns fluid, swallowing legs to the knee." },
+    { n: "Sun's Hammer", mech: "save", ab: "con", dc: 13, dmg: "2d8", dtype: "radiant", half: true, desc: "The light sharpens to a white blade; the air itself seems to burn." },
+    { n: "Scouring Wind", mech: "save", ab: "dex", dc: 13, dmg: "2d6", dtype: "slashing", half: true, desc: "A wall of wind-borne sand strips paint from shields and skin from knuckles." },
+    { n: "Mirage Shift", mech: "note", desc: "The horizon doubles and swims — until initiative 20 next round, distances deceive and the terrain is difficult to judge." },
+  ],
+  "Open Sea": [
+    { n: "Rogue Wave", mech: "save", ab: "str", dc: 14, dmg: "2d6", dtype: "bludgeoning", half: true, cond: "Prone", condR: null, desc: "A grey mountain of water heaves over the rail without warning." },
+    { n: "Undertow", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "Something colder than the sea wraps ankles and pulls straight down." },
+    { n: "Lightning Squall", mech: "save", ab: "dex", dc: 14, dmg: "3d8", dtype: "lightning", half: true, desc: "The sky splits — forks of lightning walk across the water toward the ship." },
+    { n: "Shrieking Gale", mech: "note", desc: "Wind screams through the rigging — ranged attacks are at disadvantage and flames gutter until initiative 20 next round." },
+  ],
+  "Mountains": [
+    { n: "Rockslide", mech: "save", ab: "dex", dc: 14, dmg: "3d10", dtype: "bludgeoning", half: true, desc: "A shelf of scree lets go above with a sound like breaking teeth." },
+    { n: "Sheer Gust", mech: "save", ab: "str", dc: 14, dmg: "", half: false, cond: "Prone", condR: null, desc: "The wind arrives sideways, solid as a shoulder-charge." },
+    { n: "Ice Shear", mech: "dmg", dmg: "2d8", dtype: "slashing", desc: "A sheet of blue ice calves off the cliff face — no warning, no save." },
+    { n: "Thin Air", mech: "note", desc: "Every breath comes up short — until initiative 20 next round, climbing and dashing feel twice as hard (DM's discretion on checks)." },
+  ],
+  "Roadside": [
+    { n: "Runaway Cart", mech: "save", ab: "dex", dc: 13, dmg: "2d10", dtype: "bludgeoning", half: true, desc: "An ox-cart comes down the grade driverless, wheels shrieking." },
+    { n: "Caltrop Scatter", mech: "save", ab: "dex", dc: 12, dmg: "1d4", dtype: "piercing", half: false, desc: "A fistful of black iron stars skitters across the cobbles underfoot." },
+    { n: "Mud-slick Ruts", mech: "save", ab: "dex", dc: 12, dmg: "", half: false, cond: "Prone", condR: null, desc: "Yesterday's rain still owns the road — the wagon ruts are grease." },
+    { n: "Ambush Whistle", mech: "note", desc: "Two sharp notes from the treeline, answered by a third — someone just signaled for reinforcements." },
+  ],
+  "Cavern": [
+    { n: "Falling Rocks", mech: "save", ab: "dex", dc: 14, dmg: "3d10", dtype: "bludgeoning", half: true, desc: "The ceiling groans, then lets go — a curtain of stone crashes down." },
+    { n: "Stalactite Crash", mech: "dmg", dmg: "2d10", dtype: "piercing", desc: "A spear of ancient stone shears loose from the dark overhead — no warning, no save." },
+    { n: "Tremor", mech: "save", ab: "dex", dc: 13, dmg: "", half: false, cond: "Prone", condR: null, desc: "The cavern shudders; dust and gravel hiss down from the ceiling." },
+    { n: "Swallowing Dark", mech: "note", desc: "The torches gutter — magical darkness floods the area until initiative 20 next round." },
+  ],
+  "Dungeon": [
+    { n: "Scything Blades", mech: "save", ab: "dex", dc: 14, dmg: "2d8", dtype: "slashing", half: true, desc: "Slots in the walls exhale, and steel sweeps the corridor at waist height." },
+    { n: "Dart Volley", mech: "save", ab: "dex", dc: 13, dmg: "2d4", dtype: "piercing", half: false, cond: "Poisoned", condR: 1, desc: "A rank of holes in the masonry spits needles slick with something green." },
+    { n: "Portcullis Slam", mech: "note", desc: "Iron drops from the lintel with a clang that rings down the corridor — the way behind is sealed." },
+    { n: "Flooding Chamber", mech: "note", desc: "Grates in the floor reverse themselves — dark water is rising an inch a heartbeat. Set a round countdown." },
+  ],
+  "Crypt": [
+    { n: "Grave Chill", mech: "save", ab: "con", dc: 13, dmg: "3d6", dtype: "necrotic", half: true, desc: "The cold of the tomb sinks past armor, past skin, into the marrow." },
+    { n: "Spectral Grasp", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "Translucent hands rise from the flagstones, clutching at ankles and wrists." },
+    { n: "Wailing Dead", mech: "save", ab: "wis", dc: 13, dmg: "", half: false, cond: "Frightened", condR: 1, desc: "A chorus of the entombed rises to a shriek that claws at the mind." },
+    { n: "Bone-dust Cloud", mech: "note", desc: "A choking cloud of powdered bone fills the air — the area is lightly obscured." },
+  ],
+  "Volcanic": [
+    { n: "Magma Eruption", mech: "save", ab: "dex", dc: 15, dmg: "4d6", dtype: "fire", half: true, desc: "A geyser of molten rock bursts from a fissure in the floor." },
+    { n: "Tremor", mech: "save", ab: "dex", dc: 13, dmg: "", half: false, cond: "Prone", condR: null, desc: "The ground bucks and heaves — loose stone dances across the floor." },
+    { n: "Choking Ash", mech: "save", ab: "con", dc: 13, dmg: "", half: false, cond: "Blinded", condR: 1, desc: "A blast of hot ash billows through the chamber, searing eyes and lungs." },
+    { n: "Scalding Steam", mech: "save", ab: "con", dc: 14, dmg: "3d6", dtype: "fire", half: true, desc: "Water meets magma somewhere below — shrieking jets of steam knife up through cracks." },
+  ],
+  "Storm Peak": [
+    { n: "Lightning Arc", mech: "save", ab: "dex", dc: 15, dmg: "4d6", dtype: "lightning", half: true, desc: "Lightning arcs from the ground itself, leaping between stone and steel." },
+    { n: "Howling Winds", mech: "save", ab: "str", dc: 14, dmg: "", half: false, cond: "Prone", condR: null, desc: "A shrieking gust slams across the peak, hurling creatures from their feet." },
+    { n: "Thunderclap", mech: "save", ab: "con", dc: 13, dmg: "2d8", dtype: "thunder", half: true, cond: "Deafened", condR: 1, desc: "The sky detonates — a wall of sound rolls over everything." },
+    { n: "Freezing Squall", mech: "save", ab: "con", dc: 13, dmg: "2d6", dtype: "cold", half: true, desc: "Sleet rides the wind sideways, crusting armor with ice." },
+  ],
+  "Underdark": [
+    { n: "Faerzress Surge", mech: "save", ab: "wis", dc: 13, dmg: "2d8", dtype: "psychic", half: true, desc: "The stone's ambient magic spikes — violet light crawls the walls and presses into every mind." },
+    { n: "Spore Bloom", mech: "save", ab: "con", dc: 13, dmg: "", half: false, cond: "Poisoned", condR: 1, desc: "A ridge of puffball fungi detonates in sequence, filling the tunnel with drifting motes." },
+    { n: "Tunnel Collapse", mech: "save", ab: "dex", dc: 14, dmg: "3d10", dtype: "bludgeoning", half: true, desc: "Something enormous shifts its weight far above — the passage ceiling follows." },
+    { n: "Absolute Dark", mech: "note", desc: "Every flame and glowing fungus dies at once — magical darkness owns the tunnel until initiative 20 next round." },
+  ],
+  "Arctic": [
+    { n: "Ice Slick", mech: "save", ab: "dex", dc: 12, dmg: "", half: false, cond: "Prone", condR: null, desc: "Meltwater refrozen to black glass — the floor gives no purchase at all." },
+    { n: "Killing Cold", mech: "save", ab: "con", dc: 13, dmg: "2d8", dtype: "cold", half: true, desc: "The temperature plunges past cold into something that burns." },
+    { n: "Crevasse Crack", mech: "save", ab: "dex", dc: 14, dmg: "2d10", dtype: "bludgeoning", half: true, desc: "The floe splits with a gunshot report, and the edges grind like millstones." },
+    { n: "Whiteout", mech: "note", desc: "Wind lifts the snow into a spinning wall — the area is heavily obscured until initiative 20 next round." },
+  ],
+  "Urban": [
+    { n: "Collapsing Scaffold", mech: "save", ab: "dex", dc: 13, dmg: "2d10", dtype: "bludgeoning", half: true, desc: "Rope parts somewhere overhead, and a builder's scaffold folds into the street." },
+    { n: "Panicked Crowd", mech: "save", ab: "str", dc: 12, dmg: "", half: false, cond: "Prone", condR: null, desc: "The market breaks like a wave — a human stampede with nowhere to go but through." },
+    { n: "Sewer Vent", mech: "save", ab: "con", dc: 12, dmg: "", half: false, cond: "Poisoned", condR: 1, desc: "A grate exhales something warm and sweet-rotten from the tunnels below." },
+    { n: "Watch Whistle", mech: "note", desc: "Three shrill notes ring off the rooftops, answered from two streets over — the City Watch is coming. Set a round countdown." },
+  ],
+  "Shadowfell": [
+    { n: "Despair's Weight", mech: "save", ab: "wis", dc: 13, dmg: "", half: false, cond: "Frightened", condR: 1, desc: "Hope drains out of the moment like heat — every certainty suddenly feels like a lie." },
+    { n: "Hungry Shadows", mech: "save", ab: "con", dc: 13, dmg: "3d6", dtype: "necrotic", half: true, desc: "The shadows lean in and sip at warmth, at color, at life." },
+    { n: "Grasping Gloom", mech: "save", ab: "str", dc: 13, dmg: "", half: false, cond: "Restrained", condR: 1, desc: "The gloom gains substance — cold, boneless limbs of dark wrap tight." },
+    { n: "Light Death", mech: "note", desc: "Every nonmagical flame gutters out, and even magical light dims to half — until initiative 20 next round." },
+  ],
+  "Fiendish Realm": [
+    { n: "Hellfire Geyser", mech: "save", ab: "dex", dc: 14, dmg: "3d8", dtype: "fire", half: true, desc: "A fissure vents flame the color of an open wound." },
+    { n: "Brimstone Choke", mech: "save", ab: "con", dc: 13, dmg: "", half: false, cond: "Poisoned", condR: 1, desc: "Sulfurous smoke rolls low across the ground, acrid enough to strip a throat raw." },
+    { n: "Wailing Damned", mech: "save", ab: "wis", dc: 13, dmg: "", half: false, cond: "Frightened", condR: 1, desc: "The ground itself moans — a thousand voices in one, and all of them know your name." },
+    { n: "Blood Rain", mech: "note", desc: "A hot, red rain begins to fall, hissing where it lands — the area is lightly obscured and thoroughly unnerving." },
+  ],
+  "Feywild": [
+    { n: "Beguiling Lights", mech: "save", ab: "wis", dc: 13, dmg: "", half: false, cond: "Charmed", condR: 1, desc: "Motes of dancing light spiral close, whispering half-heard invitations." },
+    { n: "Thorned Vines", mech: "save", ab: "dex", dc: 13, dmg: "2d6", dtype: "piercing", half: true, desc: "Rose-briars whip from the earth in a lashing, blooming tangle." },
+    { n: "Wild Laughter", mech: "save", ab: "wis", dc: 12, dmg: "", half: false, cond: "Charmed", condR: 1, desc: "Unseen voices erupt in laughter that tugs at the corners of every mind." },
+    { n: "Blooming Spores", mech: "save", ab: "con", dc: 13, dmg: "", half: false, cond: "Poisoned", condR: 1, desc: "Flowers burst open in unison, dusting the air with glittering pollen." },
+  ],
+};
+export default LAIR_THEMES;
