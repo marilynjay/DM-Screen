@@ -74,6 +74,9 @@ input[type=number]{width:64px}
   100%{transform:rotate(0deg) scale(1)}
 }
 @media (prefers-reduced-motion: reduce){.die.rolling{animation:none}}
+.chip-reveal{animation:chipdrop .28s ease both}
+@keyframes chipdrop{0%{opacity:0;transform:translateY(-7px)}65%{opacity:1;transform:translateY(2px)}100%{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion: reduce){.chip-reveal{animation:none}}
 .die .facet{fill:none;stroke-width:.8}
 .die.plain .shell{fill:#2a2333;stroke:#8a7f96}
 .die.plain .facet{stroke:#57506388}
@@ -200,9 +203,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 @keyframes badgefade{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.65)}}
 .condghost{animation:badgefade .5s ease forwards;pointer-events:none}
 @keyframes critburst{0%{box-shadow:0 0 0 0 rgba(217,164,65,.7);transform:scale(.9)}45%{box-shadow:0 0 14px 4px rgba(217,164,65,.55);transform:scale(1.12)}100%{box-shadow:0 0 0 0 rgba(217,164,65,0);transform:scale(1)}}
-.chip.crit{color:var(--gold);border-color:var(--gold);background:var(--gold-soft);animation:critburst .9s ease}
+.chip.crit{color:var(--gold);border-color:var(--gold);background:var(--gold-soft);animation:chipdrop .28s ease both,critburst .9s ease}
 @keyframes fumblethud{0%{transform:translateY(-4px);opacity:.4}55%{transform:translateY(1px)}100%{transform:translateY(0);opacity:1}}
-.chip.fumble{color:var(--faint);border-color:var(--line2);animation:fumblethud .55s ease}
+.chip.fumble{color:var(--faint);border-color:var(--line2);animation:chipdrop .28s ease both,fumblethud .55s ease}
 @keyframes thpshatter{0%{opacity:1;transform:scale(1) rotate(0deg);filter:blur(0)}100%{opacity:0;transform:scale(1.6) rotate(10deg);filter:blur(2px)}}
 .thpchip.shattering{animation:thpshatter .7s ease forwards;pointer-events:none}
 @keyframes roundpulse{0%{transform:scale(1)}35%{transform:scale(1.25);color:var(--gold)}100%{transform:scale(1)}}
@@ -1643,15 +1646,16 @@ function DieFace({ sides, val, flick, cls, dropped, size, rolling }) {
 
 /* one synchronized flicker + tumble for a whole roll — no slot-machine chaos.
    The number lands as the die's rotation settles (~.95s animation). */
-function DiceGroup({ dice, size }) {
+function DiceGroup({ dice, size, delayMs = 0 }) {
   const [flick, setFlick] = useState(0);
-  const [rolling, setRolling] = useState(true);
+  const [rolling, setRolling] = useState(delayMs === 0);
   useEffect(() => {
-    const ts = [setTimeout(() => setFlick(1), 150), setTimeout(() => setFlick(2), 330),
-                setTimeout(() => setFlick(3), 520), setTimeout(() => setFlick(null), 720),
-                setTimeout(() => setRolling(false), 1000)]; // outlives the .95s tumble so the class never cuts it short
+    const ts = [setTimeout(() => setRolling(true), delayMs),
+                setTimeout(() => setFlick(1), delayMs + 150), setTimeout(() => setFlick(2), delayMs + 330),
+                setTimeout(() => setFlick(3), delayMs + 520), setTimeout(() => setFlick(null), delayMs + 720),
+                setTimeout(() => setRolling(false), delayMs + 1000)]; // outlives the .95s tumble so the class never cuts it short
     return () => ts.forEach(clearTimeout);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {dice.map((d, i) => (
@@ -1659,6 +1663,37 @@ function DiceGroup({ dice, size }) {
       ))}
     </>
   );
+}
+
+/* Staged reveal for a roll's result chips: dice tumble first, then the modifier,
+   then the total, then verdict/damage chips drop in one beat at a time. */
+const REVEAL_DICE_BLOCK = 1.3, REVEAL_TEXT_BLOCK = 0.3;
+function chipDelays(chips) {
+  const out = []; let t = 0;
+  for (const ch of chips) { out.push(t); t += ch.dice ? REVEAL_DICE_BLOCK : REVEAL_TEXT_BLOCK; }
+  return out;
+}
+function ChipText({ chip, base }) {
+  if (!chip.t) return null;
+  if (!chip.dice) return chip.t; // container's own reveal covers plain text chips
+  const s = String(chip.t);
+  const k = s.indexOf("= ");
+  if (k < 0) return <span className="chip-reveal" style={{ animationDelay: `${base + 0.9}s` }}>{s}</span>;
+  return (<>
+    {s.slice(0, k).trim() && <span className="chip-reveal" style={{ animationDelay: `${base + 0.9}s` }}>{s.slice(0, k)}</span>}
+    <span className="chip-reveal" style={{ animationDelay: `${base + 1.1}s` }}>{s.slice(k)}</span>
+  </>);
+}
+function ResultChips({ chips, onApply }) {
+  const D = chipDelays(chips);
+  return chips.map((chip, j) => (
+    chip.applyTo && onApply
+      ? <button key={chip.id || j} className="chip cond chip-reveal" style={{ cursor: "pointer", animationDelay: `${D[j]}s` }} onClick={() => onApply(chip)}>⚔ {chip.t}</button>
+      : <span key={chip.id || j} className={`chip chip-reveal ${chip.k || ""}`} style={{ animationDelay: `${D[j]}s` }}>
+          {chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} delayMs={Math.round(D[j] * 1000)} />}
+          <ChipText chip={chip} base={D[j]} />
+        </span>
+  ));
 }
 
 function HeartGauge({ pct, title }) {
@@ -2611,9 +2646,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
             <span className="ad">{o.d}</span>
             {atks.map((ar) => results && results[`${c.uid}:${ar.ai}`] ? (
               <span className="results" key={"r" + ar.ai}>
-                {results[`${c.uid}:${ar.ai}`].map((chip, j) => (
-                  <span key={chip.id || j} className={`chip ${chip.k || ""}`}>{chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} />}{chip.t}</span>
-                ))}
+                <ResultChips chips={results[`${c.uid}:${ar.ai}`]} />
               </span>
             ) : null)}
             {atks.map((ar) => openInfo === `${i}:a:${ar.ai}` ? (
@@ -2666,9 +2699,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
 
       {results[`${c.uid}:save`] && (
         <div className="savestrip">
-          {results[`${c.uid}:save`].map((chip, j) => (
-            <span key={chip.id || j} className={`chip ${chip.k || ""}`}>{chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} />}{chip.t}</span>
-          ))}
+          <ResultChips chips={results[`${c.uid}:save`]} />
         </div>
       )}
       {c.multi && <div className="reminder" style={{ marginTop: 8 }}>⚔ <b>Multiattack:</b> {c.multi}</div>}
@@ -2723,11 +2754,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
             </span>
             {results[`${c.uid}:${i}`] && (
               <span className="results">
-                {results[`${c.uid}:${i}`].map((chip, j) => (
-                  chip.applyTo
-                    ? <button key={chip.id || j} className="chip cond" style={{ cursor: "pointer" }} onClick={() => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)}>⚔ {chip.t}</button>
-                    : <span key={chip.id || j} className={`chip ${chip.k || ""}`}>{chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} />}{chip.t}</span>
-                ))}
+                <ResultChips chips={results[`${c.uid}:${i}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} />
               </span>
             )}
             <UsePips c={c} k={"a" + i} api={api} />
@@ -2816,9 +2843,7 @@ function PlayerCard({ c, api, results }) {
       <h3>{c.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{c.side === "ally" ? "player / ally" : "npc"}</span></h3>
       {results && results[`${c.uid}:save`] && (
         <div className="savestrip">
-          {results[`${c.uid}:save`].map((chip, j) => (
-            <span key={chip.id || j} className={`chip ${chip.k || ""}`}>{chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} />}{chip.t}</span>
-          ))}
+          <ResultChips chips={results[`${c.uid}:save`]} />
         </div>
       )}
       <div className="statline">
@@ -4332,7 +4357,8 @@ export default function App() {
             if (gain > 0 && c.maxHp != null) { applyHeal(c, gain, L); chips.push({ t: `🩸 lifesteal — ${c.name} regains ${gain}`, k: "sgood" }); }
           }
           const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
-          setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), 0);
+          const flashAt = Math.round((chipDelays(chips).at(-1) + 0.5) * 1000); // after the last chip reveals — don't spoil the staged result
+          setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
         }
