@@ -47,6 +47,27 @@ input[type=number]{width:64px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .pgr input[type="checkbox"]{width:17px;height:17px;accent-color:var(--gold);margin:0 auto}
+.vic-overlay{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;cursor:pointer;
+  background:radial-gradient(ellipse at center, rgba(64,48,10,.5), rgba(10,8,4,.8));animation:vicfade .5s ease}
+.vic-overlay.out{animation:vicout .32s ease forwards}
+@keyframes vicfade{0%{opacity:0}100%{opacity:1}}
+@keyframes vicout{100%{opacity:0}}
+.vic-inner{text-align:center}
+.vic-row{display:flex;align-items:center;justify-content:center;gap:14px}
+.vic-pop{position:relative;display:inline-block}
+.vic-pop-e{display:inline-block;font-size:42px;line-height:1;animation:vicpop .55s ease .25s both}
+.vic-pop.r .vic-pop-e{transform:scaleX(-1)}
+@keyframes vicpop{0%{opacity:0;transform:scale(.3) rotate(-20deg)}60%{opacity:1;transform:scale(1.3) rotate(9deg)}100%{opacity:1;transform:scale(1)}}
+.vic-pop.r .vic-pop-e{animation-name:vicpopr}
+@keyframes vicpopr{0%{opacity:0;transform:scaleX(-1) scale(.3) rotate(20deg)}60%{opacity:1;transform:scaleX(-1) scale(1.3) rotate(-9deg)}100%{opacity:1;transform:scaleX(-1) scale(1)}}
+.vic-cf{position:absolute;left:50%;top:36%;width:7px;height:11px;border-radius:2px;opacity:0;pointer-events:none;
+  animation:viccf 1.15s ease forwards}
+@keyframes viccf{0%{opacity:0;transform:translate(0,0) rotate(0deg)}12%{opacity:1}100%{opacity:0;transform:translate(var(--cx),var(--cy)) rotate(var(--cr))}}
+.vic-word{font-family:var(--disp);font-weight:800;font-size:46px;letter-spacing:.12em;color:var(--gold);
+  text-shadow:0 0 28px rgba(217,164,65,.55);display:inline-flex}
+.vic-l{opacity:0;display:inline-block;animation:vicl .6s ease both}
+@keyframes vicl{0%{opacity:0;transform:translateY(16px) scale(.7)}60%{opacity:1;transform:translateY(-3px) scale(1.08)}100%{opacity:1;transform:translateY(0) scale(1)}}
+.vic-sub{margin-top:16px;font-family:var(--disp);font-size:11px;letter-spacing:.3em;text-transform:uppercase;color:rgba(233,226,214,.6);animation:vicl .5s ease 1.15s both}
 .tpk-overlay{position:fixed;inset:0;z-index:200;pointer-events:none;display:flex;align-items:center;justify-content:center;
   background:radial-gradient(ellipse at center, rgba(70,4,4,.55), rgba(12,2,2,.85));animation:tpkfade 5s ease forwards}
 .tpk-inner{text-align:center;animation:tpkrise 5s ease forwards}
@@ -1823,6 +1844,29 @@ function HeartGauge({ pct, title }) {
       <path d={d} fill="#463743" />
       {pct > 0 && <path d={d} fill="#e0645a" style={{ clipPath: `inset(${100 - pct}% 0 0 0)`, transition: "clip-path .8s ease" }} />}
     </svg>
+  );
+}
+
+/* Victory popper: a 🎉 that punches in, then throws a fixed spray of confetti.
+   flip mirrors it for the left/right sides of the word. */
+const VIC_CONFETTI = [
+  { x: -52, y: -86, r: "220deg", c: "#e0645a", d: 0.45 },
+  { x: -22, y: -102, r: "160deg", c: "#d9a441", d: 0.5 },
+  { x: 16, y: -94, r: "-200deg", c: "#7fbf8e", d: 0.47 },
+  { x: 46, y: -72, r: "260deg", c: "#7fa7d9", d: 0.53 },
+  { x: -62, y: -44, r: "-150deg", c: "#d9a441", d: 0.56 },
+  { x: 58, y: -38, r: "190deg", c: "#e0645a", d: 0.58 },
+  { x: -34, y: -64, r: "-240deg", c: "#e9e2d6", d: 0.49 },
+  { x: 32, y: -58, r: "210deg", c: "#b58ae0", d: 0.52 },
+];
+function VicPopper({ flip }) {
+  return (
+    <span className={`vic-pop ${flip ? "r" : "l"}`}>
+      <span className="vic-pop-e">🎉</span>
+      {VIC_CONFETTI.map((p, i) => (
+        <i key={i} className="vic-cf" style={{ background: p.c, animationDelay: `${p.d}s`, "--cx": `${flip ? -p.x : p.x}px`, "--cy": `${p.y}px`, "--cr": p.r }} />
+      ))}
+    </span>
   );
 }
 
@@ -4677,6 +4721,27 @@ export default function App() {
   const [spellBook, setSpellBook] = useState(false);
   const [peek, setPeek] = useState(null);
   const [rowFlash, setRowFlash] = useState(null);
+  // Victory: every enemy dead (and the party not wiped — mutual destruction is
+  // a TPK, not a win). Tap to dismiss; auto-fades after 12s as a fallback.
+  const [victory, setVictory] = useState(null);
+  const vicArmedRef = useRef(true);
+  useEffect(() => {
+    if (state.mode !== "combat") { vicArmedRef.current = true; setVictory(null); return; }
+    const foes = state.combatants.filter((c) => c.side === "enemy" && c.type !== "effect" && c.type !== "object");
+    const party = state.combatants.filter((c) => c.type === "player" && c.side === "ally");
+    const wipedParty = party.length > 0 && party.every((c) => c.dead);
+    const won = foes.length > 0 && foes.every((c) => c.dead) && !wipedParty;
+    if (won && vicArmedRef.current) { vicArmedRef.current = false; setVictory({ id: Math.random() }); }
+    if (!won) vicArmedRef.current = true; // new enemies (or a revived one) re-arm it
+  }, [state.combatants, state.mode]);
+  const dismissVictory = () => setVictory((v) => (v && !v.out ? { ...v, out: true } : v));
+  useEffect(() => {
+    if (!victory) return undefined;
+    if (victory.out) { const t = setTimeout(() => setVictory(null), 340); return () => clearTimeout(t); }
+    const t = setTimeout(() => setVictory((v) => (v && v.id === victory.id ? { ...v, out: true } : v)), 12000);
+    return () => clearTimeout(t);
+  }, [victory]);
+
   // TPK: when every ally player is dead (not just down), one big skull moment.
   // Re-arms if anyone comes back (undo, revivify) so a later wipe still plays.
   const [tpk, setTpk] = useState(null);
@@ -5961,6 +6026,22 @@ export default function App() {
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} api={api} />
+      {victory && (
+        <div className={`vic-overlay ${victory.out ? "out" : ""}`} key={victory.id} onClick={dismissVictory}>
+          <div className="vic-inner">
+            <div className="vic-row">
+              <VicPopper flip />
+              <span className="vic-word">
+                {"VICTORY".split("").map((ch, i) => (
+                  <span key={i} className="vic-l" style={{ animationDelay: `${0.15 + i * 0.07}s` }}>{ch}</span>
+                ))}
+              </span>
+              <VicPopper />
+            </div>
+            <div className="vic-sub">tap to continue</div>
+          </div>
+        </div>
+      )}
       {tpk && (
         <div className="tpk-overlay" key={tpk.id}>
           <div className="tpk-inner">
