@@ -1881,7 +1881,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
   const bloody = isBloodied(c);
 
   return (
-    <div className={`row ${active ? "active" : ""} ${spot ? "spot" : ""} ${c.dead ? "dead" : ""} ${skull ? "dying" : ""} ${bloody ? "bloody" : ""} ${!c.dead && c.type !== "effect" && shown === "adv" ? "vs-adv" : ""} ${!c.dead && c.type !== "effect" && shown === "dis" ? "vs-dis" : ""} ${!c.dead && c.type !== "effect" && shown === "adv*" ? "vs-mix" : ""}`}>
+    <div data-uid={c.uid} className={`row ${active ? "active" : ""} ${spot ? "spot" : ""} ${c.dead ? "dead" : ""} ${skull ? "dying" : ""} ${bloody ? "bloody" : ""} ${!c.dead && c.type !== "effect" && shown === "adv" ? "vs-adv" : ""} ${!c.dead && c.type !== "effect" && shown === "dis" ? "vs-dis" : ""} ${!c.dead && c.type !== "effect" && shown === "adv*" ? "vs-mix" : ""}`}>
       {!c.dead && c.concentration && <span className="concring" />}
       <span className="initmark" title={c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{c.init ?? "—"}</span>
       <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
@@ -4689,9 +4689,26 @@ export default function App() {
   const [, setHoldTick] = useState(0); // re-render trigger for hold release
   // Damage presentation: the target's roster row slides down as a ghost 450ms
   // before revealAt so the drop plays out live inside it, lingers, slides away.
+  // Skipped when the real row is already fully on screen (checked at slide-in
+  // time, not schedule time — the DM may scroll during the dice animation);
+  // the reveal-synced hold still makes the drop play out in the real row.
+  const rowOnScreen = (uid) => {
+    // note: can't use CSS.escape here — the app's CSS style-string constant shadows the global
+    const el = [...document.querySelectorAll(".rail .row[data-uid]")].find((x) => x.getAttribute("data-uid") === String(uid));
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    if (r.height < 8) return false; // rail collapsed
+    const top = document.querySelector(".hdr")?.getBoundingClientRect().bottom || 0;
+    const turnbar = document.querySelector(".turnbar");
+    const bot = turnbar ? turnbar.getBoundingClientRect().top : window.innerHeight;
+    return r.top >= top - 2 && r.bottom <= bot + 2;
+  };
   const pushGhostRow = (uid, revealAt = 0) => {
     const id = Math.random();
-    setTimeout(() => setGhostRows((gs) => [...gs.filter((g) => g.uid !== uid).slice(-1), { id, uid }]), Math.max(0, revealAt - 450));
+    setTimeout(() => {
+      if (rowOnScreen(uid)) return;
+      setGhostRows((gs) => [...gs.filter((g) => g.uid !== uid).slice(-1), { id, uid }]);
+    }, Math.max(0, revealAt - 450));
     setTimeout(() => setGhostRows((gs) => gs.map((g) => (g.id === id ? { ...g, out: true } : g))), revealAt + 2400);
     setTimeout(() => setGhostRows((gs) => gs.filter((g) => g.id !== id)), revealAt + 2750);
   };
