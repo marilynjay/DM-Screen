@@ -3993,7 +3993,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         ))}
       </div>
       <div className="frow" style={{ marginTop: 8 }}>
-        <button className="btn small" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>＋ Add player</button>
+        <button className="btn small primary" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>＋ Add player</button>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>Party level</span>
         <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ ...FIELD, width: 64 }} />
