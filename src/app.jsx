@@ -4717,7 +4717,12 @@ export default function App() {
     : [];
 
   const [dmgBanners, setDmgBanners] = useState([]);
-  const [hpHolds, setHpHolds] = useState({});
+  // hp holds live in a ref, written synchronously inside the mutate updater, so the
+  // hold is present in the SAME commit that applies the damage. Routing this through
+  // setState + setTimeout(0) painted one unmasked frame: the roster dipped, bounced
+  // back up (a phantom "+N" heal pulse), then dropped again at the reveal.
+  const hpHoldsRef = useRef({});
+  const [, setHoldTick] = useState(0); // re-render trigger for hold release
   const bannerLine = (c, hpBefore) => {
     if (c.maxHp == null || hpBefore == null) return null; // HP untracked — no banner
     const delta = hpBefore - c.hp;
@@ -4821,11 +4826,13 @@ export default function App() {
           pushDmgBanner([bannerLine(t, hpBefore)], flashAt);
           if (t.maxHp != null) { // roster shows pre-hit values until the reveal lands
             const huid = t.uid;
-            setTimeout(() => setHpHolds((h) => ({ ...h, [huid]: snap })), 0);
-            setTimeout(() => setHpHolds((h) => {
-              if (h[huid]?.id !== snap.id) return h;
-              const n = { ...h }; delete n[huid]; return n;
-            }), flashAt);
+            hpHoldsRef.current = { ...hpHoldsRef.current, [huid]: snap };
+            setTimeout(() => {
+              if (hpHoldsRef.current[huid]?.id !== snap.id) return; // a newer hit re-held this row
+              const n = { ...hpHoldsRef.current }; delete n[huid];
+              hpHoldsRef.current = n;
+              setHoldTick((k) => k + 1);
+            }, flashAt);
           }
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
@@ -5764,7 +5771,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`}>
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHolds[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
             ))}
           </div>
         </>
