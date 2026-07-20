@@ -42,6 +42,7 @@ input[type=number]{width:64px}
 .pgh,.pgr{display:grid;grid-template-columns:22px minmax(0,1fr) 44px 46px 44px 48px;gap:4px;align-items:center}
 .pgh span{font-size:10px;color:var(--faint);letter-spacing:.05em;text-transform:uppercase;text-align:center}
 .pgh span:nth-child(2){text-align:left;padding-left:2px}
+.pgh .opt{display:block;font-size:8px;font-style:italic;text-transform:none;letter-spacing:.02em;opacity:.65}
 .pgr input[type="text"],.pgr input[type="number"]{width:100%;box-sizing:border-box;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:6px 6px;font-size:16px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
@@ -3979,7 +3980,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
   return (
     <>
       <div className="partygrid">
-        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC</span><span>HP</span><span>PP</span><span>DEX</span></div>
+        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC<i className="opt">opt</i></span><span>HP<i className="opt">opt</i></span><span>PP<i className="opt">opt</i></span><span>DEX<i className="opt">opt</i></span></div>
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
