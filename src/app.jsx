@@ -5022,9 +5022,11 @@ export default function App() {
             const gain = Math.floor(dealt / 2);
             if (gain > 0 && c.maxHp != null) { applyHeal(c, gain, L); chips.push({ t: `🩸 lifesteal — ${c.name} regains ${gain}`, k: "sgood" }); }
           }
-          const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
           const flashAt = Math.round((chipDelays(chips).at(-1) + 0.5) * 1000); // after the last chip reveals — don't spoil the staged result
-          setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
+          if (t.maxHp == null) { // untracked HP: no hold/pulse/ghost plays, so the text flash is the only roster feedback
+            const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}`;
+            setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
+          }
           holdGhost(t, snap, flashAt);
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
@@ -5374,7 +5376,7 @@ export default function App() {
           const gain = Math.floor(dealt / 2);
           if (gain > 0) applyHeal(atkC, gain, L);
         }
-        setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`, id: Math.random() }), 0);
+        if (t.maxHp == null) setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}`, id: Math.random() }), 0);
         holdGhost(t, snap, 600);
       });
       setResults((r) => {
