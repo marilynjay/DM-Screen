@@ -3639,11 +3639,27 @@ function AddAttackModal({ c, onAdd, onClose }) {
   );
 }
 
-const BLANK_ITEM_FORM = { origN: null, n: "", rarity: "C", d: "", isWpn: false, dmg: "1d6", dtype: "slashing", fin: false, rng: false, b: "0", heal: "", ch: "", c: false, acB: "" };
+/* Item types keep the builder honest: the engine consumes any healing item whole
+   (potion semantics), so heal never combines with weapon/charge mechanics. */
+const ITEM_KINDS = [
+  ["weapon", "⚔ Weapon", "Becomes an attack on whoever holds it, using their stats."],
+  ["potion", "🧪 Potion / consumable", "One use, then it's gone. Can heal."],
+  ["wand", "✨ Charged item", "Tracks charges; describe what a charge does."],
+  ["armor", "🛡 Armor / shield", "Grants an AC bonus while equipped."],
+  ["other", "📜 Trinket / other", "Descriptive item — no mechanics."],
+];
+const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, b: "0", heal: "", ch: "", c: false, acB: "" };
+function itemKindOf(it) {
+  if (it.wpn) return "weapon";
+  if (it.acB != null || it.armor) return "armor";
+  if (it.heal || (it.c && it.ch == null)) return "potion";
+  if (it.ch != null) return "wand";
+  return "other";
+}
 function itemToForm(it) {
   return {
-    origN: it.n, n: it.n, rarity: "CURVL".includes(it.rarity) ? it.rarity : "C", d: it.d || "",
-    isWpn: !!it.wpn, dmg: it.wpn?.dmg || "1d6", dtype: it.wpn?.dtype || "slashing",
+    origN: it.n, kind: itemKindOf(it), n: it.n, rarity: "CURVL".includes(it.rarity) ? it.rarity : "C", d: it.d || "",
+    dmg: it.wpn?.dmg || "1d6", dtype: it.wpn?.dtype || "slashing",
     fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, b: String(it.wpn?.b || 0),
     heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
   };
@@ -3651,16 +3667,21 @@ function itemToForm(it) {
 function formToItem(f) {
   const it = { n: f.n.trim(), rarity: f.rarity, custom: 1 };
   if (f.d.trim()) it.d = f.d.trim();
-  if (f.isWpn && f.dmg.trim()) {
+  const chN = f.ch.trim() !== "" && !isNaN(parseInt(f.ch, 10)) ? Math.max(0, parseInt(f.ch, 10)) : null;
+  if (f.kind === "weapon" && f.dmg.trim()) {
     it.wpn = { dmg: f.dmg.trim(), dtype: f.dtype };
     if (f.fin) it.wpn.fin = 1;
     if (f.rng) it.wpn.rng = 1;
     if (parseInt(f.b, 10)) it.wpn.b = parseInt(f.b, 10);
+    if (chN != null) it.ch = chN; // e.g. a mace with a 3-charge fear burst
+  } else if (f.kind === "potion") {
+    if (f.heal.trim()) it.heal = f.heal.trim();
+    it.c = 1;
+  } else if (f.kind === "wand") {
+    it.ch = chN != null ? chN : 3;
+  } else if (f.kind === "armor") {
+    if (parseInt(f.acB, 10)) it.acB = parseInt(f.acB, 10);
   }
-  if (f.heal.trim()) it.heal = f.heal.trim();
-  if (f.ch.trim() !== "" && !isNaN(parseInt(f.ch, 10))) it.ch = Math.max(0, parseInt(f.ch, 10));
-  if (f.c) it.c = 1;
-  if (parseInt(f.acB, 10)) it.acB = parseInt(f.acB, 10);
   return it;
 }
 
@@ -3719,46 +3740,77 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
         </div>
         {form && (
           <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
-            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{form.origN ? `Edit item — ${form.origN}` : "New custom item"}</div>
-            <div className="frow">
-              <input type="text" placeholder="Item name" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus />
-              <select value={form.rarity} onChange={(e) => setF("rarity", e.target.value)}>
-                {["C", "U", "R", "V", "L"].map((r) => (<option key={r} value={r}>{RARITY_NAME[r]}</option>))}
-              </select>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>
+              {form.origN ? `Edit item — ${form.origN}` : "New custom item"}
+              {form.kind && (
+                <button className="btn tiny ghost" style={{ marginLeft: 8 }} onClick={() => setF("kind", null)}>
+                  {ITEM_KINDS.find(([k]) => k === form.kind)?.[1]} — change type
+                </button>
+              )}
             </div>
-            <div className="frow"><input type="text" placeholder="What it does (shown wherever the item appears)" style={{ flex: 1 }} value={form.d} onChange={(e) => setF("d", e.target.value)} /></div>
-            <div className="frow" style={{ flexWrap: "wrap" }}>
-              <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.isWpn} onChange={(e) => setF("isWpn", e.target.checked)} /> weapon (holder gets it as an attack)</label>
-            </div>
-            {form.isWpn && (
-              <div className="frow" style={{ flexWrap: "wrap" }}>
-                <input type="text" placeholder="1d8" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
-                <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
-                  {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-                </select>
-                <select value={form.b} onChange={(e) => setF("b", e.target.value)} title="Magic bonus to hit and damage">
-                  {["0", "1", "2", "3"].map((n) => (<option key={n} value={n}>{n === "0" ? "no bonus" : `+${n}`}</option>))}
-                </select>
-                <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
-                <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
+            {!form.kind && (
+              <div>
+                <div className="trait" style={{ marginBottom: 6 }}>What kind of item is it?</div>
+                {ITEM_KINDS.map(([k, label, hint]) => (
+                  <button key={k} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setF("kind", k)}>
+                    {label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
+                  </button>
+                ))}
               </div>
             )}
-            <div className="frow" style={{ flexWrap: "wrap" }}>
-              <label style={{ minWidth: 0 }}>Heals</label>
-              <input type="text" placeholder="2d4+2" style={{ width: 76, flex: "none" }} value={form.heal} onChange={(e) => setF("heal", e.target.value)} />
-              <label style={{ minWidth: 0 }}>Charges</label>
-              <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} />
-              <label style={{ minWidth: 0 }}>+AC</label>
-              <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.acB} onChange={(e) => setF("acB", e.target.value)} title="Equippable AC bonus (shield, ring…)" />
-              <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.c} onChange={(e) => setF("c", e.target.checked)} /> single-use</label>
-            </div>
-            <div className="trait" style={{ color: "var(--faint)", fontSize: 11, marginTop: 2 }}>
-              All fields optional except the name. Heal/charges/single-use give it a Use button; +AC gives it Equip.
-            </div>
-            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
-              <button className="btn small" onClick={() => setForm(null)}>Cancel</button>
-              <button className="btn small primary" disabled={!form.n.trim()} onClick={saveForm}>{form.origN ? "Save changes" : "Save item"}</button>
-            </div>
+            {form.kind && (<>
+              <div className="frow">
+                <input type="text" placeholder="Item name" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus />
+                <select value={form.rarity} onChange={(e) => setF("rarity", e.target.value)}>
+                  {["C", "U", "R", "V", "L"].map((r) => (<option key={r} value={r}>{RARITY_NAME[r]}</option>))}
+                </select>
+              </div>
+              <div className="frow"><input type="text" placeholder="What it does (shown wherever the item appears)" style={{ flex: 1 }} value={form.d} onChange={(e) => setF("d", e.target.value)} /></div>
+              {form.kind === "weapon" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Damage</label>
+                  <input type="text" placeholder="1d8" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
+                  <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
+                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                  </select>
+                  <select value={form.b} onChange={(e) => setF("b", e.target.value)} title="Magic bonus to hit and damage">
+                    {["0", "1", "2", "3"].map((n) => (<option key={n} value={n}>{n === "0" ? "no bonus" : `+${n}`}</option>))}
+                  </select>
+                </div>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
+                  <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
+                  <label style={{ minWidth: 0 }}>Charges</label>
+                  <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} title="Optional — for a weapon with a limited-use power described above" />
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Charges are optional, for a limited-use power described above.</div>
+              </>)}
+              {form.kind === "potion" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Heals</label>
+                  <input type="text" placeholder="2d4+2 (blank = no healing)" style={{ width: 170, flex: "none" }} value={form.heal} onChange={(e) => setF("heal", e.target.value)} />
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use — it's consumed when used, healing if dice are set.</div>
+              </>)}
+              {form.kind === "wand" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Charges</label>
+                  <input type="number" min={0} placeholder="3" style={{ width: 64 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} />
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Each Use spends a charge — the description above says what a charge does.</div>
+              </>)}
+              {form.kind === "armor" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>+AC</label>
+                  <input type="number" min={0} placeholder="1" style={{ width: 64 }} value={form.acB} onChange={(e) => setF("acB", e.target.value)} />
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>The holder gets an Equip button; the bonus applies while equipped.</div>
+              </>)}
+              <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
+                <button className="btn small" onClick={() => setForm(null)}>Cancel</button>
+                <button className="btn small primary" disabled={!form.n.trim()} onClick={saveForm}>{form.origN ? "Save changes" : "Save item"}</button>
+              </div>
+            </>)}
           </div>
         )}
         {browse && (
