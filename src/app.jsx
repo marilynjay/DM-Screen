@@ -47,6 +47,15 @@ input[type=number]{width:64px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .pgr input[type="checkbox"]{width:17px;height:17px;accent-color:var(--gold);margin:0 auto}
+.tpk-overlay{position:fixed;inset:0;z-index:200;pointer-events:none;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at center, rgba(70,4,4,.55), rgba(12,2,2,.85));animation:tpkfade 5s ease forwards}
+.tpk-inner{text-align:center;animation:tpkrise 5s ease forwards}
+.tpk-skull{font-size:100px;line-height:1;filter:drop-shadow(0 0 26px rgba(224,100,90,.65))}
+.tpk-text{font-family:var(--disp);font-weight:800;font-size:68px;letter-spacing:.18em;color:var(--danger);
+  text-shadow:0 0 34px rgba(224,100,90,.55);margin-top:4px}
+.tpk-sub{font-family:var(--disp);font-size:13px;letter-spacing:.32em;text-transform:uppercase;color:rgba(233,226,214,.78);margin-top:10px}
+@keyframes tpkfade{0%{opacity:0}12%{opacity:1}80%{opacity:1}100%{opacity:0}}
+@keyframes tpkrise{0%{transform:scale(.72);opacity:0}14%{transform:scale(1.05);opacity:1}20%{transform:scale(1)}80%{transform:scale(1);opacity:1}100%{transform:scale(1.1);opacity:0}}
 .ghostrail{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:8px;right:8px;z-index:95;
   display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .ghostrow{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;
@@ -4668,6 +4677,24 @@ export default function App() {
   const [spellBook, setSpellBook] = useState(false);
   const [peek, setPeek] = useState(null);
   const [rowFlash, setRowFlash] = useState(null);
+  // TPK: when every ally player is dead (not just down), one big skull moment.
+  // Re-arms if anyone comes back (undo, revivify) so a later wipe still plays.
+  const [tpk, setTpk] = useState(null);
+  const tpkArmedRef = useRef(true);
+  useEffect(() => {
+    if (state.mode !== "combat") { tpkArmedRef.current = true; return undefined; }
+    const party = state.combatants.filter((c) => c.type === "player" && c.side === "ally");
+    const wiped = party.length > 0 && party.every((c) => c.dead);
+    if (wiped && tpkArmedRef.current) {
+      tpkArmedRef.current = false;
+      setTpk({ id: Math.random() });
+      const t = setTimeout(() => setTpk(null), 5100);
+      return () => clearTimeout(t);
+    }
+    if (!wiped) tpkArmedRef.current = true;
+    return undefined;
+  }, [state.combatants, state.mode]);
+
   const warnedTurn = useRef(null);
   useEffect(() => {
     if (state.mode !== "combat" || !state.activeUid) return;
@@ -5934,6 +5961,15 @@ export default function App() {
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} api={api} />
+      {tpk && (
+        <div className="tpk-overlay" key={tpk.id}>
+          <div className="tpk-inner">
+            <div className="tpk-skull">💀</div>
+            <div className="tpk-text">TPK</div>
+            <div className="tpk-sub">Total Party Kill</div>
+          </div>
+        </div>
+      )}
 
       <div className="hdr">
         <span className={`title ${state.mode === "combat" ? "incombat" : ""}`}>DM Screen</span>
