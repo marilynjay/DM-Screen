@@ -49,7 +49,9 @@ input[type=number]{width:64px}
 .dbamt{font-family:var(--mono);font-weight:600;white-space:nowrap}
 .dbamt.hurt{color:var(--danger)}
 .dbamt.heal{color:var(--ok)}
-.dbhp{font-family:var(--mono);color:var(--dim);font-size:12px;white-space:nowrap}
+.dbhp{font-family:var(--mono);color:var(--dim);font-size:12px;white-space:nowrap;display:inline-block}
+.dbhp-tick{color:var(--danger);animation:hp-punch .55s ease}
+.dbhp-tickheal{color:var(--ok);animation:hp-punch .55s ease}
 .turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
   padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--ink);border-top:1px solid var(--line)}
@@ -1780,6 +1782,24 @@ function DrainHeart({ from, to, max }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return <HeartGauge pct={pct} title={`${to}/${max}`} />;
 }
+function TickHP({ from, to, max, heal }) {
+  const [v, setV] = useState(from);
+  const [ticking, setTicking] = useState(false);
+  useEffect(() => {
+    let iv;
+    const t0 = setTimeout(() => {
+      setTicking(true);
+      const steps = 12; let i = 0;
+      iv = setInterval(() => {
+        i++;
+        setV(Math.round(from + (to - from) * (i / steps)));
+        if (i >= steps) { clearInterval(iv); setTimeout(() => setTicking(false), 200); }
+      }, 45);
+    }, 300);
+    return () => { clearTimeout(t0); if (iv) clearInterval(iv); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <span className={`dbhp ${ticking ? (heal ? "dbhp-tickheal" : "dbhp-tick") : ""}`}>{v}/{max}</span>;
+}
 function DmgBanners({ banners }) {
   if (!banners.length) return null;
   return (
@@ -1790,8 +1810,8 @@ function DmgBanners({ banners }) {
             <div key={i} className="dbline">
               <DrainHeart from={ln.from} to={ln.to} max={ln.max} />
               <b className="dbname">{ln.name}</b>
-              <span className={`dbamt ${ln.heal ? "heal" : "hurt"}`}>{ln.heal ? "+" : "−"}{ln.amt}{ln.dtype ? ` ${ln.dtype}` : ""}</span>
-              <span className="dbhp">{ln.from}→{ln.to}/{ln.max}</span>
+              <span className={`dbamt ${ln.heal ? "heal" : "hurt"}`}>{ln.heal ? "+" : "−"}{ln.amt}</span>
+              <TickHP from={ln.from} to={ln.to} max={ln.max} heal={ln.heal} />
               {ln.dead ? <span className="chip bad">☠</span> : ln.unconscious ? <span className="chip bad">down</span> : ln.bloodied ? <span className="bloodtag">Bloodied</span> : null}
             </div>
           ))}
@@ -1801,7 +1821,10 @@ function DmgBanners({ banners }) {
   );
 }
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash }) {
+function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
+  // Reveal-sync mask: display pre-hit values until the roll animation announces
+  // the damage, so the roster doesn't spoil the result. Game state is already real.
+  if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
   const [menu, setMenu] = useState(false);
   const menuRef = useRef(null);
   const prevHp = useRef(c.hp);
@@ -4677,12 +4700,14 @@ export default function App() {
     : [];
 
   const [dmgBanners, setDmgBanners] = useState([]);
-  const bannerLine = (c, hpBefore, dtype) => {
+  const [hpHolds, setHpHolds] = useState({});
+  const bannerLine = (c, hpBefore) => {
     if (c.maxHp == null || hpBefore == null) return null; // HP untracked — no banner
     const delta = hpBefore - c.hp;
     if (delta === 0) return null;
     return {
-      name: c.name, amt: Math.abs(delta), heal: delta < 0, dtype: delta > 0 ? dtype || "" : "",
+      // total only — mixed-type attacks (slashing + acid) made a single label a lie
+      name: c.name, amt: Math.abs(delta), heal: delta < 0,
       from: hpBefore, to: c.hp, max: c.maxHp,
       dead: c.dead, unconscious: c.unconscious, bloodied: !c.dead && !c.unconscious && isBloodied(c),
     };
@@ -4763,6 +4788,7 @@ export default function App() {
       if (t && parts.length) {
         if (isHit === true) {
           const hpBefore = t.hp;
+          const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
           parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, opts.T || []));
           const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
           chips.push({ t: `${dmgStr} applied to ${t.name}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}`, k: "sgood" });
@@ -4775,7 +4801,15 @@ export default function App() {
           const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
           const flashAt = Math.round((chipDelays(chips).at(-1) + 0.5) * 1000); // after the last chip reveals — don't spoil the staged result
           setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
-          pushDmgBanner([bannerLine(t, hpBefore, parts.find((p) => p.dtype)?.dtype)], flashAt);
+          pushDmgBanner([bannerLine(t, hpBefore)], flashAt);
+          if (t.maxHp != null) { // roster shows pre-hit values until the reveal lands
+            const huid = t.uid;
+            setTimeout(() => setHpHolds((h) => ({ ...h, [huid]: snap })), 0);
+            setTimeout(() => setHpHolds((h) => {
+              if (h[huid]?.id !== snap.id) return h;
+              const n = { ...h }; delete n[huid]; return n;
+            }), flashAt);
+          }
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
         }
@@ -4910,7 +4944,7 @@ export default function App() {
           if (amt > 0 && c.maxHp != null) {
             const hp0 = c.hp;
             applyDamage(c, amt, ctx.dtype || null, L, T);
-            pushDmgBanner([bannerLine(c, hp0, ctx.dtype)], 250);
+            pushDmgBanner([bannerLine(c, hp0)], 250);
             if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
           } else if (amt > 0) note = "(HP untracked — apply at table)";
         }
@@ -5123,7 +5157,7 @@ export default function App() {
           if (gain > 0) applyHeal(atkC, gain, L);
         }
         setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`, id: Math.random() }), 0);
-        pushDmgBanner([bannerLine(t, hpBefore, parts.find((p) => p.dtype)?.dtype)], 150);
+        pushDmgBanner([bannerLine(t, hpBefore)], 150);
       });
       setResults((r) => {
         const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ applied", k: "sgood" } : ch));
@@ -5454,7 +5488,7 @@ export default function App() {
         const hp0 = c.hp;
         if (noSave) {
           let amt = dmgRoll ? dmgRoll.total : 0;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0, dtype)); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0)); }
           L.push(`<b>${c.name}</b> takes ${amt}${dtype ? ` ${dtype}` : ""} (no save)${c.dead ? " ☠" : c.unconscious ? " (down)" : ""}`);
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: amt, note: c.dead ? "☠" : c.unconscious ? "(down)" : "" });
           return;
@@ -5466,7 +5500,7 @@ export default function App() {
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0, dtype)); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0)); }
           if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
         }
         if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
@@ -5692,7 +5726,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`}>
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHolds[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
             ))}
           </div>
         </>
