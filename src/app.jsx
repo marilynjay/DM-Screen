@@ -2257,7 +2257,13 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
   const charmed = (attacker.conditions || []).some((cd) => /Charm/i.test(cd.name));
   const [showOthers, setShowOthers] = useState(charmed);
   const [proneFor, setProneFor] = useState(null);
-  const pick = (t, vsOverride) => onResolve({ uid: attacker.uid, ai: action.i, targetUid: t ? t.uid : null, vsOverride, la, opp });
+  // Phone taps bounce: the tap that opened this modal can echo ~100ms later and
+  // land on the overlay (instant dismiss) or a target row (attack nobody chose).
+  // Ignore picks and backdrop-dismissal for the first beat after opening.
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const safeClose = () => { if (armed()) onClose(); };
+  const pick = (t, vsOverride) => { if (!armed()) return; onResolve({ uid: attacker.uid, ai: action.i, targetUid: t ? t.uid : null, vsOverride, la, opp }); };
   const row = (t) => {
     const vs = vsState(t);
     const prone = vs === "adv*";
@@ -2281,7 +2287,7 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
     );
   };
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={safeClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{attacker.name} — {action.n} <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}>{fmtMod(action.hit)} to hit</span></h3>
         <div className="gs-target" style={{ cursor: "pointer" }} onClick={() => pick(null)}>
