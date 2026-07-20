@@ -3025,28 +3025,121 @@ function DeathSavesModal({ c, onRecord, onClose }) {
   );
 }
 
-function CustomMonsterForm({ onAdd, onClose }) {
-  const [f, setF] = useState({ name: "", count: 1, ac: 12, hp: 10, dex: 0, con: 0, side: "enemy", resist: "", immune: "", vuln: "", notes: "" });
-  const [acts, setActs] = useState([{ n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }]);
+const ABIL_FULL = { STR: "Strength", DEX: "Dexterity", CON: "Constitution", INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma" };
+const ABILS = Object.keys(ABIL_FULL);
+const CR_LABELS = [...CR_STEPS.map(([l]) => l), "22", "23", "24", "25", "26", "28", "30"];
+
+/* Prefill helpers: pull form-editable fields out of an existing statblock's save action,
+   falling back to parsing its description text the same way the resolvers do. */
+function saveRowFrom(a) {
+  const d = a.d || "";
+  const cond = (d.match(/ha(?:s|ve) the (\w+) condition/) || [])[1];
+  return {
+    orig: a, n: a.n,
+    ability: (a.save?.ability || "DEX").toUpperCase(), dc: a.save?.dc ?? 13,
+    dmg: a.dmg || (d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1] || "",
+    dtype: a.dtype || (d.match(/\)\s*(\w+) damage/) || [, ""])[1].toLowerCase(),
+    half: /Success:\s*Half/i.test(d), cond: CONDITIONS[cond] ? cond : "",
+    rech: !!a.rech,
+  };
+}
+
+function synthSaveText(r, dc) {
+  const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+  let d = `${ABIL_FULL[r.ability]} Saving Throw: DC ${dc}, each creature in the area.`;
+  const parts = [];
+  if (r.dmg.trim()) parts.push(`${Math.max(1, Math.round(avgOfFormula(r.dmg)))} (${r.dmg.trim()}) ${cap(r.dtype)} damage`);
+  if (r.cond) parts.push(`The target has the ${r.cond} condition until the end of its next turn`);
+  if (parts.length) d += ` Failure: ${parts.join(", and ")}.`;
+  if (r.dmg.trim() && r.half) d += " Success: Half damage.";
+  return d;
+}
+
+function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create" }) {
+  const src = initial || null;
+  const editing = mode === "edit";
+  const initAtkN = src ? parseAtkBudget(src.multi, src.actions || []).max : 1;
+  const [f, setF] = useState({
+    name: src?.name || "", count: 1, side: "enemy", notes: "",
+    ac: src?.ac ?? 12, hp: src?.hp ?? 10, cr: src?.cr || "", atkN: initAtkN,
+    str: src?.mods?.str ?? 0, dex: src?.mods?.dex ?? 0, con: src?.mods?.con ?? 0,
+    int: src?.mods?.int ?? 0, wis: src?.mods?.wis ?? 0, cha: src?.mods?.cha ?? 0,
+    resist: (src?.resist || []).join(", "), immune: (src?.immune || []).join(", "), vuln: (src?.vuln || []).join(", "),
+  });
+  const [acts, setActs] = useState(() => {
+    const rows = (src?.actions || []).filter((a) => a.kind === "atk").map((a) => ({ orig: a, n: a.n, hit: a.hit ?? 0, dmg: a.dmg || "", dtype: a.dtype || "slashing" }));
+    return rows.length ? rows : [{ n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }];
+  });
+  const [svActs, setSvActs] = useState(() => (src?.actions || []).filter((a) => a.kind === "save").map(saveRowFrom));
   const [saveToo, setSaveToo] = useState(true);
   const set = (k, v) => setF({ ...f, [k]: v });
   const setAct = (i, k, v) => setActs(acts.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
+  const setSv = (i, k, v) => setSvActs(svActs.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   const csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
+  const num = (v, d = 0) => { const n = parseInt(v, 10); return isNaN(n) ? d : n; };
+  const otherActs = (src?.actions || []).filter((a) => a.kind !== "atk" && a.kind !== "save");
+
+  const buildSb = () => {
+    const name = f.name.trim();
+    const atkActions = acts.filter((a) => a.n.trim()).map((a) => ({ ...(a.orig || {}), n: a.n.trim(), kind: "atk", hit: num(a.hit), dmg: a.dmg, dtype: a.dtype }));
+    const saveActions = svActs.filter((r) => r.n.trim()).map((r) => {
+      const dc = num(r.dc, 13);
+      const a = { ...(r.orig || {}), n: r.n.trim(), kind: "save", save: { ability: r.ability, dc } };
+      if (r.dmg.trim()) { a.dmg = r.dmg.trim(); a.dtype = r.dtype; } else { delete a.dmg; delete a.dtype; }
+      if (r.rech) a.rech = r.orig?.rech || 5; else delete a.rech;
+      if (!r.orig) a.d = synthSaveText(r, dc);
+      return a;
+    });
+    const n = Math.max(1, Math.min(6, num(f.atkN, 1)));
+    let multi = src?.multi || null;
+    if (n !== initAtkN) multi = n > 1 ? `The ${name.toLowerCase() || "creature"} makes ${n} attacks.` : null;
+    const sb = {
+      ...(src || {}), name, cr: f.cr || null, ac: num(f.ac, 10), hp: Math.max(1, num(f.hp, 1)),
+      mods: { str: num(f.str), dex: num(f.dex), con: num(f.con), int: num(f.int), wis: num(f.wis), cha: num(f.cha) },
+      resist: csv(f.resist), immune: csv(f.immune), vuln: csv(f.vuln),
+      actions: [...atkActions, ...saveActions, ...otherActs], multi,
+    };
+    if (src && sb.hp !== src.hp) delete sb.hpF; // edited flat HP invalidates the roll formula
+    return sb;
+  };
+
+  const carried = [];
+  if (src?.traits?.length) carried.push(`${src.traits.length} trait${src.traits.length > 1 ? "s" : ""}`);
+  if (src?.bonus?.length) carried.push("bonus actions");
+  if (src?.reactions?.length) carried.push("reactions");
+  if (src?.legendary) carried.push("legendary actions");
+  if (otherActs.length) carried.push(otherActs.map((a) => a.n).join(", "));
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Custom monster</h3>
+        <h3>{editing ? "Edit monster" : mode === "clone" ? "Clone & tweak" : "Custom monster"}</h3>
         <div className="frow"><label>Name</label><input type="text" value={f.name} onChange={(e) => set("name", e.target.value)} autoFocus /></div>
         <div className="grid2">
-          <div className="frow"><label>Count</label><input type="number" value={f.count} min={1} max={20} onChange={(e) => set("count", e.target.value)} /></div>
-          <div className="frow"><label>Side</label>
-            <select value={f.side} onChange={(e) => set("side", e.target.value)}>
-              <option value="enemy">Enemy</option><option value="ally">Ally / NPC</option>
-            </select></div>
+          {!editing && (<>
+            <div className="frow"><label>Count</label><input type="number" value={f.count} min={1} max={20} onChange={(e) => set("count", e.target.value)} /></div>
+            <div className="frow"><label>Side</label>
+              <select value={f.side} onChange={(e) => set("side", e.target.value)}>
+                <option value="enemy">Enemy</option><option value="ally">Ally / NPC</option>
+              </select></div>
+          </>)}
           <div className="frow"><label>AC</label><input type="number" value={f.ac} onChange={(e) => set("ac", e.target.value)} /></div>
           <div className="frow"><label>HP</label><input type="number" value={f.hp} onChange={(e) => set("hp", e.target.value)} /></div>
-          <div className="frow"><label>DEX mod</label><input type="number" value={f.dex} onChange={(e) => set("dex", e.target.value)} /></div>
-          <div className="frow"><label>CON mod</label><input type="number" value={f.con} onChange={(e) => set("con", e.target.value)} /></div>
+          <div className="frow"><label title="Used by encounter balancing and XP math">CR</label>
+            <select value={f.cr} onChange={(e) => set("cr", e.target.value)}>
+              <option value="">—</option>
+              {CR_LABELS.map((l) => (<option key={l} value={l}>{l}</option>))}
+            </select></div>
+          <div className="frow"><label title="How many attack rolls it gets per turn (Multiattack)">Attacks/turn</label><input type="number" min={1} max={6} value={f.atkN} onChange={(e) => set("atkN", e.target.value)} /></div>
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Ability modifiers (drive saves & initiative)</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6, marginBottom: 6 }}>
+          {["str", "dex", "con", "int", "wis", "cha"].map((k) => (
+            <label key={k} style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", textAlign: "center", letterSpacing: ".06em" }}>
+              {k}
+              <input type="number" value={f[k]} onChange={(e) => set(k, e.target.value)} style={{ width: "100%", padding: "6px 2px", textAlign: "center", display: "block", marginTop: 2 }} />
+            </label>
+          ))}
         </div>
         <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold…" value={f.resist} onChange={(e) => set("resist", e.target.value)} /></div>
         <div className="frow"><label>Immunities</label><input type="text" placeholder="poison…" value={f.immune} onChange={(e) => set("immune", e.target.value)} /></div>
@@ -3060,29 +3153,60 @@ function CustomMonsterForm({ onAdd, onClose }) {
             <select value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
               {DTYPES.map((t) => (<option key={t}>{t}</option>))}
             </select>
+            <button className="btn small ghost" title="Remove attack" onClick={() => setActs(acts.filter((_, j) => j !== i))}>✕</button>
           </div>
         ))}
         <button className="btn small ghost" onClick={() => setActs([...acts, { n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }])}>+ another attack</button>
-        <div className="frow"><label>Notes</label><input type="text" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></div>
-        <div className="frow"><label style={{ minWidth: 0 }}><input type="checkbox" checked={saveToo} onChange={(e) => setSaveToo(e.target.checked)} /> Save to my bestiary</label></div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Save abilities — breath weapons, auras, stings (optional)</div>
+        {svActs.map((r, i) => (
+          <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
+            <div className="frow">
+              <input type="text" placeholder="Name (e.g. Fire Breath)" style={{ flex: 1 }} value={r.n} onChange={(e) => setSv(i, "n", e.target.value)} />
+              <button className="btn small ghost" title="Remove ability" onClick={() => setSvActs(svActs.filter((_, j) => j !== i))}>✕</button>
+            </div>
+            <div className="frow" style={{ flexWrap: "wrap" }}>
+              <label style={{ minWidth: 0 }}>DC</label>
+              <input type="number" value={r.dc} onChange={(e) => setSv(i, "dc", e.target.value)} />
+              <select value={r.ability} onChange={(e) => setSv(i, "ability", e.target.value)}>
+                {ABILS.map((a2) => (<option key={a2}>{a2}</option>))}
+              </select>
+              <input type="text" placeholder="4d6 (blank = none)" style={{ width: 92, flex: "none" }} value={r.dmg} onChange={(e) => setSv(i, "dmg", e.target.value)} />
+              <select value={r.dtype} onChange={(e) => setSv(i, "dtype", e.target.value)}>
+                {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+              </select>
+            </div>
+            <div className="frow" style={{ flexWrap: "wrap" }}>
+              <select value={r.cond} onChange={(e) => setSv(i, "cond", e.target.value)}>
+                <option value="">no condition on fail</option>
+                {Object.keys(CONDITIONS).map((cn) => (<option key={cn} value={cn}>{cn} on fail</option>))}
+              </select>
+              <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.half} onChange={(e) => setSv(i, "half", e.target.checked)} /> half on save</label>
+              <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.rech} onChange={(e) => setSv(i, "rech", e.target.checked)} /> recharge 5–6</label>
+            </div>
+          </div>
+        ))}
+        <button className="btn small ghost" onClick={() => setSvActs([...svActs, { n: "", ability: "DEX", dc: 13, dmg: "", dtype: "fire", half: true, cond: "", rech: false }])}>+ save ability</button>
+        {carried.length > 0 && (
+          <div className="trait" style={{ marginTop: 8, color: "var(--faint)", fontSize: 11 }}>
+            Carried over unchanged: {carried.join(" · ")}.
+          </div>
+        )}
+        {!editing && (<>
+          <div className="frow" style={{ marginTop: 6 }}><label>Notes</label><input type="text" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></div>
+          <div className="frow"><label style={{ minWidth: 0 }}><input type="checkbox" checked={saveToo} onChange={(e) => setSaveToo(e.target.checked)} /> Save to my bestiary</label></div>
+        </>)}
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!f.name}
-            onClick={() => onAdd({
-              name: f.name, ac: parseInt(f.ac, 10) || 10, hp: parseInt(f.hp, 10) || 1,
-              mods: { dex: parseInt(f.dex, 10) || 0, con: parseInt(f.con, 10) || 0 },
-              resist: csv(f.resist), immune: csv(f.immune), vuln: csv(f.vuln),
-              actions: acts.filter((a) => a.n).map((a) => ({ n: a.n, kind: "atk", hit: parseInt(a.hit, 10) || 0, dmg: a.dmg, dtype: a.dtype })),
-            }, parseInt(f.count, 10) || 1, f.side, f.notes, saveToo)}>
-            Add
-          </button>
+          {editing
+            ? <button className="btn primary" disabled={!f.name.trim()} onClick={() => onSaveEdit(buildSb())}>Save changes</button>
+            : <button className="btn primary" disabled={!f.name.trim()} onClick={() => onAdd(buildSb(), num(f.count, 1), f.side, f.notes, saveToo)}>Add</button>}
         </div>
       </div>
     </div>
   );
 }
 
-function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onClose }) {
+function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
   const [q, setQ] = useState("");
   const [count, setCount] = useState(1);
   const [rollHp, setRollHp] = useState(false);
@@ -3132,6 +3256,9 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onClose }) {
                 <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                   title="Delete from my bestiary"
                   onClick={(e) => { e.stopPropagation(); onDeleteCustom(b.name); }}>✕</button>
+                <button className="btn small ghost" style={{ position: "absolute", bottom: 2, right: 2, padding: "0 5px" }}
+                  title="Edit this monster"
+                  onClick={(e) => { e.stopPropagation(); onEdit(b); }}>✎</button>
               </span>
             ))}
           </div>
@@ -3142,9 +3269,14 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onClose }) {
             <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD — {builtIn.length} match{builtIn.length === 1 ? "" : "es"}</div>
             <div className="mlist">
               {builtIn.map((b) => (
-                <button key={b.name} className="btn" onClick={() => onAdd(b, count, rollHp)}>
-                  {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
-                </button>
+                <span key={b.name} style={{ position: "relative" }}>
+                  <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
+                    {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                  </button>
+                  <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
+                    title="Clone & tweak — start a custom monster from this statblock"
+                    onClick={(e) => { e.stopPropagation(); onClone(b); }}>⧉</button>
+                </span>
               ))}
             </div>
           </>
@@ -3163,9 +3295,14 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onClose }) {
                   {open && (
                     <div className="mlist" style={{ marginBottom: 6 }}>
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
-                        <button key={b.name} className="btn" onClick={() => onAdd(b, count, rollHp)}>
-                          {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
-                        </button>
+                        <span key={b.name} style={{ position: "relative" }}>
+                          <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
+                            {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
+                          </button>
+                          <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
+                            title="Clone & tweak — start a custom monster from this statblock"
+                            onClick={(e) => { e.stopPropagation(); onClone(b); }}>⧉</button>
+                        </span>
                       ))}
                     </div>
                   )}
@@ -4274,6 +4411,14 @@ export default function App() {
     });
     if (saveToo) { upsertBestiary([sb]); pushToasts([{ kind: "good", text: `"${sb.name}" saved to your bestiary.` }]); }
   };
+  const saveEditedMonster = (sb, originalName) => {
+    const list = bestRef.current.filter((x) => x.name.toLowerCase() !== originalName.toLowerCase());
+    const i = list.findIndex((x) => x.name.toLowerCase() === sb.name.toLowerCase());
+    if (i >= 0) list[i] = sb; else list.push(sb);
+    list.sort((a, b) => a.name.localeCompare(b.name));
+    saveMyBestiary(list);
+    pushToasts([{ kind: "good", text: `"${sb.name}" updated in your bestiary.` }]);
+  };
   const addPlaytest = () => mutate((d, L) => {
     [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
       const p = makePlayer(pp);
@@ -4830,11 +4975,18 @@ export default function App() {
       {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} onApply={applyDamageModal} onClose={() => setModal(null)} />}
       {modal?.type === "save" && modalC && <SaveRollModal c={modalC} rolled={modal.rolled} onRoll={applySaveRoll} onClose={() => setModal(null)} />}
       {modal?.type === "cond" && <ConditionModal state={state} presetUid={modal.uid} onAdd={applyCondModal} onClose={() => setModal(null)} />}
-      {modal?.type === "custom" && <CustomMonsterForm onAdd={(sb, count, side, notes, saveToo) => { addCustom(sb, count, side, notes, saveToo); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal?.type === "custom" && <CustomMonsterForm
+        initial={modal.edit || modal.from || null}
+        mode={modal.edit ? "edit" : modal.from ? "clone" : "create"}
+        onAdd={(sb, count, side, notes, saveToo) => { addCustom(sb, count, side, notes, saveToo); setModal(null); }}
+        onSaveEdit={(sb) => { saveEditedMonster(sb, modal.edit.name); setModal({ type: "bestiary" }); }}
+        onClose={() => setModal(modal.edit || modal.from ? { type: "bestiary" } : null)} />}
       {modal?.type === "bestiary" && (
         <BestiaryModal custom={myBestiary} onAdd={(sb, count, rollHp) => { addFromBestiary(sb, count, rollHp); setModal(null); }}
           onDeleteCustom={(name) => saveMyBestiary(myBestiary.filter((x) => x.name !== name))}
           onImport={(arr) => upsertBestiary(arr)}
+          onEdit={(b) => setModal({ type: "custom", edit: b })}
+          onClone={(b) => setModal({ type: "custom", from: b })}
           onClose={() => setModal(null)} />
       )}
       {modal?.type === "slots" && (
