@@ -3175,7 +3175,7 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
           </select>
         </div>
         {name === "__custom" && (
-          <div className="frow"><label>Name</label><input type="text" value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus /></div>
+          <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus /></div>
         )}
         <div className="frow">
           <label>Duration (rounds)</label>
@@ -3320,7 +3320,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{editing ? "Edit monster" : mode === "clone" ? "Clone & tweak" : "Custom monster"}</h3>
-        <div className="frow"><label>Name</label><input type="text" value={f.name} onChange={(e) => set("name", e.target.value)} autoFocus /></div>
+        <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={f.name} onChange={(e) => set("name", e.target.value)} autoFocus /></div>
         <div className="grid2">
           {!editing && (<>
             <div className="frow"><label>Count</label><input type="number" value={f.count} min={1} max={20} onChange={(e) => set("count", e.target.value)} /></div>
@@ -3353,7 +3353,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
         <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Attacks (optional)</div>
         {acts.map((a, i) => (
           <div className="frow" key={i}>
-            <input type="text" placeholder="Name" style={{ width: 110, flex: "none" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
+            <input type="text" placeholder="Name" autoComplete="off" autoCorrect="off" spellCheck={false} style={{ width: 110, flex: "none" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
             <input type="number" placeholder="+hit" value={a.hit} onChange={(e) => setAct(i, "hit", e.target.value)} />
             <input type="text" placeholder="2d6+3" style={{ width: 80, flex: "none" }} value={a.dmg} onChange={(e) => setAct(i, "dmg", e.target.value)} />
             <select value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
@@ -3367,7 +3367,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
         {svActs.map((r, i) => (
           <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
             <div className="frow">
-              <input type="text" placeholder="Name (e.g. Fire Breath)" style={{ flex: 1 }} value={r.n} onChange={(e) => setSv(i, "n", e.target.value)} />
+              <input type="text" placeholder="Name (e.g. Fire Breath)" autoComplete="off" autoCorrect="off" spellCheck={false} style={{ flex: 1 }} value={r.n} onChange={(e) => setSv(i, "n", e.target.value)} />
               <button className="btn small ghost" title="Remove ability" onClick={() => setSvActs(svActs.filter((_, j) => j !== i))}>✕</button>
             </div>
             <div className="frow" style={{ flexWrap: "wrap" }}>
@@ -3718,7 +3718,7 @@ function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSav
         <h3>Save / load</h3>
         {!hasStorage() && <div className="trait" style={{ color: "var(--danger)" }}>Storage isn't available in this environment — saves only work inside Claude.</div>}
         <div className="frow">
-          <input type="text" placeholder="Name…" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
+          <input type="text" placeholder="Name…" autoComplete="off" autoCorrect="off" spellCheck={false} value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
         </div>
         <div className="frow">
           <button className="btn small primary" disabled={!name.trim()} onClick={async () => { await onSave(clean()); refresh(); setName(""); }}>Save full encounter</button>
@@ -4000,7 +4000,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
-            <input type="text" placeholder="Name" value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
+            <input type="text" placeholder="Character" autoComplete="off" autoCorrect="off" spellCheck={false} value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
             <input type="number" placeholder="–" title="Armor Class (optional)" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
             <input type="number" placeholder="–" title="Max HP (optional) — fill in to track their HP in the app" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
             <input type="number" placeholder="–" title="Passive Perception (optional)" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} />
@@ -4015,7 +4015,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ ...FIELD, width: 64 }} />
       </div>
       <div className="frow" style={{ marginTop: 6 }}>
-        <input type="text" placeholder="Team name (optional — e.g. Tuesday group)" value={teamName} onChange={(e) => setTeamName(e.target.value)} title="Handy if you run more than one table" style={{ ...FIELD, flex: 1, minWidth: 0, boxSizing: "border-box" }} />
+        <input type="text" placeholder="Team name (optional — e.g. Tuesday group)" autoComplete="off" autoCorrect="off" spellCheck={false} value={teamName} onChange={(e) => setTeamName(e.target.value)} title="Handy if you run more than one table" style={{ ...FIELD, flex: 1, minWidth: 0, boxSizing: "border-box" }} />
       </div>
     </>
   );
@@ -4157,7 +4157,7 @@ function PromptModal({ title, fields, submitLabel, onSubmit, onClose, extraButto
           <div className="frow" key={f.key}>
             <label>{f.label}</label>
             <input
-              type={f.type || "text"} autoFocus={i === 0} placeholder={f.placeholder || ""}
+              type={f.type || "text"} autoFocus={i === 0} placeholder={f.placeholder || ""} autoComplete="off" autoCorrect="off" spellCheck={false}
               value={vals[f.key]} onChange={(e) => setVals({ ...vals, [f.key]: e.target.value })}
               onKeyDown={(e) => e.key === "Enter" && onSubmit(vals)}
               style={f.type === "number" ? {} : { flex: 1 }}
@@ -4205,7 +4205,7 @@ function AddAttackModal({ c, onAdd, onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>New attack — {c.name}</h3>
-        <div className="frow"><label>Name</label><input type="text" placeholder="Silvered Spear" value={a.n} onChange={(e) => set("n", e.target.value)} autoFocus /></div>
+        <div className="frow"><label>Name</label><input type="text" placeholder="Silvered Spear" autoComplete="off" autoCorrect="off" spellCheck={false} value={a.n} onChange={(e) => set("n", e.target.value)} autoFocus /></div>
         <div className="grid2">
           <div className="frow"><label>To hit</label><input type="number" value={a.hit} onChange={(e) => set("hit", e.target.value)} /></div>
           <div className="frow"><label>Damage</label><input type="text" style={{ width: 80 }} value={a.dmg} onChange={(e) => set("dmg", e.target.value)} /></div>
@@ -6341,7 +6341,7 @@ export default function App() {
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>Add player / ally</h3>
-            <div className="frow"><label>Name</label><input type="text" value={pName} onChange={(e) => setPName(e.target.value)} autoFocus /></div>
+            <div className="frow"><label>Character</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={pName} onChange={(e) => setPName(e.target.value)} autoFocus /></div>
             <div className="frow"><label>Initiative (opt.)</label><input type="number" value={pInit} onChange={(e) => setPInit(e.target.value)} placeholder="later is fine" /></div>
             <div className="frow"><label>AC (optional)</label><input type="number" value={pAc} onChange={(e) => setPAc(e.target.value)} /></div>
             <div className="frow"><label>HP (optional)</label><input type="number" value={pHp} onChange={(e) => setPHp(e.target.value)} /></div>
