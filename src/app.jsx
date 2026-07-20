@@ -355,6 +355,24 @@ function rollFormula(f) {
   return { total: Math.max(0, sum), mod, dice: rolls.map((v) => ({ s: d, v })), text: `${rolls.join("+")}(${n}d${d})${modTxt} = ${sum}` };
 }
 
+/* Build a roll result from DM-entered die values (manual dice mode) —
+   same shape rollFormula returns, so everything downstream is identical. */
+function valuesRoll(formula, values) {
+  const s = String(formula ?? "").replace(/\s/g, "");
+  if (/^-?\d+$/.test(s)) return { total: parseInt(s, 10), text: `${s}` };
+  const m = s.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  if (!m) return null;
+  const d = parseInt(m[2], 10), mod = parseInt(m[3] || "0", 10);
+  const rolls = values || [];
+  const sum = rolls.reduce((a2, b) => a2 + b, 0) + mod;
+  const modTxt = mod ? (mod > 0 ? `+${mod}` : `${mod}`) : "";
+  return { total: Math.max(0, sum), mod, dice: rolls.map((v) => ({ s: d, v })), text: `${rolls.join("+")}(${rolls.length}d${d})${modTxt} = ${sum}` };
+}
+function diceSpec(f) {
+  const m = String(f ?? "").replace(/\s/g, "").match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  return m ? { n: parseInt(m[1] || "1", 10), d: parseInt(m[2], 10), mod: parseInt(m[3] || "0", 10) } : null;
+}
+
 // d20 with modifier + advantage mode ('none'|'adv'|'dis')
 function d20(mod, advMode = "none") {
   const a = ri(20), b = ri(20);
@@ -1672,6 +1690,7 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
    it from the persisted animation-speed setting during render, before children. */
 const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
+const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -3543,6 +3562,77 @@ function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSav
   );
 }
 
+/* Manual dice mode: the DM rolled physical dice — collect the results with one
+   tap per die and feed them through the normal attack pipeline. */
+function ManualRollModal({ c, a, t, onConfirm, onClose }) {
+  const [d20v, setD20v] = useState(null);
+  const [vals, setVals] = useState([]);
+  const dmgSpec = diceSpec(a.dmg);
+  const extraSpec = a.extra && !extraNeedsAdv(a) ? diceSpec(a.extra) : null;
+  const crit = d20v === 20;
+  const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const miss = d20v != null && effAc != null && d20v !== 20 && (d20v === 1 || d20v + (a.hit || 0) < effAc);
+  const need = [];
+  if (d20v != null && !miss) {
+    if (dmgSpec) for (let i = 0; i < dmgSpec.n * (crit ? 2 : 1); i++) need.push({ s: dmgSpec.d, lbl: `damage d${dmgSpec.d}`, extra: false, critDie: i >= dmgSpec.n });
+    if (extraSpec) for (let i = 0; i < extraSpec.n * (crit ? 2 : 1); i++) need.push({ s: extraSpec.d, lbl: `${a.extraType || "extra"} d${extraSpec.d}`, extra: true, critDie: i >= extraSpec.n });
+  }
+  const cur = need[vals.length];
+  const done = d20v != null && (miss || vals.length >= need.length);
+  const grid = (sides, onPick) => (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${sides > 12 ? 5 : sides > 8 ? 4 : sides}, 1fr)`, gap: 6, margin: "6px 0" }}>
+      {Array.from({ length: sides }, (_, i) => i + 1).map((v) => (
+        <button key={v} className="btn small" style={{ padding: "9px 0", textAlign: "center", fontFamily: "var(--mono)" }} onClick={() => onPick(v)}>{v}</button>
+      ))}
+    </div>
+  );
+  const confirm = () => {
+    const nd = dmgSpec ? dmgSpec.n : 0;
+    const ndc = crit && dmgSpec ? dmgSpec.n : 0;
+    const ne = extraSpec ? extraSpec.n : 0;
+    onConfirm({
+      d20: d20v,
+      dmg: vals.slice(0, nd),
+      dmgCrit: vals.slice(nd, nd + ndc),
+      extra: vals.slice(nd + ndc, nd + ndc + ne),
+      extraCrit: vals.slice(nd + ndc + ne),
+    });
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🎲 Your roll — {a.n}{t ? ` vs ${t.name}` : ""}</h3>
+        <div className="trait" style={{ marginBottom: 4 }}>
+          d20 to hit ({fmtMod(a.hit || 0)}{effAc != null ? ` vs AC ${effAc}` : ""}). If you rolled with advantage or disadvantage, enter the die you kept.
+        </div>
+        {d20v == null
+          ? grid(20, (v) => { setD20v(v); setVals([]); })
+          : <div className="frow">
+              <span className={`chip ${d20v === 20 ? "crit" : d20v === 1 ? "fumble" : ""}`}>{d20v === 20 ? "NAT 20 — CRIT!" : d20v === 1 ? "nat 1…" : `d20: ${d20v} → ${d20v + (a.hit || 0)} to hit`}</span>
+              <button className="btn small ghost" onClick={() => { setD20v(null); setVals([]); }}>change</button>
+            </div>}
+        {miss && <div className="trait" style={{ marginTop: 6 }}>Miss vs AC {effAc} — no damage dice needed.</div>}
+        {cur && (<>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "8px 0 0" }}>
+            {cur.lbl}{cur.critDie ? " — crit bonus die" : ""} · die {vals.length + 1} of {need.length}
+          </div>
+          {grid(cur.s, (v) => setVals([...vals, v]))}
+        </>)}
+        {vals.length > 0 && (
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            {vals.map((v, i) => (<span key={i} className="chip">{v}</span>))}
+            <button className="btn small ghost" onClick={() => setVals(vals.slice(0, -1))}>⌫ undo</button>
+          </div>
+        )}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!done} onClick={confirm}>Roll it</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InitTieModal({ groups, onConfirm }) {
   const [order, setOrder] = useState(() => groups.map((g) => g.members.map((m) => ({ uid: m.uid, name: m.name, type: m.type }))));
   const move = (gi, i, dir) => setOrder(order.map((g, j) => {
@@ -4150,9 +4240,12 @@ export default function App() {
   const [myItems, setMyItems] = useState([]);
   const [animSpeed, setAnimSpeedState] = useState("medium");
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
+  const [manualDice, setManualDiceState] = useState(false);
+  const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   // assign during render so components created in this same pass read the fresh values
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
+  MANUAL.on = manualDice;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
@@ -4282,6 +4375,7 @@ export default function App() {
       if (Array.isArray(its)) setMyItems(its);
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
+      setManualDiceState(!!(await stGet("dm5e:manualDice")));
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -4320,7 +4414,10 @@ export default function App() {
         c.atkUsedBy = c.atkUsedBy || {};
         c.atkUsedBy[a.n] = (c.atkUsedBy[a.n] || 0) + 1;
       }
-      const atk = d20(a.hit, mode);
+      const manual = opts.manual || null;
+      const atk = manual
+        ? { nat: manual.d20, total: manual.d20 + (a.hit || 0), crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${a.hit ? fmtMod(a.hit) : ""} = ${manual.d20 + (a.hit || 0)} (your roll)` }
+        : d20(a.hit, mode);
       const both = atk.adv !== "none";
       const d20dice = both
         ? [{ s: 20, v: atk.a, cls: atk.a === 20 ? "critd" : atk.a === 1 ? "fumbled" : "plain", dropped: atk.a !== atk.nat },
@@ -4346,17 +4443,21 @@ export default function App() {
       };
       let dmgTxt = "";
       const parts = [];
-      const dmgRoll = isHit === false ? null : rollFormula(a.dmg);
+      const dmgRoll = isHit === false ? null : manual ? valuesRoll(a.dmg, manual.dmg) : rollFormula(a.dmg);
       if (dmgRoll) {
-        const critRoll = atk.crit ? rollFormula(String(a.dmg).replace(/([+-]\d+)\s*$/, "")) : null;
+        const critRoll = !atk.crit ? null
+          : manual ? (manual.dmgCrit?.length ? valuesRoll(String(a.dmg).replace(/([+-]\d+)\s*$/, ""), manual.dmgCrit) : null)
+          : rollFormula(String(a.dmg).replace(/([+-]\d+)\s*$/, ""));
         const chip = dmgChip(dmgRoll, critRoll, a.dtype || "damage");
         chips.push(chip);
         parts.push({ amt: chip.total, dtype: a.dtype || null });
         dmgTxt = `${chip.total} ${a.dtype || ""}`;
         if (a.extra && (!extraNeedsAdv(a) || atk.adv === "adv")) {
-          const ex = rollFormula(a.extra);
+          const ex = manual ? (manual.extra?.length ? valuesRoll(a.extra, manual.extra) : null) : rollFormula(a.extra);
           if (ex) {
-            const exCrit = atk.crit ? rollFormula(a.extra) : null;
+            const exCrit = !atk.crit ? null
+              : manual ? (manual.extraCrit?.length ? valuesRoll(a.extra, manual.extraCrit) : null)
+              : rollFormula(a.extra);
             const echip = dmgChip(ex, exCrit, a.extraType);
             chips.push(echip);
             parts.push({ amt: echip.total, dtype: a.extraType || null });
@@ -4385,6 +4486,31 @@ export default function App() {
       }
       setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
       L.push(`<b>${c.name}</b> — ${a.n}${t ? ` vs <b>${t.name}</b>` : ""}${mode !== c.advMode ? ` (${mode === "none" ? "adv+dis cancel" : mode.toUpperCase()})` : ""}: ${atk.text} to hit${atk.crit ? " (CRIT)" : ""}${isHit != null ? ` — <b>${isHit ? "HIT" : "MISS"}</b> vs AC ${effAc}` : ""}${dmgTxt ? `, damage ${dmgTxt}` : ""}`);
+  };
+
+  /* All attack paths funnel here. Resource spends (legendary action, reaction)
+     happen at roll time, so cancelling the manual-dice dialog costs nothing. */
+  const performAttack = (p, manual) => {
+    mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === p.uid); if (!c) return;
+      if (p.la) {
+        const tk = `${d.round}:${d.activeUid}`;
+        if (!c.legendary || c.legendary.rem <= 0 || c.laTurnKey === tk) return;
+        c.legendary.rem -= 1; c.laTurnKey = tk;
+        L.push(`<b>${c.name}</b> spends a legendary action (${c.legendary.rem} left this round).`);
+      }
+      if (p.opp) {
+        if (!c.reaction) return;
+        c.reaction = false;
+        L.push(`<b>${c.name}</b> takes an <b>opportunity attack</b> (reaction spent):`);
+      }
+      attackRollCore(d, L, p.uid, p.ai, { targetUid: p.targetUid, vsOverride: p.vsOverride, T, countAtk: !p.la && !p.opp && c.type === "monster", manual });
+    });
+  };
+  const maybeManualAttack = (p) => {
+    const c = stateRef.current.combatants.find((x) => x.uid === p.uid);
+    if (MANUAL.on && c?.type === "monster") setModal({ type: "manual-roll", p });
+    else performAttack(p);
   };
 
   /* ---------- api passed to components ---------- */
@@ -4531,13 +4657,7 @@ export default function App() {
       if (!c || !c.reaction) return;
       const opp = targetCands(st, c).filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
       if (opp.some(targetWorth)) setModal({ type: "target-pick", uid, ai, opp: true });
-      else mutate((d, L, T) => {
-        const cc = d.combatants.find((x) => x.uid === uid);
-        if (!cc || !cc.reaction) return;
-        cc.reaction = false;
-        L.push(`<b>${cc.name}</b> takes an <b>opportunity attack</b> (reaction spent):`);
-        attackRollCore(d, L, uid, ai, { T });
-      });
+      else maybeManualAttack({ uid, ai, opp: true });
     },
     confirmUse: (uid, kind, key) => setModal({ type: "use-confirm", uid, kind, key }),
     spendSpellUse: (uid, k) => mutate((d, L) => {
@@ -4681,25 +4801,11 @@ export default function App() {
       const opp = cands.filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
       if (c.type === "monster" && (atkLeft(c) <= 0 || atkNameLeft(c, c.actions[ai].n) <= 0)) return;
       if (opp.some(targetWorth)) setModal({ type: "target-pick", uid, ai });
-      else mutate((d, L, T) => attackRollCore(d, L, uid, ai, { T, countAtk: c.type === "monster" }));
+      else maybeManualAttack({ uid, ai });
     },
-    resolveAttack: ({ uid, ai, targetUid, vsOverride, la, opp }) => {
+    resolveAttack: (p) => {
       setModal(null);
-      mutate((d, L, T) => {
-        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
-        if (la) {
-          const tk = `${d.round}:${d.activeUid}`;
-          if (!c.legendary || c.legendary.rem <= 0 || c.laTurnKey === tk) return;
-          c.legendary.rem -= 1; c.laTurnKey = tk;
-          L.push(`<b>${c.name}</b> spends a legendary action (${c.legendary.rem} left this round).`);
-        }
-        if (opp) {
-          if (!c.reaction) return;
-          c.reaction = false;
-          L.push(`<b>${c.name}</b> takes an <b>opportunity attack</b> (reaction spent):`);
-        }
-        attackRollCore(d, L, uid, ai, { targetUid, vsOverride, T, countAtk: !la && !opp && c.type === "monster" });
-      });
+      maybeManualAttack(p);
     },
     applyChipParts: (resKey, chipId, targetUid, parts) => {
       mutate((d, L, T) => {
@@ -4730,14 +4836,7 @@ export default function App() {
       if (!c?.legendary || c.legendary.rem <= 0) return;
       const opp = targetCands(st, c).filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
       if (opp.some(targetWorth)) setModal({ type: "target-pick", uid, ai, la: true });
-      else mutate((d, L, T) => {
-        const cc = d.combatants.find((x) => x.uid === uid);
-        const tk = `${d.round}:${d.activeUid}`;
-        if (!cc?.legendary || cc.legendary.rem <= 0 || cc.laTurnKey === tk) return;
-        cc.legendary.rem -= 1; cc.laTurnKey = tk;
-        L.push(`<b>${cc.name}</b> spends a legendary action (${cc.legendary.rem} left this round).`);
-        attackRollCore(d, L, uid, ai, { T });
-      });
+      else maybeManualAttack({ uid, ai, la: true });
     },
 
 
@@ -5254,7 +5353,7 @@ export default function App() {
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
-              <button onClick={() => setModal({ type: "anim" })}>✨ Animations…</button>
+              <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
@@ -5447,10 +5546,28 @@ export default function App() {
       {modal?.type === "init-ties" && (
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
       )}
+      {modal?.type === "manual-roll" && (() => {
+        const mc = state.combatants.find((x) => x.uid === modal.p.uid);
+        const ma = mc?.actions?.[modal.p.ai];
+        const mt = modal.p.targetUid ? state.combatants.find((x) => x.uid === modal.p.targetUid) : null;
+        if (!mc || !ma) return null;
+        return <ManualRollModal c={mc} a={ma} t={mt}
+          onConfirm={(manual) => { setModal(null); performAttack(modal.p, manual); }}
+          onClose={() => setModal(null)} />;
+      })()}
       {modal?.type === "anim" && (
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>✨ Animations</h3>
+            <h3>🎲 Dice & animations</h3>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>Who rolls for the monsters?</div>
+            {[[false, "The app rolls", "Attacks resolve instantly with animated dice"],
+              [true, "I roll my own dice", "Attack buttons ask what you rolled — one tap per die — then play it out"]].map(([v, label, hint]) => (
+              <button key={String(v)} className={`btn ${manualDice === v ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+                onClick={() => setManualDice(v)}>
+                {label}{manualDice === v ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: manualDice === v ? "inherit" : "var(--faint)" }}>{hint}</span>
+              </button>
+            ))}
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Reveal speed</div>
             <div className="trait" style={{ marginBottom: 8 }}>
               How roll results reveal: the die tumbles, then the modifier, total, hit/miss, and damage drop in one at a time.
             </div>
