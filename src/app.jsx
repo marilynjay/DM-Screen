@@ -74,6 +74,14 @@ input[type=number]{width:64px}
   100%{transform:rotate(0deg) scale(1)}
 }
 @media (prefers-reduced-motion: reduce){.die.rolling{animation:none}}
+.touchlayer{position:fixed;inset:0;pointer-events:none;z-index:999}
+.touchring{position:absolute;left:0;top:0;will-change:transform}
+.touchdot{width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;
+  border:2.5px solid var(--gold);background:rgba(217,164,65,.2);
+  box-shadow:0 0 14px 3px rgba(217,164,65,.45);animation:touchin .1s ease}
+.touchring.pop .touchdot{animation:touchpop .38s ease forwards}
+@keyframes touchin{0%{transform:scale(.5);opacity:.4}100%{transform:scale(1);opacity:1}}
+@keyframes touchpop{0%{transform:scale(1);opacity:1}100%{transform:scale(1.7);opacity:0}}
 .chip-reveal{animation:chipdrop .28s ease both}
 @keyframes chipdrop{0%{opacity:0;transform:translateY(-7px)}65%{opacity:1;transform:translateY(2px)}100%{opacity:1;transform:translateY(0)}}
 @media (prefers-reduced-motion: reduce){.chip-reveal{animation:none}}
@@ -3633,6 +3641,49 @@ function ManualRollModal({ c, a, t, onConfirm, onClose }) {
   );
 }
 
+/* Touch highlight for screen recordings: a glowing ring follows each finger and
+   ripple-fades on release. Direct DOM updates (no React state) keep tracking at
+   60fps for free; the layer is pointer-events:none so it can't affect the app. */
+function TouchViz() {
+  const layerRef = useRef(null);
+  useEffect(() => {
+    const layer = layerRef.current;
+    if (!layer) return undefined;
+    const rings = new Map();
+    const place = (el, e) => { el.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`; };
+    const down = (e) => {
+      let el = rings.get(e.pointerId);
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "touchring";
+        el.innerHTML = '<div class="touchdot"></div>';
+        layer.appendChild(el);
+        rings.set(e.pointerId, el);
+      }
+      place(el, e);
+    };
+    const move = (e) => { const el = rings.get(e.pointerId); if (el) place(el, e); };
+    const up = (e) => {
+      const el = rings.get(e.pointerId); if (!el) return;
+      rings.delete(e.pointerId);
+      el.classList.add("pop");
+      setTimeout(() => el.remove(), 420);
+    };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      rings.forEach((el) => el.remove());
+    };
+  }, []);
+  return <div ref={layerRef} className="touchlayer" />;
+}
+
 function InitTieModal({ groups, onConfirm }) {
   const [order, setOrder] = useState(() => groups.map((g) => g.members.map((m) => ({ uid: m.uid, name: m.name, type: m.type }))));
   const move = (gi, i, dir) => setOrder(order.map((g, j) => {
@@ -4242,6 +4293,8 @@ export default function App() {
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
+  const [showTouches, setShowTouchesState] = useState(false);
+  const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
   // assign during render so components created in this same pass read the fresh values
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
@@ -4376,6 +4429,7 @@ export default function App() {
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
+      setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -5479,6 +5533,7 @@ export default function App() {
         Commons Attribution 4.0 International License</a>.
       </div>
 
+      {showTouches && <TouchViz />}
       {state.mode === "combat" && (
         <div className="turnbar">
           <span className="tb-round">R{state.round}</span>
@@ -5567,6 +5622,12 @@ export default function App() {
                 {label}{manualDice === v ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: manualDice === v ? "inherit" : "var(--faint)" }}>{hint}</span>
               </button>
             ))}
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
+            <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              onClick={() => setShowTouches(!showTouches)}>
+              👆 Show my taps{showTouches ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: showTouches ? "inherit" : "var(--faint)" }}>A glowing ring follows your finger — for demo videos. Doesn't change how anything works.</span>
+            </button>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Reveal speed</div>
             <div className="trait" style={{ marginBottom: 8 }}>
               How roll results reveal: the die tumbles, then the modifier, total, hit/miss, and damage drop in one at a time.
