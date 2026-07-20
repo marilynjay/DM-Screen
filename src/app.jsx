@@ -38,21 +38,14 @@ input[type=number]{width:64px}
 .activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
 .dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
 .tobtag{font-size:9px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:2px;letter-spacing:.05em}
-.dmgbanners{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:10px;right:10px;z-index:95;
+.ghostrail{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:8px;right:8px;z-index:95;
   display:flex;flex-direction:column;gap:6px;pointer-events:none}
-.dmgbanner{background:var(--panel);border:1px solid var(--line2);border-radius:10px;padding:7px 12px;
-  box-shadow:0 6px 18px rgba(0,0,0,.5);animation:dbin .25s ease,dbout .35s ease 2.25s forwards}
-@keyframes dbin{0%{opacity:0;transform:translateY(-10px)}100%{opacity:1;transform:translateY(0)}}
-@keyframes dbout{100%{opacity:0;transform:translateY(-8px)}}
-.dbline{display:flex;align-items:center;gap:8px;padding:2px 0;min-width:0}
-.dbline .hpheart{width:20px;height:18px;flex:none}
-.dbname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:1}
-.dbamt{font-family:var(--mono);font-weight:600;white-space:nowrap}
-.dbamt.hurt{color:var(--danger)}
-.dbamt.heal{color:var(--ok)}
-.dbhp{font-family:var(--mono);color:var(--dim);font-size:12px;white-space:nowrap;display:inline-block}
-.dbhp-tick{color:var(--danger);animation:hp-punch .55s ease}
-.dbhp-tickheal{color:var(--ok);animation:hp-punch .55s ease}
+.ghostrow{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;
+  box-shadow:0 8px 22px rgba(0,0,0,.55);animation:grin .3s ease}
+.ghostrow.out{animation:grout .35s ease forwards}
+.ghostrow .row{border-bottom:none}
+@keyframes grin{0%{opacity:0;transform:translateY(-110%)}100%{opacity:1;transform:translateY(0)}}
+@keyframes grout{100%{opacity:0;transform:translateY(-110%)}}
 .turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
   padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--ink);border-top:1px solid var(--line)}
@@ -1784,52 +1777,23 @@ function HeartGauge({ pct, title }) {
   );
 }
 
-/* Damage banner: brings the hit home wherever you're scrolled — heart drains
-   from old HP to new, damage amount in type color, status tags. Skipped for
-   combatants whose HP isn't tracked. */
-function DrainHeart({ from, to, max }) {
-  const [pct, setPct] = useState(Math.max(0, Math.min(100, (from / max) * 100)));
-  useEffect(() => {
-    const t = setTimeout(() => setPct(Math.max(0, Math.min(100, (to / max) * 100))), 300);
-    return () => clearTimeout(t);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <HeartGauge pct={pct} title={`${to}/${max}`} />;
-}
-function TickHP({ from, to, max, heal }) {
-  const [v, setV] = useState(from);
-  const [ticking, setTicking] = useState(false);
-  useEffect(() => {
-    let iv;
-    const t0 = setTimeout(() => {
-      setTicking(true);
-      const steps = 12; let i = 0;
-      iv = setInterval(() => {
-        i++;
-        setV(Math.round(from + (to - from) * (i / steps)));
-        if (i >= steps) { clearInterval(iv); setTimeout(() => setTicking(false), 200); }
-      }, 45);
-    }, 300);
-    return () => { clearTimeout(t0); if (iv) clearInterval(iv); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  return <span className={`dbhp ${ticking ? (heal ? "dbhp-tickheal" : "dbhp-tick") : ""}`}>{v}/{max}</span>;
-}
-function DmgBanners({ banners }) {
-  if (!banners.length) return null;
+/* Ghost rows: when damage lands, the target's actual roster line slides down
+   into view (a display-only clone — pointer-events off), the hit plays out in
+   it live — HP bar, −N pulse, skull, THP shatter — then it slides back up.
+   Skipped for combatants whose HP isn't tracked. */
+function GhostRows({ rows, combatants, holds, api }) {
+  if (!rows.length) return null;
   return (
-    <div className="dmgbanners">
-      {banners.map((b) => (
-        <div key={b.id} className="dmgbanner">
-          {b.lines.map((ln, i) => (
-            <div key={i} className="dbline">
-              <DrainHeart from={ln.from} to={ln.to} max={ln.max} />
-              <b className="dbname">{ln.name}</b>
-              <span className={`dbamt ${ln.heal ? "heal" : "hurt"}`}>{ln.heal ? "+" : "−"}{ln.amt}</span>
-              <TickHP from={ln.from} to={ln.to} max={ln.max} heal={ln.heal} />
-              {ln.dead ? <span className="chip bad">☠</span> : ln.unconscious ? <span className="chip bad">down</span> : ln.bloodied ? <span className="bloodtag">Bloodied</span> : null}
-            </div>
-          ))}
-        </div>
-      ))}
+    <div className="ghostrail">
+      {rows.map((g) => {
+        const c = combatants.find((x) => x.uid === g.uid);
+        if (!c) return null;
+        return (
+          <div key={g.id} className={`ghostrow ${g.out ? "out" : ""}`}>
+            <Row c={c} api={api} hold={holds[g.uid]} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -4716,32 +4680,36 @@ export default function App() {
     ? state.combatants.filter((c) => c.legendary && !c.dead && c.uid !== state.activeUid && c.legendary.rem > 0)
     : [];
 
-  const [dmgBanners, setDmgBanners] = useState([]);
+  const [ghostRows, setGhostRows] = useState([]);
   // hp holds live in a ref, written synchronously inside the mutate updater, so the
   // hold is present in the SAME commit that applies the damage. Routing this through
   // setState + setTimeout(0) painted one unmasked frame: the roster dipped, bounced
   // back up (a phantom "+N" heal pulse), then dropped again at the reveal.
   const hpHoldsRef = useRef({});
   const [, setHoldTick] = useState(0); // re-render trigger for hold release
-  const bannerLine = (c, hpBefore) => {
-    if (c.maxHp == null || hpBefore == null) return null; // HP untracked — no banner
-    const delta = hpBefore - c.hp;
-    if (delta === 0) return null;
-    return {
-      // total only — mixed-type attacks (slashing + acid) made a single label a lie
-      name: c.name, amt: Math.abs(delta), heal: delta < 0,
-      from: hpBefore, to: c.hp, max: c.maxHp,
-      dead: c.dead, unconscious: c.unconscious, bloodied: !c.dead && !c.unconscious && isBloodied(c),
-    };
-  };
-  const pushDmgBanner = (lines, delayMs = 0) => {
-    const valid = (lines || []).filter(Boolean);
-    if (!valid.length) return;
+  // Damage presentation: the target's roster row slides down as a ghost 450ms
+  // before revealAt so the drop plays out live inside it, lingers, slides away.
+  const pushGhostRow = (uid, revealAt = 0) => {
     const id = Math.random();
+    setTimeout(() => setGhostRows((gs) => [...gs.filter((g) => g.uid !== uid).slice(-1), { id, uid }]), Math.max(0, revealAt - 450));
+    setTimeout(() => setGhostRows((gs) => gs.map((g) => (g.id === id ? { ...g, out: true } : g))), revealAt + 2400);
+    setTimeout(() => setGhostRows((gs) => gs.filter((g) => g.id !== id)), revealAt + 2750);
+  };
+  // Call inside a mutate updater right after damage applies; snap must be taken
+  // BEFORE the damage. Masks roster + ghost at pre-hit values until revealAt,
+  // then both drop together (one −N pulse each, skull/shatter if it comes to that).
+  const holdGhost = (t, snap, revealAt = 0) => {
+    if (t.maxHp == null || snap.hp == null) return; // HP untracked — nothing to show
+    if (snap.hp === t.hp && (snap.thp || 0) === (t.thp || 0) && !!snap.dead === !!t.dead) return; // fully resisted — no visible change
+    const huid = t.uid;
+    hpHoldsRef.current = { ...hpHoldsRef.current, [huid]: snap };
     setTimeout(() => {
-      setDmgBanners((bs) => [...bs.slice(-2), { id, lines: valid }]);
-      setTimeout(() => setDmgBanners((bs) => bs.filter((b) => b.id !== id)), 2650);
-    }, delayMs);
+      if (hpHoldsRef.current[huid]?.id !== snap.id) return; // a newer hit re-held this row
+      const n = { ...hpHoldsRef.current }; delete n[huid];
+      hpHoldsRef.current = n;
+      setHoldTick((k) => k + 1);
+    }, revealAt);
+    pushGhostRow(huid, revealAt);
   };
 
   const attackRollCore = (d, L, uid, ai, opts = {}) => {
@@ -4823,17 +4791,7 @@ export default function App() {
           const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
           const flashAt = Math.round((chipDelays(chips).at(-1) + 0.5) * 1000); // after the last chip reveals — don't spoil the staged result
           setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
-          pushDmgBanner([bannerLine(t, hpBefore)], flashAt);
-          if (t.maxHp != null) { // roster shows pre-hit values until the reveal lands
-            const huid = t.uid;
-            hpHoldsRef.current = { ...hpHoldsRef.current, [huid]: snap };
-            setTimeout(() => {
-              if (hpHoldsRef.current[huid]?.id !== snap.id) return; // a newer hit re-held this row
-              const n = { ...hpHoldsRef.current }; delete n[huid];
-              hpHoldsRef.current = n;
-              setHoldTick((k) => k + 1);
-            }, flashAt);
-          }
+          holdGhost(t, snap, flashAt);
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
         }
@@ -4966,9 +4924,9 @@ export default function App() {
         if (ctx.dmgTotal != null) {
           amt = ok ? (ctx.halfOn ? Math.floor(ctx.dmgTotal / 2) : 0) : ctx.dmgTotal;
           if (amt > 0 && c.maxHp != null) {
-            const hp0 = c.hp;
+            const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
             applyDamage(c, amt, ctx.dtype || null, L, T);
-            pushDmgBanner([bannerLine(c, hp0)], 250);
+            holdGhost(c, snap, 600);
             if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
           } else if (amt > 0) note = "(HP untracked — apply at table)";
         }
@@ -5169,6 +5127,7 @@ export default function App() {
       mutate((d, L, T) => {
         const t = d.combatants.find((x) => x.uid === targetUid); if (!t || t.dead) return;
         const hpBefore = t.hp;
+        const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
         parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, T));
         const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
         // deferred-hit path (DM confirmed vs unknown AC): honor lifesteal here too
@@ -5181,7 +5140,7 @@ export default function App() {
           if (gain > 0) applyHeal(atkC, gain, L);
         }
         setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`, id: Math.random() }), 0);
-        pushDmgBanner([bannerLine(t, hpBefore)], 150);
+        holdGhost(t, snap, 600);
       });
       setResults((r) => {
         const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ applied", k: "sgood" } : ch));
@@ -5523,17 +5482,16 @@ export default function App() {
       const rows = [];
       const chipUpdates = {};
       const pending = [];
-      const bLines = [];
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c || c.dead) return;
         if (!noSave && c.type === "player") {
           pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null });
           return;
         }
-        const hp0 = c.hp;
+        const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
         if (noSave) {
           let amt = dmgRoll ? dmgRoll.total : 0;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0)); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600); }
           L.push(`<b>${c.name}</b> takes ${amt}${dtype ? ` ${dtype}` : ""} (no save)${c.dead ? " ☠" : c.unconscious ? " (down)" : ""}`);
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: amt, note: c.dead ? "☠" : c.unconscious ? "(down)" : "" });
           return;
@@ -5545,7 +5503,7 @@ export default function App() {
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); bLines.push(bannerLine(c, hp0)); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600); }
           if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
         }
         if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
@@ -5581,7 +5539,6 @@ export default function App() {
         setResults((res) => ({ ...res, ...chipUpdates }));
         setModal((mm) => (mm && mm.type === "group-save" ? { ...mm, resolved } : mm));
       }, 0);
-      pushDmgBanner(bLines, 500);
     });
   };
 
@@ -5677,7 +5634,7 @@ export default function App() {
     <div className="dm-app" style={{ paddingBottom: botPad }}>
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
-      <DmgBanners banners={dmgBanners} />
+      <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} api={api} />
 
       <div className="hdr">
         <span className={`title ${state.mode === "combat" ? "incombat" : ""}`}>DM Screen</span>
