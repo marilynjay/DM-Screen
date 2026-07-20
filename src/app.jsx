@@ -910,17 +910,18 @@ function makeMonster(sb, state, opts = {}) {
   return m;
 }
 
-function makePlayer({ name, init, ac, side, hp, pp }) {
+function makePlayer({ name, init, ac, side, hp, pp, dex }) {
   const hpN = hp != null && hp !== "" ? Number(hp) : null;
   const initN = init == null || init === "" || isNaN(Number(init)) ? null : Number(init);
   const ppN = pp != null && pp !== "" ? Number(pp) : null;
+  const dexN = dex == null || dex === "" || isNaN(Number(dex)) ? null : Number(dex);
   return {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none",
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
-    mods: {}, saves: {},
+    mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
     traits: [], actions: [], reactions: [], legendary: null, legRes: null, notes: "",
   };
@@ -1046,24 +1047,43 @@ const targetCands = (state, attacker) =>
   state.combatants.filter((x) => !x.dead && x.uid !== attacker.uid && x.type !== "effect" && x.type !== "object");
 
 const sideRank = (c) => (c.side === "ally" ? 0 : c.side === "effect" ? 1 : 2);
+const tieRank = (c) => (TIES.playersWin && c.type === "player" ? 0 : 1);
 function sortOrder(list) {
   return [...list].sort((a, b) =>
     ((b.init ?? -999) - (a.init ?? -999)) ||
     ((a.tb ?? 0) - (b.tb ?? 0)) ||                       // explicit tie order chosen by the DM
+    (tieRank(a) - tieRank(b)) ||                          // players act first on ties (setting, default on)
     ((b.mods?.dex ?? 0) - (a.mods?.dex ?? 0)) ||          // RAW: higher DEX acts first on ties
     (sideRank(a) - sideRank(b)) || 0);
 }
 
-/* Initiative ties that include a player get a DM prompt (tables vary); monster-only
-   ties resolve silently by DEX via sortOrder. */
+/* Initiative ties that include a player get a DM prompt only when the app can't
+   settle them fairly: players auto-win vs monsters when that setting is on, and a
+   player's tracked DEX breaks ties silently (RAW). Monster-only ties always
+   resolve by DEX via sortOrder. */
 function playerTieGroups(list) {
   const live = list.filter((c) => !c.dead && c.init != null && c.type !== "object");
   const by = {};
   live.forEach((c) => { (by[c.init] = by[c.init] || []).push(c); });
+  const dexKnown = (c) => c.type !== "player" || c.mods?.dex != null;
+  // g comes sorted by sortOrder — a group needs the DM only if some adjacent pair
+  // involving a player can't be separated by anything better than arbitrary order
+  const ambiguous = (g) => {
+    for (let i = 0; i < g.length - 1; i++) {
+      const a = g[i], b = g[i + 1];
+      if (a.type !== "player" && b.type !== "player") continue; // monster-only pair — DEX order stands
+      if ((a.tb ?? 0) !== (b.tb ?? 0)) continue;                 // resolved by an earlier prompt
+      if (TIES.playersWin && (a.type === "player") !== (b.type === "player")) continue; // players-first separates them
+      if (dexKnown(a) && dexKnown(b) && (a.mods?.dex ?? 0) !== (b.mods?.dex ?? 0)) continue; // DEX separates them
+      return true;
+    }
+    return false;
+  };
   return Object.entries(by)
     .filter(([, g]) => g.length > 1 && g.some((c) => c.type === "player"))
     .sort((a, b) => b[0] - a[0])
-    .map(([init, g]) => ({ init: +init, members: sortOrder(g) }));
+    .map(([init, g]) => ({ init: +init, members: sortOrder(g) }))
+    .filter((g) => ambiguous(g.members));
 }
 
 /* convert a live combatant back into a reusable statblock */
@@ -1729,6 +1749,7 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
 const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
+const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -2010,6 +2031,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
+            {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
             {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
@@ -3906,7 +3928,7 @@ function InitTieModal({ groups, onConfirm }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Initiative ties</h3>
         <div className="trait" style={{ marginBottom: 8 }}>
-          Who acts first? Monster-only ties are settled by DEX automatically — these ones involve players, so it's your table's call.
+          Who acts first? The app settles what it can on its own — monster ties by DEX, players before monsters (if that setting is on), player ties by tracked DEX. These are the leftovers, so it's your table's call.
         </div>
         {order.map((g, gi) => (
           <div key={gi} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 8 }}>
@@ -4501,6 +4523,8 @@ export default function App() {
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
+  const [playersWinTies, setPlayersWinTiesState] = useState(true);
+  const setPlayersWinTies = (v) => { setPlayersWinTiesState(v); stSet("dm5e:playersWinTies", v ? 1 : 0); };
   const [showTouches, setShowTouchesState] = useState(false);
   const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
   const [expandedOn, setExpandedOnState] = useState(false);
@@ -4521,10 +4545,11 @@ export default function App() {
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
+  TIES.playersWin = playersWinTies;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
-  const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
+  const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState(""); const [pDex, setPDex] = useState("");
   const stateRef = useRef(state); stateRef.current = state;
   const activeCardRef = useRef(null);
   useEffect(() => {
@@ -4652,6 +4677,8 @@ export default function App() {
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
+      const pwt = await stGet("dm5e:playersWinTies");
+      if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
@@ -5118,6 +5145,7 @@ export default function App() {
     },
     rename: (uid) => setModal({ type: "rename-prompt", uid }),
     setInit: (uid) => setModal({ type: "init-prompt", uid }),
+    setDex: (uid) => setModal({ type: "dex-prompt", uid }),
     nudge: (uid, dir) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.init += dir; }),
     kill: (uid) => mutate((d, L, T) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { c.dead = true; c.hp = 0; c.concentration = null; L.push(`<b>${c.name}</b> marked dead.`); } }),
     revive: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { c.dead = false; c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false; if (c.hp === 0) c.hp = 1; L.push(`<b>${c.name}</b> is back up (${c.hp} HP).`); } }),
@@ -5299,11 +5327,11 @@ export default function App() {
   const addPlayerNow = () => {
     if (!pName.trim()) return;
     mutate((d, L) => {
-      const p = makePlayer({ name: pName.trim(), init: pInit, ac: pAc ? parseInt(pAc, 10) : null, hp: pHp !== "" ? parseInt(pHp, 10) : null, pp: pPp !== "" ? parseInt(pPp, 10) : null });
+      const p = makePlayer({ name: pName.trim(), init: pInit, ac: pAc ? parseInt(pAc, 10) : null, hp: pHp !== "" ? parseInt(pHp, 10) : null, pp: pPp !== "" ? parseInt(pPp, 10) : null, dex: pDex });
       d.combatants.push(p);
       L.push(`Added <b>${p.name}</b> (initiative ${p.init ?? "—"}${p.ac ? `, AC ${p.ac}` : ""}${p.hp != null ? `, ${p.hp} HP tracked` : ""})`);
     });
-    setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp("");
+    setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp(""); setPDex("");
   };
 
   const applyBalance = (items) => {
@@ -5713,6 +5741,7 @@ export default function App() {
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
+              <button onClick={() => setPlayersWinTies(!playersWinTies)} title="When on, players act before monsters on tied initiative. Tracked player DEX breaks the remaining ties.">{playersWinTies ? "✓" : "✗"} Players win init ties</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
@@ -5772,9 +5801,10 @@ export default function App() {
               <input type="number" placeholder="AC (opt.)" style={{ width: 80 }} value={pAc} onChange={(e) => setPAc(e.target.value)} />
               <input type="number" placeholder="HP (opt.)" style={{ width: 80 }} value={pHp} onChange={(e) => setPHp(e.target.value)} title="Fill in to track this player's HP in the app" />
               <input type="number" placeholder="PP (opt.)" style={{ width: 80 }} value={pPp} onChange={(e) => setPPp(e.target.value)} title="Passive Perception — shown on their row for quick reference" />
+              <input type="number" placeholder="DEX mod (opt.)" style={{ width: 104 }} value={pDex} onChange={(e) => setPDex(e.target.value)} title="Dexterity modifier — used only to break initiative ties, never shown on the roster" />
               <button className="btn primary" disabled={!pName.trim()} onClick={addPlayerNow}>Add</button>
             </div>
-            <div className="trait" style={{ color: "var(--faint)" }}>Everything but the name is optional — blank initiative gets asked for when you start combat; blank HP means the player tracks their own. PP is passive Perception, shown on their row for quick stealth/ambush reference. With HP filled in, the app handles their damage, healing, and Bloodied like a monster.</div>
+            <div className="trait" style={{ color: "var(--faint)" }}>Everything but the name is optional — blank initiative gets asked for when you start combat; blank HP means the player tracks their own. PP is passive Perception, shown on their row for quick stealth/ambush reference. DEX is their Dexterity modifier, used only to break initiative ties and never shown anywhere. With HP filled in, the app handles their damage, healing, and Bloodied like a monster.</div>
           </div>
         )}
 
@@ -6053,7 +6083,8 @@ export default function App() {
             <div className="frow"><label>AC (optional)</label><input type="number" value={pAc} onChange={(e) => setPAc(e.target.value)} /></div>
             <div className="frow"><label>HP (optional)</label><input type="number" value={pHp} onChange={(e) => setPHp(e.target.value)} /></div>
             <div className="frow"><label>Passive Perception</label><input type="number" value={pPp} onChange={(e) => setPPp(e.target.value)} placeholder="opt." /></div>
-            <div className="trait" style={{ marginBottom: 8 }}>With HP filled in, the app tracks this character's damage and healing (concentration prompts them to roll their own save). PP shows on their row for quick reference.</div>
+            <div className="frow"><label>DEX modifier</label><input type="number" value={pDex} onChange={(e) => setPDex(e.target.value)} placeholder="opt. — breaks init ties" /></div>
+            <div className="trait" style={{ marginBottom: 8 }}>With HP filled in, the app tracks this character's damage and healing (concentration prompts them to roll their own save). PP shows on their row for quick reference. DEX is only used to break initiative ties — it's never shown.</div>
             <div className="frow" style={{ justifyContent: "flex-end" }}>
               <button className="btn" onClick={() => setModal(null)}>Cancel</button>
               <button className="btn primary" disabled={!pName.trim()} onClick={() => { addPlayerNow(); setModal(null); }}>Add</button>
@@ -6069,6 +6100,11 @@ export default function App() {
       {modal?.type === "init-prompt" && modalC && (
         <PromptModal title={`Initiative — ${modalC.name}`} fields={[{ key: "v", label: "Initiative", type: "number", value: modalC.init }]} submitLabel="Set"
           onSubmit={({ v }) => { mutate((d, L) => { const cc = d.combatants.find((x) => x.uid === modal.uid); cc.init = parseInt(v, 10) || 0; L.push(`<b>${cc.name}</b> initiative set to ${cc.init}`); }); setModal(null); }}
+          onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "dex-prompt" && modalC && (
+        <PromptModal title={`DEX tiebreaker — ${modalC.name}`} fields={[{ key: "v", label: "DEX modifier (blank to clear)", type: "number", value: modalC.mods?.dex }]} submitLabel="Set"
+          onSubmit={({ v }) => { mutate((d, L) => { const cc = d.combatants.find((x) => x.uid === modal.uid); if (!cc) return; const n = parseInt(v, 10); cc.mods = { ...(cc.mods || {}) }; if (isNaN(n)) { delete cc.mods.dex; L.push(`<b>${cc.name}</b> DEX tiebreaker cleared`); } else { cc.mods.dex = n; L.push(`<b>${cc.name}</b> DEX tiebreaker set to ${fmtMod(n)}`); } }); setModal(null); }}
           onClose={() => setModal(null)} />
       )}
       {spellBook && (
