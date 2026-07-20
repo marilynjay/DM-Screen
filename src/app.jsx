@@ -3331,6 +3331,22 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
   const mine = (custom || []).filter((b) => b.name.toLowerCase().includes(ql));
   const all = fullBestiary();
   const builtIn = all.filter((b) => b.name.toLowerCase().includes(ql));
+  const [view, setView] = useState("type");
+  const biomeNames = Object.keys(ENCOUNTER_POOLS);
+  const biomePool = (bio) => new Set((ENCOUNTER_POOLS[bio] || []).concat(expanded && EXPANDED.list.length ? EXPANDED.pools[bio] || [] : []));
+  const groups = view === "type"
+    ? BESTIARY_CATS
+    : [...biomeNames.map((b) => ["b:" + b, b]), ["b:misc", "Miscellaneous"]];
+  const groupMembers = (key) => {
+    if (!String(key).startsWith("b:")) return all.filter((b) => b.cat === key);
+    if (key === "b:misc") { // everything that lives in no biome pool
+      const used = new Set();
+      biomeNames.forEach((bio) => biomePool(bio).forEach((n) => used.add(n)));
+      return all.filter((b) => !used.has(b.name));
+    }
+    const names = biomePool(key.slice(2));
+    return all.filter((b) => names.has(b.name));
+  };
 
   const doImport = () => {
     try {
@@ -3403,8 +3419,14 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
         ) : (
           <>
             <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>{expanded ? `Bestiary — ${all.length} monsters (SRD + Tome of Beasts)` : `SRD bestiary — ${all.length} monsters`}</div>
-            {BESTIARY_CATS.map(([key, label]) => {
-              const members = all.filter((b) => b.cat === key);
+            <div className="frow" style={{ margin: "2px 0 4px" }}>
+              {[["type", "By type"], ["biome", "By biome"]].map(([v, lbl2]) => (
+                <button key={v} className="btn small" style={view === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setView(v)}>{lbl2}</button>
+              ))}
+              {view === "biome" && <span style={{ fontSize: 11, color: "var(--faint)" }}>creatures can roam several biomes</span>}
+            </div>
+            {groups.map(([key, label]) => {
+              const members = groupMembers(key);
               const open = openCats.has(key);
               return (
                 <div key={key}>
