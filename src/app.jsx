@@ -35,6 +35,14 @@ input[type=number]{width:64px}
 .hdr{display:flex;align-items:center;gap:12px;padding:10px 14px;
   padding-top:calc(10px + env(safe-area-inset-top,0px));
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
+.activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
+.turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
+  padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  background:var(--ink);border-top:1px solid var(--line)}
+.turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
+  border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
+.turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.06em;color:var(--gold)}
 .hdr .title{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--gold)}
 .hdr .round{font-family:var(--disp);font-size:13px;letter-spacing:.08em;color:var(--text);
@@ -971,7 +979,23 @@ const targetCands = (state, attacker) =>
 
 const sideRank = (c) => (c.side === "ally" ? 0 : c.side === "effect" ? 1 : 2);
 function sortOrder(list) {
-  return [...list].sort((a, b) => ((b.init ?? -999) - (a.init ?? -999)) || (sideRank(a) - sideRank(b)) || 0);
+  return [...list].sort((a, b) =>
+    ((b.init ?? -999) - (a.init ?? -999)) ||
+    ((a.tb ?? 0) - (b.tb ?? 0)) ||                       // explicit tie order chosen by the DM
+    ((b.mods?.dex ?? 0) - (a.mods?.dex ?? 0)) ||          // RAW: higher DEX acts first on ties
+    (sideRank(a) - sideRank(b)) || 0);
+}
+
+/* Initiative ties that include a player get a DM prompt (tables vary); monster-only
+   ties resolve silently by DEX via sortOrder. */
+function playerTieGroups(list) {
+  const live = list.filter((c) => !c.dead && c.init != null && c.type !== "object");
+  const by = {};
+  live.forEach((c) => { (by[c.init] = by[c.init] || []).push(c); });
+  return Object.entries(by)
+    .filter(([, g]) => g.length > 1 && g.some((c) => c.type === "player"))
+    .sort((a, b) => b[0] - a[0])
+    .map(([init, g]) => ({ init: +init, members: sortOrder(g) }));
 }
 
 /* convert a live combatant back into a reusable statblock */
@@ -2043,10 +2067,10 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
   );
 }
 
-function EncounterSuggestModal({ party, onAdd, onClose }) {
+function EncounterSuggestModal({ party, playerCount, onAdd, onClose }) {
   const [biome, setBiome] = useState("Forest");
-  const [level, setLevel] = useState("");
-  const [size, setSize] = useState("");
+  const [level, setLevel] = useState(party.set ? String(party.level) : "");
+  const [size, setSize] = useState(party.set ? String(party.size) : playerCount ? String(playerCount) : "");
   const [difficulty, setDifficulty] = useState(party.difficulty || "moderate");
   const [template, setTemplate] = useState("Skirmish");
   const [balanced, setBalanced] = useState(true);
@@ -2809,6 +2833,8 @@ function PlayerCard({ c, api, results }) {
       )}
       {hints.length === 0 && !c.unconscious && <div className="trait" style={{ marginTop: 6 }}>No conditions. The floor is theirs.</div>}
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {c.hp != null && <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
+        <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
         <button className="btn small" onClick={() => api.addCondition(c.uid)}>Add condition…</button>
         <button className="btn small" onClick={() => api.setConc(c.uid)}>Set concentration…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>Adv/dis on rolls</button>
@@ -3465,6 +3491,43 @@ function SlotsModal({ hasEnemies, onSave, onLoad, onDelete, onSaveGroup, onAddGr
   );
 }
 
+function InitTieModal({ groups, onConfirm }) {
+  const [order, setOrder] = useState(() => groups.map((g) => g.members.map((m) => ({ uid: m.uid, name: m.name, type: m.type }))));
+  const move = (gi, i, dir) => setOrder(order.map((g, j) => {
+    if (j !== gi) return g;
+    const n = [...g]; const k = i + dir;
+    if (k < 0 || k >= n.length) return g;
+    [n[i], n[k]] = [n[k], n[i]];
+    return n;
+  }));
+  return (
+    <div className="overlay">
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Initiative ties</h3>
+        <div className="trait" style={{ marginBottom: 8 }}>
+          Who acts first? Monster-only ties are settled by DEX automatically — these ones involve players, so it's your table's call.
+        </div>
+        {order.map((g, gi) => (
+          <div key={gi} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 8 }}>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 4 }}>Tied at initiative {groups[gi].init}</div>
+            {g.map((m, i) => (
+              <div className="frow" key={m.uid}>
+                <span style={{ width: 18, textAlign: "right", color: "var(--faint)", fontFamily: "var(--mono)", fontSize: 12 }}>{i + 1}.</span>
+                <span style={{ flex: 1 }}>{m.name}{m.type === "player" ? <span style={{ color: "var(--faint)", fontSize: 11 }}> (player)</span> : null}</span>
+                <button className="btn small ghost" disabled={i === 0} onClick={() => move(gi, i, -1)}>▲</button>
+                <button className="btn small ghost" disabled={i === g.length - 1} onClick={() => move(gi, i, 1)}>▼</button>
+              </div>
+            ))}
+          </div>
+        ))}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn primary" onClick={() => onConfirm(order.map((g) => g.map((m) => m.uid)))}>Start combat</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RollInitModal({ list, onStart, onClose }) {
   const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, ""])));
   const ready = list.every((c) => String(vals[c.uid]).trim() !== "");
@@ -3838,7 +3901,9 @@ export default function App() {
   const [showLog, setShowLog] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const logRef = useRef(null);
-  const botPad = "calc(24px + env(safe-area-inset-bottom, 0px))";
+  const botPad = state.mode === "combat"
+    ? "calc(92px + env(safe-area-inset-bottom, 0px))" // clears the fixed bottom turn bar
+    : "calc(24px + env(safe-area-inset-bottom, 0px))";
   const scrollLog = () => setTimeout(() => logRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
   const openLog = () => { setLogCollapsed(false); setShowLog(true); scrollLog(); };
   const toggleLog = () => { if (showLog) setShowLog(false); else openLog(); };
@@ -3881,6 +3946,12 @@ export default function App() {
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
   const stateRef = useRef(state); stateRef.current = state;
+  const activeCardRef = useRef(null);
+  useEffect(() => {
+    if (state.mode !== "combat" || !state.activeUid) return;
+    const t = setTimeout(() => activeCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+    return () => clearTimeout(t);
+  }, [state.activeUid, state.mode]);
   const bestRef = useRef(myBestiary); bestRef.current = myBestiary;
   const partyRef = useRef(party); partyRef.current = party;
   const undoRef = useRef([]);
@@ -4540,6 +4611,23 @@ export default function App() {
       });
     }
     if (cur.combatants.some((c) => !c.dead && c.init == null && c.type === "player")) { setModal({ type: "roll-init" }); return; }
+    setModal({ type: "init-ties-check" });
+  };
+  useEffect(() => {
+    if (modal?.type !== "init-ties-check") return;
+    const groups = playerTieGroups(stateRef.current.combatants);
+    if (groups.length) setModal({ type: "init-ties", groups });
+    else { setModal(null); reallyStart(); }
+  }, [modal]); // eslint-disable-line react-hooks/exhaustive-deps
+  const resolveTies = (uidLists) => {
+    setModal(null);
+    mutate((d, L) => {
+      uidLists.forEach((uids) => {
+        const names = [];
+        uids.forEach((uid, idx) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { c.tb = idx; names.push(c.name); } });
+        if (names.length > 1) L.push(`Initiative tie resolved: ${names.join(" → ")}.`);
+      });
+    });
     reallyStart();
   };
   const doEndCombat = () => {
@@ -4547,7 +4635,7 @@ export default function App() {
     mutate((d, L) => {
       const kept = d.combatants.filter((c) => c.side === "ally" && c.type !== "effect");
       kept.forEach((c) => {
-        c.init = null; c.initText = null; c.conditions = []; c.concentration = null;
+        c.init = null; c.initText = null; c.tb = 0; c.conditions = []; c.concentration = null;
         c.reaction = true; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
       });
       d.combatants = kept;
@@ -4966,9 +5054,11 @@ export default function App() {
         ))}
 
         {state.mode === "combat" && active && (
-          active.type === "monster" ? <MonsterCard c={active} api={api} results={results} turnKey={`${state.round}:${state.activeUid}`} />
-          : active.type === "player" ? <PlayerCard c={active} api={api} results={results} />
-          : <EffectCard c={active} api={api} round={state.round} />
+          <div ref={activeCardRef} className="activecard-anchor">
+            {active.type === "monster" ? <MonsterCard c={active} api={api} results={results} turnKey={`${state.round}:${state.activeUid}`} />
+            : active.type === "player" ? <PlayerCard c={active} api={api} results={results} />
+            : <EffectCard c={active} api={api} round={state.round} />}
+          </div>
         )}
 
         {showLog && (
@@ -5007,6 +5097,15 @@ export default function App() {
         Commons Attribution 4.0 International License</a>.
       </div>
 
+      {state.mode === "combat" && (
+        <div className="turnbar">
+          <span className="tb-round">R{state.round}</span>
+          <span className="tb-name">{active ? active.name : ""}</span>
+          <button className="btn small ghost" onClick={prev} title="Back one turn">◀</button>
+          <button className="btn primary" onClick={requestNext}>Next ▶</button>
+        </div>
+      )}
+
       {/* modals */}
       {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} onApply={applyDamageModal} onClose={() => setModal(null)} />}
       {modal?.type === "save" && modalC && <SaveRollModal c={modalC} rolled={modal.rolled} onRoll={applySaveRoll} onClose={() => setModal(null)} />}
@@ -5037,6 +5136,9 @@ export default function App() {
           text={`Enemies and effects are removed; players and allies keep their current HP (and unconsciousness) into the next fight. Initiative resets. Conditions and concentration clear.${(() => { const n = state.combatants.filter((c) => c.side === "enemy").reduce((a, c) => a + (c.loot || []).length, 0); return n ? ` ⚠ ${n} unlooted item${n === 1 ? "" : "s"} will vanish with the enemies — loot first if you want them!` : ""; })()}`}
           confirmLabel="End combat" onYes={doEndCombat} onClose={() => setModal(null)} />
       )}
+      {modal?.type === "init-ties" && (
+        <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
+      )}
       {modal?.type === "roll-init" && (
         <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type === "player")}
           onClose={() => setModal(null)}
@@ -5048,7 +5150,7 @@ export default function App() {
                 if (c) { c.init = parseInt(v, 10) || 0; L.push(`<b>${c.name}</b> initiative: ${c.init}`); }
               });
             });
-            reallyStart();
+            setModal({ type: "init-ties-check" });
           }} />
       )}
       {modal?.type === "defenses" && modalC && (
@@ -5224,7 +5326,8 @@ export default function App() {
         );
       })()}
       {modal?.type === "suggest-enc" && (
-        <EncounterSuggestModal party={party} onClose={() => setModal(null)} onAdd={({ picks, biome, level, size, difficulty, balanced, addLair }) => {
+        <EncounterSuggestModal party={party} playerCount={state.combatants.filter((c) => c.type === "player" && !c.dead).length}
+          onClose={() => setModal(null)} onAdd={({ picks, biome, level, size, difficulty, balanced, addLair }) => {
           setModal(null);
           setParty((p) => ({ ...p, level, size, difficulty, set: true }));
           mutate((d, L, T) => {
