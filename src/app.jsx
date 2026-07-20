@@ -4077,49 +4077,56 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
 
 const partyLabel = (p, i) => (p.name && String(p.name).trim()) || (p.teamName && p.teamName.trim()) || `Party ${i + 1}`;
 
-function PartySetupCard({ parties, saved, onPick, onAdd, onSave }) {
-  const [editing, setEditing] = useState(!saved);
-  const [rows, setRows] = useState(() => partyRowsFrom(saved));
-  const [level, setLevel] = useState(saved?.level ?? "");
-  const [teamName, setTeamName] = useState(saved?.name ?? "");
+/* Setup opener: always a clean blank grid — saved parties live behind the Load
+   party button, which expands into a list with one-tap Load and an edit link
+   that prefills the grid. Adding from a blank grid creates a NEW remembered
+   party; adding after "edit" updates that one. */
+function PartySetupCard({ parties, onPick, onAdd, onSave }) {
+  const [rows, setRows] = useState([{ ...PARTY_BLANK_ROW }]);
+  const [level, setLevel] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [loadOpen, setLoadOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const going = rows.filter((r) => r.name.trim() && r.here);
-  const resetFromSaved = () => { setRows(partyRowsFrom(saved)); setLevel(saved.level ?? ""); setTeamName(saved.name ?? ""); };
+  const editingParty = editingId ? parties.find((p) => p.id === editingId) : null;
+  const resetBlank = () => { setRows([{ ...PARTY_BLANK_ROW }]); setLevel(""); setTeamName(""); setEditingId(null); };
+  const beginEdit = (p) => { setEditingId(p.id); setRows(partyRowsFrom(p)); setLevel(p.level ?? ""); setTeamName(p.name ?? ""); setLoadOpen(false); };
   const add = () => {
     const roster = partyRosterOf(teamName, level, rows);
-    onSave(roster);
+    onSave(roster, editingId); // null id → remember as a new party
     onAdd(roster.members.filter((r) => r.here), roster.level);
   };
-  const picker = parties.length > 1 ? (
-    <div className="sbook-lvls" style={{ marginBottom: 6 }}>
-      {parties.map((p, i) => (
-        <span key={p.id} className={`lvlchip ${p.id === saved?.id ? "on" : ""}`} onClick={() => onPick(p.id)}>{partyLabel(p, i)}</span>
-      ))}
-    </div>
-  ) : null;
-  if (!editing) {
-    return (
-      <div className="card">
-        {picker}
-        <h3>{saved.name || "Your party"}{saved.level ? <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}> · level {saved.level}</span> : null}</h3>
-        <div className="trait" style={{ marginBottom: 8 }}>
-          {saved.members.map((m, i) => (
-            <span key={i}>{i > 0 ? ", " : ""}<span style={m.here ? {} : { color: "var(--faint)", textDecoration: "line-through" }} title={m.here ? undefined : "Sitting out — tap Edit to change"}>{m.name}</span></span>
-          ))}
-        </div>
-        <div className="frow" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={() => { resetFromSaved(); setEditing(true); }}>Edit party…</button>
-          <button className="btn primary" disabled={!saved.members.some((m) => m.here)} onClick={() => onAdd(saved.members.filter((m) => m.here), saved.level ?? null)}>Add party</button>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="card">
-      <h3>Add your party</h3>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <h3 style={{ margin: 0, flex: 1 }}>{editingParty ? `Edit ${partyLabel(editingParty, parties.indexOf(editingParty))}` : "Add your party"}</h3>
+        {parties.length > 0 && !editingParty && (
+          <button className="btn small primary" onClick={() => setLoadOpen(!loadOpen)}>📂 Load party {loadOpen ? "▴" : "▾"}</button>
+        )}
+      </div>
+      {loadOpen && (
+        <div style={{ marginBottom: 8 }}>
+          {parties.map((p, i) => (
+            <div className="gs-row" key={p.id} style={{ alignItems: "center", flexWrap: "wrap" }}>
+              <b>{partyLabel(p, i)}</b>
+              {p.level ? <span className="ad">lvl {p.level}</span> : null}
+              <span className="ad" style={{ flex: 1, minWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {p.members.map((m) => m.name).join(", ")}
+              </span>
+              <button className="btn small ghost" onClick={() => beginEdit(p)}>edit</button>
+              <button className="btn small primary" disabled={!p.members.some((m) => m.here)} onClick={() => { onPick(p.id); onAdd(p.members.filter((m) => m.here), p.level ?? null); }}>Load</button>
+            </div>
+          ))}
+        </div>
+      )}
       <PartyFields rows={rows} setRows={setRows} level={level} setLevel={setLevel} teamName={teamName} setTeamName={setTeamName} />
-      <div className="trait" style={{ color: "var(--faint)" }}>Only names are required — ✓ marks who's here tonight. Initiative is collected when combat starts. HP (if filled) lets the app track their damage; PP shows on their row; DEX only breaks initiative ties and is never shown. Your party is remembered for next session.</div>
+      <div className="trait" style={{ color: "var(--faint)" }}>
+        {editingParty
+          ? "Add party saves your changes to this party and puts them on screen. Only names are required."
+          : `Only names are required — ✓ marks who's here tonight. Initiative is collected when combat starts. HP (if filled) lets the app track their damage; PP shows on their row; DEX only breaks initiative ties and is never shown.${parties.length ? " Adding remembers this group as a new party." : " Your party is remembered for next session."}`}
+      </div>
       <div className="frow" style={{ justifyContent: "flex-end" }}>
-        {saved ? <button className="btn" onClick={() => { resetFromSaved(); setEditing(false); }}>Cancel</button> : null}
+        {editingParty ? <button className="btn" onClick={resetBlank}>Cancel edit</button> : null}
         <button className="btn primary" disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
       </div>
     </div>
@@ -4818,16 +4825,15 @@ export default function App() {
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
   const [activePartyId, setActivePartyIdState] = useState(null);
   const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
-  const [partyVer, setPartyVer] = useState(0); // bumps on save so the opener card remounts with fresh values
   const activeRoster = parties.find((p) => p.id === activePartyId) || parties[0] || null;
   const savePartiesAll = (list, activeId) => {
-    setPartiesState(list); setPartyVer((v) => v + 1); stSet("dm5e:parties", list);
+    setPartiesState(list); stSet("dm5e:parties", list);
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
   };
   const pickParty = (id) => { setActivePartyIdState(id); stSet("dm5e:activeParty", id); };
-  // upsert the active party (setup-card edits go through here)
-  const savePartyRoster = (roster) => {
-    const id = activeRoster?.id ?? newUid();
+  // save from the setup card: targetId updates that party, null remembers a new one
+  const savePartyRoster = (roster, targetId = null) => {
+    const id = targetId ?? newUid();
     const withId = { id, ...roster };
     savePartiesAll(parties.some((p) => p.id === id) ? parties.map((p) => (p.id === id ? withId : p)) : [...parties, withId], id);
   };
@@ -6183,7 +6189,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <PartySetupCard key={activeRoster ? `saved${partyVer}-${activeRoster.id}` : "new"} parties={parties} saved={activeRoster} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} />
+          <PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} />
         )}
 
         {legendaryWatch.map((c) => (
