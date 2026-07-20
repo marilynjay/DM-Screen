@@ -3370,11 +3370,11 @@ function BestiaryModal({ custom, onAdd, onDeleteCustom, onImport, onEdit, onClon
   );
 }
 
-function SlotsModal({ hasEnemies, onSave, onLoad, onDelete, onSaveGroup, onAddGroup, onDeleteGroup, onExportAll, onImportAll, onClose }) {
+function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSaveGroup, onAddGroup, onDeleteGroup, onExportAll, onImportAll, onClose }) {
   const [slots, setSlots] = useState(null);
   const [groups, setGroups] = useState(null);
   const [name, setName] = useState("");
-  const [showBk, setShowBk] = useState(false);
+  const [showBk, setShowBk] = useState(!!initialShowBk);
   const [showBkText, setShowBkText] = useState(false);
   const [bkText, setBkText] = useState("");
   const [bkMsg, setBkMsg] = useState("");
@@ -3969,6 +3969,15 @@ export default function App() {
   };
 
   const saveMyBestiary = (list) => { setMyBestiary(list); stSet("dm5e:bestiary", list); };
+  /* One-time nudge after the first custom save: data lives only in this browser,
+     so point at the backup file feature before a big collection builds up. */
+  const backupSeenRef = useRef(true); // assume seen until the stored flag loads, so early saves can't double-fire
+  const maybeShowBackupNotice = () => {
+    if (backupSeenRef.current) return;
+    backupSeenRef.current = true;
+    stSet("dm5e:backupNoticeSeen", 1);
+    setTimeout(() => setModal((m) => (m == null || m.type === "bestiary" ? { type: "backup-notice" } : m)), 450);
+  };
   const upsertBestiary = (sbs) => {
     let list = [...bestRef.current];
     let added = 0, updated = 0;
@@ -3978,6 +3987,7 @@ export default function App() {
     }
     list.sort((a, b) => a.name.localeCompare(b.name));
     saveMyBestiary(list);
+    maybeShowBackupNotice();
     return { added, updated };
   };
 
@@ -4024,6 +4034,7 @@ export default function App() {
       if (Array.isArray(best)) setMyBestiary(best);
       const pt = await stGet("dm5e:party");
       if (pt) setParty(pt);
+      backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
   useEffect(() => {
@@ -4525,6 +4536,7 @@ export default function App() {
     list.sort((a, b) => a.name.localeCompare(b.name));
     saveMyBestiary(list);
     pushToasts([{ kind: "good", text: `"${sb.name}" updated in your bestiary.` }]);
+    maybeShowBackupNotice();
   };
   const addPlaytest = () => mutate((d, L) => {
     [{ name: "Player", init: 11, ac: 15, hp: 45 }, { name: "Player 2", init: 14, ac: 17, hp: 52 }].forEach((pp) => {
@@ -4897,6 +4909,9 @@ export default function App() {
     return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, party: partyRef.current, slots, groups };
   };
   const importAll = async (obj) => {
+    // whoever restores a backup already knows about backups — never show them the nudge
+    backupSeenRef.current = true;
+    stSet("dm5e:backupNoticeSeen", 1);
     const r = { bestiary: 0, slots: 0, groups: 0 };
     if (Array.isArray(obj.bestiary) && obj.bestiary.length) { const { added, updated } = upsertBestiary(obj.bestiary); r.bestiary = added + updated; }
     for (const [k, v] of Object.entries(obj.slots || {})) { if (v) { await stSet(`dm5e:slot:${k}`, v); r.slots++; } }
@@ -5126,10 +5141,35 @@ export default function App() {
       )}
       {modal?.type === "slots" && (
         <SlotsModal hasEnemies={state.combatants.some((c) => c.type === "monster" && c.side === "enemy")}
+          initialShowBk={!!modal.showBackup}
           onSave={saveSlot} onLoad={loadSlot} onDelete={deleteSlot}
           onSaveGroup={saveGroup} onAddGroup={addGroup} onDeleteGroup={deleteGroup}
           onExportAll={exportAll} onImportAll={importAll}
           onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "backup-notice" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>💾 Saved! One thing worth knowing…</h3>
+            <div className="trait" style={{ marginBottom: 8 }}>
+              Everything you save — custom monsters, encounters, groups — lives <b>only in this browser, on this device</b>.
+              There's no account or cloud behind it. If the browser's website data gets cleared, or the home-screen app is
+              deleted, your collection goes with it.
+            </div>
+            <div className="trait" style={{ marginBottom: 8 }}>
+              The fix takes ten seconds: every so often (especially after a big prep session), save a backup file —
+              <b> ⋯ menu → Saves &amp; groups → Backup everything</b>. Stash the file in iCloud Drive, Files, or email it to
+              yourself. Restoring merges into what's here and never deletes anything.
+            </div>
+            <div className="trait" style={{ marginBottom: 8, color: "var(--faint)" }}>
+              This is a one-time note — you won't see it again.
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn" onClick={() => setModal(null)}>Got it</button>
+              <button className="btn primary" onClick={() => setModal({ type: "slots", showBackup: true })}>Back up now</button>
+            </div>
+          </div>
+        </div>
       )}
       {modal?.type === "confirm-end" && (
         <ConfirmModal
