@@ -3349,8 +3349,32 @@ function SlotsModal({ hasEnemies, onSave, onLoad, onDelete, onSaveGroup, onAddGr
   const [groups, setGroups] = useState(null);
   const [name, setName] = useState("");
   const [showBk, setShowBk] = useState(false);
+  const [showBkText, setShowBkText] = useState(false);
   const [bkText, setBkText] = useState("");
   const [bkMsg, setBkMsg] = useState("");
+  const fileRef = useRef(null);
+  const downloadBackup = async () => {
+    const obj = await onExportAll();
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `dm-screen-backup-${obj.exported.slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}.`);
+  };
+  const restoreFromFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const obj = JSON.parse(await file.text());
+      if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup file.");
+      const r = await onImportAll(obj);
+      setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups (merged into what's here).`);
+      refresh();
+    } catch (err) { setBkMsg(`Restore failed: ${err.message}`); }
+  };
   const refresh = useCallback(async () => {
     setSlots((await stList("dm5e:slot:")).map((k) => k.replace("dm5e:slot:", "")));
     setGroups((await stList("dm5e:group:")).map((k) => k.replace("dm5e:group:", "")));
@@ -3401,27 +3425,39 @@ function SlotsModal({ hasEnemies, onSave, onLoad, onDelete, onSaveGroup, onAddGr
         {showBk && (
           <div style={{ marginTop: 8 }}>
             <div className="trait" style={{ marginBottom: 6 }}>
-              Exports your entire collection — bestiary, encounters, monster groups, and party settings — as text to copy somewhere safe. Storage only lives inside Claude, so back up anything you'd hate to lose.
+              Backs up your entire collection — bestiary, saved encounters, monster groups, and party settings — to a file.
+              Everything lives only in this browser on this device, so keep a backup somewhere safe (Files, iCloud Drive, email it to yourself).
+              Restoring merges the file into what's already here; it never deletes anything.
             </div>
-            <textarea rows={6} style={{ width: "100%", fontFamily: "var(--mono)", fontSize: 11 }}
-              placeholder="Export fills this box — copy it out. Or paste a backup here and Import." value={bkText} onChange={(e) => setBkText(e.target.value)} />
-            <div className="frow" style={{ marginTop: 6 }}>
-              <button className="btn small" onClick={async () => {
-                const obj = await onExportAll();
-                setBkText(JSON.stringify(obj));
-                setBkMsg(`Exported ${obj.bestiary.length} bestiary, ${Object.keys(obj.slots).length} encounters, ${Object.keys(obj.groups).length} groups. Copy the text!`);
-              }}>Export everything</button>
-              <button className="btn small primary" disabled={!bkText.trim()} onClick={async () => {
-                try {
-                  const obj = JSON.parse(bkText);
-                  if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup.");
-                  const r = await onImportAll(obj);
-                  setBkMsg(`Imported: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups.`);
-                  setBkText(""); refresh();
-                } catch (e) { setBkMsg(`Import failed: ${e.message}`); }
-              }}>Import</button>
-              {bkMsg && <span style={{ fontSize: 12, color: "var(--dim)" }}>{bkMsg}</span>}
+            <div className="frow">
+              <button className="btn small primary" onClick={downloadBackup}>⬇ Save backup file</button>
+              <button className="btn small" onClick={() => fileRef.current && fileRef.current.click()}>⬆ Restore from file</button>
+              <input ref={fileRef} type="file" accept=".json,application/json,text/plain" style={{ display: "none" }} onChange={restoreFromFile} />
             </div>
+            {bkMsg && <div style={{ fontSize: 12, color: "var(--dim)", marginTop: 6 }}>{bkMsg}</div>}
+            <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setShowBkText(!showBkText)}>
+              {showBkText ? "Hide copy/paste ▲" : "Copy / paste as text instead ▼"}
+            </button>
+            {showBkText && (<>
+              <textarea rows={6} style={{ width: "100%", fontFamily: "var(--mono)", fontSize: 11, marginTop: 6 }}
+                placeholder="Export fills this box — copy it out. Or paste a backup here and Import." value={bkText} onChange={(e) => setBkText(e.target.value)} />
+              <div className="frow" style={{ marginTop: 6 }}>
+                <button className="btn small" onClick={async () => {
+                  const obj = await onExportAll();
+                  setBkText(JSON.stringify(obj));
+                  setBkMsg(`Exported ${obj.bestiary.length} bestiary, ${Object.keys(obj.slots).length} encounters, ${Object.keys(obj.groups).length} groups. Copy the text!`);
+                }}>Export as text</button>
+                <button className="btn small primary" disabled={!bkText.trim()} onClick={async () => {
+                  try {
+                    const obj = JSON.parse(bkText);
+                    if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup.");
+                    const r = await onImportAll(obj);
+                    setBkMsg(`Imported: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups.`);
+                    setBkText(""); refresh();
+                  } catch (e) { setBkMsg(`Import failed: ${e.message}`); }
+                }}>Import</button>
+              </div>
+            </>)}
           </div>
         )}
       </div>
