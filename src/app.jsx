@@ -42,7 +42,7 @@ input[type=number]{width:64px}
 .pgh,.pgr{display:grid;grid-template-columns:22px minmax(0,1fr) 44px 46px 44px 48px;gap:4px;align-items:center}
 .pgh span{font-size:10px;color:var(--faint);letter-spacing:.05em;text-transform:uppercase;text-align:center}
 .pgh span:nth-child(2){text-align:left;padding-left:2px}
-.pgh .opt{display:block;font-size:8px;font-style:italic;text-transform:none;letter-spacing:.02em;opacity:.65}
+.pgh .opt{display:block;font-size:8px;font-style:italic;text-transform:none;letter-spacing:0;opacity:.65;white-space:nowrap}
 .pgr input[type="text"],.pgr input[type="number"]{width:100%;box-sizing:border-box;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:6px 6px;font-size:16px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
@@ -3967,7 +3967,7 @@ function InitTieModal({ groups, onConfirm }) {
    labels the card (for DMs juggling multiple tables). */
 const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", pp: "", dex: "", here: true };
 const partyRowsFrom = (saved) =>
-  (saved?.members?.length ? saved.members.map((m) => ({ ...PARTY_BLANK_ROW, ...m })) : [{ ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }]);
+  (saved?.members?.length ? saved.members.map((m) => ({ ...PARTY_BLANK_ROW, ...m })) : [{ ...PARTY_BLANK_ROW }]); // one slot to start — "+ Add player" grows it
 const partyRosterOf = (teamName, level, rows) => ({
   name: teamName.trim() || null,
   level: level !== "" && !isNaN(parseInt(level, 10)) ? parseInt(level, 10) : null,
@@ -3980,7 +3980,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
   return (
     <>
       <div className="partygrid">
-        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC<i className="opt">opt</i></span><span>HP<i className="opt">opt</i></span><span>PP<i className="opt">opt</i></span><span>DEX<i className="opt">opt</i></span></div>
+        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC<i className="opt">(optional)</i></span><span>HP<i className="opt">(optional)</i></span><span>PP<i className="opt">(optional)</i></span><span>DEX<i className="opt">(optional)</i></span></div>
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
@@ -3993,7 +3993,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         ))}
       </div>
       <div className="frow" style={{ marginTop: 8 }}>
-        <button className="btn small ghost" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>+ Add row</button>
+        <button className="btn small" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>＋ Add player</button>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>Party level</span>
         <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ ...FIELD, width: 64 }} />
