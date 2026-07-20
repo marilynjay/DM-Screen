@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1722" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>DM Combat Screen</title>
+    <script>
+      /* Storage shim: the app was built against the Claude artifact storage API
+         (window.storage). Outside Claude we back it with localStorage so saved
+         encounters work identically. Must run before the app mounts. */
+      (function () {
+        var P = "dmscreen:";
+        window.storage = {
+          get: async (k) => { var v = localStorage.getItem(P + k); return v == null ? null : { key: k, value: v }; },
+          set: async (k, v) => { localStorage.setItem(P + k, v); return { key: k, value: v }; },
+          delete: async (k) => { localStorage.removeItem(P + k); return { key: k, deleted: true }; },
+          list: async (pfx) => {
+            var keys = [];
+            for (var i = 0; i < localStorage.length; i++) {
+              var kk = localStorage.key(i);
+              if (kk && kk.indexOf(P) === 0) { var b = kk.slice(P.length); if (!pfx || b.indexOf(pfx) === 0) keys.push(b); }
+            }
+            return { keys };
+          },
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

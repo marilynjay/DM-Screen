@@ -1,0 +1,21 @@
+{
+  "name": "dm-combat-screen",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "smoke": "tsc src/app.jsx --allowJs --checkJs false --jsx react --target es2022 --module commonjs --outDir .smoke-out --skipLibCheck && node tools/run-smoke.cjs .smoke-out/app.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
