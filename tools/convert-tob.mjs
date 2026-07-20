@@ -118,11 +118,15 @@ for (const rec of raw) {
     const saveM = (a.desc || "").match(/DC (\d+) (Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/);
     if (a.attack_bonus != null) {
       act.kind = "atk"; act.hit = a.attack_bonus;
-      let dmg = clean(a.damage_dice);
-      if (!(DICE_RE.test(dmg) || /^\d+$/.test(dmg))) {
-        dmg = clean(((a.desc || "").match(/Hit:\s*\d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)/) || [])[1] || "");
-      }
-      if (DICE_RE.test(dmg) || /^\d+$/.test(dmg)) act.dmg = dmg;
+      // Open5e's damage_dice field usually DROPS the flat modifier ("1d4" for a
+      // "1d4 + 3" dagger — 564 of 657 ToB attacks). The desc's "Hit: N (dice)"
+      // always carries the full formula, so it wins; the field is the fallback.
+      const descDice = clean(((a.desc || "").match(/Hit:\s*\d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)/) || [])[1] || "");
+      const fieldDice = clean(a.damage_dice);
+      let dmg = DICE_RE.test(descDice) ? descDice
+        : DICE_RE.test(fieldDice) || /^\d+$/.test(fieldDice) ? fieldDice
+        : (((a.desc || "").match(/Hit:\s*(\d+)\s+\w+ damage/) || [])[1] || "");
+      if (dmg) act.dmg = dmg;
       else problems.push(`no parsable dmg: ${f.name} / ${n}`);
       const hitIdx = (a.desc || "").indexOf("Hit:");
       act.dtype = dtypeFrom(hitIdx >= 0 ? a.desc.slice(hitIdx) : a.desc) || "bludgeoning";
