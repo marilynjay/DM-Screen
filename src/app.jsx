@@ -17,7 +17,8 @@ const CSS = `
   --disp:'Cinzel',Georgia,serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-.dm-app{min-height:100vh;background:var(--ink);color:var(--text);
+.dm-app{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;
+  background:var(--ink);color:var(--text);
   font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   padding-bottom:80px}
 .dm-app ::selection{background:var(--gold-soft)}
@@ -28,6 +29,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold)}
 input[type=number]{width:64px}
 
 .hdr{display:flex;align-items:center;gap:12px;padding:10px 14px;
+  padding-top:calc(10px + env(safe-area-inset-top,0px));
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
 .hdr .title{font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.12em;
   text-transform:uppercase;color:var(--gold)}
@@ -120,7 +122,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   border-radius:6px;padding:1px 6px;margin:0 1px}
 .rolltotal.good{background:rgba(94,168,96,.22);border:1px solid rgba(94,168,96,.65);color:#9fd8a0}
 .rolltotal.bad{background:rgba(198,84,74,.2);border:1px solid rgba(198,84,74,.6);color:#eda49c}
-.srd-attrib{max-width:860px;margin:110px auto 36px;padding:20px 14px 0;font-size:10.5px;line-height:1.5;color:var(--faint);
+.srd-attrib{max-width:860px;margin:48px auto 0;padding:20px 14px 0;font-size:10.5px;line-height:1.5;color:var(--faint);
   border-top:1px solid var(--line)}
 .srd-attrib a{color:var(--dim)}
 .savetag{cursor:pointer;font-size:10px;font-family:var(--mono);border:1px solid var(--line2);border-radius:8px;padding:0 5px;margin-left:6px;color:var(--dim);white-space:nowrap}
@@ -271,7 +273,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 
 /* modals */
 .overlay{position:fixed;inset:0;background:rgba(10,8,14,.7);z-index:80;display:flex;
-  align-items:center;justify-content:center;padding:16px}
+  align-items:center;justify-content:center;padding:16px;
+  padding-top:calc(16px + env(safe-area-inset-top,0px));
+  padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
 .modal{background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:16px;
   width:100%;max-width:520px;max-height:88vh;overflow-y:auto}
 .modal h3{font-family:var(--disp);font-size:14px;letter-spacing:.08em;text-transform:uppercase;
@@ -288,7 +292,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .mlist .btn .cr{color:var(--faint);font-family:var(--mono);font-size:11px}
 
 .tabs{display:flex;gap:6px;flex-wrap:wrap}
-.toastwrap{position:fixed;top:56px;right:14px;z-index:90;display:flex;flex-direction:column;gap:8px}
+.toastwrap{position:fixed;top:calc(56px + env(safe-area-inset-top,0px));right:14px;z-index:90;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--raised);border:1px solid var(--gold);border-radius:8px;padding:10px 14px;
   font-size:13px;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .toast.bad{border-color:var(--danger)}
@@ -299,12 +303,12 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   .hdr-wide{display:none}
   .hdr-narrow{display:block}
   .hdr .title.incombat{display:none}
-  .hdr{gap:6px;padding:8px 8px}
+  .hdr{gap:6px;padding:8px 8px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
 }
 @media (max-width:560px){
   .nm{min-width:64px;font-size:13px}
   .actrow .an{min-width:90px}
-  .hdr{gap:8px;padding:8px 10px}
+  .hdr{gap:8px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
   .hdr .title{font-size:12px}
 }
 `;
@@ -3789,7 +3793,7 @@ export default function App() {
   const [showLog, setShowLog] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const logRef = useRef(null);
-  const botPad = 24;
+  const botPad = "calc(24px + env(safe-area-inset-bottom, 0px))";
   const scrollLog = () => setTimeout(() => logRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
   const openLog = () => { setLogCollapsed(false); setShowLog(true); scrollLog(); };
   const toggleLog = () => { if (showLog) setShowLog(false); else openLog(); };
@@ -4865,7 +4869,7 @@ export default function App() {
         </>
       )}
 
-      <div className="main" style={{ paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
+      <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {order.length === 0 && !restoreBanner && (
           <div className="card">
             <h3>New encounter</h3>
