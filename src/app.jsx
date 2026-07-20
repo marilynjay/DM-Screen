@@ -1666,11 +1666,19 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
 }
 
 /* Staged reveal for a roll's result chips: dice tumble first, then the modifier,
-   then the total, then verdict/damage chips drop in one beat at a time. */
-const REVEAL_DICE_BLOCK = 1.3, REVEAL_TEXT_BLOCK = 0.3;
+   then the total, then verdict/damage chips — one element per REVEAL_BEAT.
+   REVEAL_BEAT is the single knob for the pacing of the whole sequence. */
+const REVEAL_BEAT = 1.5;
+function diceTextStages(chip) {
+  if (!chip.t) return 0;
+  const s = String(chip.t);
+  const k = s.indexOf("= ");
+  if (k < 0) return 1;
+  return s.slice(0, k).trim() ? 2 : 1; // modifier + total, or just total
+}
 function chipDelays(chips) {
   const out = []; let t = 0;
-  for (const ch of chips) { out.push(t); t += ch.dice ? REVEAL_DICE_BLOCK : REVEAL_TEXT_BLOCK; }
+  for (const ch of chips) { out.push(t); t += (ch.dice ? 1 + diceTextStages(ch) : 1) * REVEAL_BEAT; }
   return out;
 }
 function ChipText({ chip, base }) {
@@ -1678,10 +1686,11 @@ function ChipText({ chip, base }) {
   if (!chip.dice) return chip.t; // container's own reveal covers plain text chips
   const s = String(chip.t);
   const k = s.indexOf("= ");
-  if (k < 0) return <span className="chip-reveal" style={{ animationDelay: `${base + 0.9}s` }}>{s}</span>;
+  if (k < 0) return <span className="chip-reveal" style={{ animationDelay: `${base + REVEAL_BEAT}s` }}>{s}</span>;
+  const hasMod = !!s.slice(0, k).trim();
   return (<>
-    {s.slice(0, k).trim() && <span className="chip-reveal" style={{ animationDelay: `${base + 0.9}s` }}>{s.slice(0, k)}</span>}
-    <span className="chip-reveal" style={{ animationDelay: `${base + 1.1}s` }}>{s.slice(k)}</span>
+    {hasMod && <span className="chip-reveal" style={{ animationDelay: `${base + REVEAL_BEAT}s` }}>{s.slice(0, k)}</span>}
+    <span className="chip-reveal" style={{ animationDelay: `${base + (hasMod ? 2 : 1) * REVEAL_BEAT}s` }}>{s.slice(k)}</span>
   </>);
 }
 function ResultChips({ chips, onApply }) {
