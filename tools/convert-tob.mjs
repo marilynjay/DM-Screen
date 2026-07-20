@@ -79,6 +79,10 @@ for (const rec of raw) {
   if (srdNames.has(f.name.toLowerCase())) { problems.push(`collision (skipped): ${f.name}`); continue; }
   const sb = { name: f.name, cr: String(f.challenge_rating), src: "tob", cat: catOf(f.type, f.subtype, f.name) };
   sb.ac = f.armor_class; sb.hp = f.hit_points;
+  const fl = String(f.desc || "").replace(/[_*]/g, "").replace(/\r/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  if (fl.length > 40) sb.fl = fl;
+  if (f.senses) sb.senses = f.senses;
+  if (f.languages) sb.langs = f.languages;
   const hpF = clean(f.hit_dice);
   if (DICE_RE.test(hpF)) sb.hpF = hpF;
   try {

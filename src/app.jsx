@@ -3319,7 +3319,51 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   );
 }
 
-function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
+/* Read-only statblock sheet for browsing — flavor text, full stats, no engine. */
+function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
+  const mods = sb.mods || {};
+  return (
+    <div>
+      <div className="frow"><button className="btn small ghost" onClick={onBack}>← Back to list</button></div>
+      <h3 style={{ marginTop: 6 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · Tome of Beasts" : ""}</span></h3>
+      {sb.fl && <div className="trait" style={{ fontStyle: "italic", whiteSpace: "pre-wrap", marginBottom: 8, color: "var(--dim)" }}>{sb.fl}</div>}
+      <div className="statline">
+        <b>AC</b> {sb.ac} · <b>HP</b> {sb.hp}{sb.hpF ? ` (${sb.hpF})` : ""} · <b>Speed</b> {sb.spd || "30 ft."}
+        {sb.senses ? <> · <b>Senses</b> {sb.senses}</> : null}
+        {sb.langs ? <> · <b>Languages</b> {sb.langs}</> : null}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 4, margin: "8px 0", textAlign: "center" }}>
+        {["str", "dex", "con", "int", "wis", "cha"].map((k) => (
+          <div key={k} style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "4px 0" }}>
+            <div style={{ fontSize: 9, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".08em" }}>{k}</div>
+            <div className="mono" style={{ fontSize: 13 }}>{fmtMod(mods[k] ?? 0)}</div>
+          </div>
+        ))}
+      </div>
+      {sb.saves && Object.keys(sb.saves).length > 0 && <div className="trait"><b>Saves</b> {Object.entries(sb.saves).map(([k, v]) => `${k.toUpperCase()} ${fmtMod(v)}`).join(", ")}</div>}
+      {sb.resist?.length ? <div className="trait"><b>Resistances</b> {sb.resist.join(", ")}</div> : null}
+      {sb.immune?.length ? <div className="trait"><b>Immunities</b> {sb.immune.join(", ")}</div> : null}
+      {sb.vuln?.length ? <div className="trait"><b>Vulnerabilities</b> {sb.vuln.join(", ")}</div> : null}
+      {sb.condImmune?.length ? <div className="trait"><b>Condition immunities</b> {sb.condImmune.join(", ")}</div> : null}
+      {sb.traits?.length ? (<div className="sect"><div className="lbl">Traits</div>{sb.traits.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
+      {sb.multi && <div className="reminder" style={{ marginTop: 6 }}>⚔ <b>Multiattack:</b> {sb.multi}</div>}
+      {sb.actions?.length ? (<div className="sect"><div className="lbl">Actions</div>{sb.actions.map((a, i) => (
+        <div className="trait" key={i}><b>{a.n}{a.rech ? ` (Recharge ${a.rech}–6)` : ""}.</b>{" "}
+          {a.kind === "atk" ? `${fmtMod(a.hit)} to hit${a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}. ` : a.kind === "save" ? `DC ${a.save?.dc} ${a.save?.ability} save. ` : ""}
+          {a.d}</div>
+      ))}</div>) : null}
+      {sb.bonus?.length ? (<div className="sect"><div className="lbl">Bonus Actions</div>{sb.bonus.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
+      {sb.reactions?.length ? (<div className="sect"><div className="lbl">Reactions</div>{sb.reactions.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
+      {sb.legendary ? (<div className="sect"><div className="lbl">Legendary Actions ({sb.legendary.count}/round)</div>{(sb.legendary.options || []).map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
+      <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+        <button className="btn" onClick={() => onClone(sb)}>⧉ Clone & tweak</button>
+        <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add to combat{count > 1 ? ` ×${count}` : ""}</button>
+      </div>
+    </div>
+  );
+}
+
+function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpanded, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
   const [q, setQ] = useState("");
   const [count, setCount] = useState(1);
   const [rollHp, setRollHp] = useState(false);
@@ -3347,6 +3391,8 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
     const names = biomePool(key.slice(2));
     return all.filter((b) => names.has(b.name));
   };
+  const [detail, setDetail] = useState(null);
+  const pick = (b) => (browse ? setDetail(b) : onAdd(b, count, rollHp));
 
   const doImport = () => {
     try {
@@ -3363,7 +3409,8 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Add from bestiary</h3>
+        {detail ? <StatblockView sb={detail} count={count} rollHp={rollHp} onAdd={onAdd} onClone={onClone} onBack={() => setDetail(null)} /> : (<>
+        <h3>{browse ? "🐉 Bestiary" : "Add from bestiary"}</h3>
         <div className="frow">
           <input type="text" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus style={{ flex: 1 }} />
           <label>×</label>
@@ -3386,7 +3433,7 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
           <div className="mlist">
             {mine.map((b) => (
               <span key={b.name} style={{ position: "relative" }}>
-                <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
+                <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
                   {b.name}<br /><span className="cr">{b.cr ? `CR ${b.cr} · ` : ""}AC {b.ac} · {b.hp} HP</span>
                 </button>
                 <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -3406,7 +3453,7 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
             <div className="mlist">
               {builtIn.map((b) => (
                 <span key={b.name} style={{ position: "relative" }}>
-                  <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
+                  <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
                     {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                   </button>
                   <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -3438,7 +3485,7 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
                     <div className="mlist" style={{ marginBottom: 6 }}>
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
                         <span key={b.name} style={{ position: "relative" }}>
-                          <button className="btn" style={{ width: "100%" }} onClick={() => onAdd(b, count, rollHp)}>
+                          <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
                             {b.name}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{b.src === "tob" ? " · ToB" : ""}{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                           </button>
                           <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -3481,6 +3528,7 @@ function BestiaryModal({ custom, expanded, expandedReady, onToggleExpanded, onAd
             </div>
           </div>
         )}
+        </>)}
       </div>
     </div>
   );
@@ -5482,6 +5530,7 @@ export default function App() {
           <button className="btn small ghost" onClick={() => { setMoreMenu(!moreMenu); setAddMenu(false); }}>⋯</button>
           {moreMenu && (
             <div className="menu" onClick={() => setMoreMenu(false)}>
+              <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
               <button onClick={() => setSpellBook(true)}>📖 Spell compendium…</button>
               <button onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>
               <button onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>
@@ -5638,7 +5687,7 @@ export default function App() {
         onSaveEdit={(sb) => { saveEditedMonster(sb, modal.edit.name); setModal({ type: "bestiary" }); }}
         onClose={() => setModal(modal.edit || modal.from ? { type: "bestiary" } : null)} />}
       {modal?.type === "bestiary" && (
-        <BestiaryModal custom={myBestiary} onAdd={(sb, count, rollHp) => { addFromBestiary(sb, count, rollHp); setModal(null); }}
+        <BestiaryModal custom={myBestiary} browse={!!modal.browse} onAdd={(sb, count, rollHp) => { addFromBestiary(sb, count, rollHp); setModal(null); }}
           onDeleteCustom={(name) => saveMyBestiary(myBestiary.filter((x) => x.name !== name))}
           onImport={(arr) => upsertBestiary(arr)}
           onEdit={(b) => setModal({ type: "custom", edit: b })}
