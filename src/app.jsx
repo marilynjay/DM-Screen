@@ -61,7 +61,7 @@ input[type=number]{width:64px}
 .btn.primary:disabled{background:var(--raised);border-color:var(--line2);color:var(--faint);opacity:.75}
 
 .mono{font-family:var(--mono);font-size:12px}
-.chip{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:12px;background:var(--ink);
+.chip{display:inline-flex;align-items:center;gap:3px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;background:var(--ink);
   border:1px solid var(--line);border-radius:5px;padding:1px 6px;white-space:nowrap}
 .die{flex-shrink:0;transform-origin:50% 50%}
 .die.rolling{animation:dietumble .95s cubic-bezier(.3,.7,.3,1)}
@@ -333,7 +333,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 @media (max-width:560px){
   .nm{min-width:64px;font-size:13px}
   .actrow .an{min-width:90px}
-  .hdr{gap:8px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
+  .hdr{gap:4px;padding:8px 6px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
   .hdr .title{font-size:12px}
 }
 `;
@@ -4436,7 +4436,7 @@ export default function App() {
         const total = roll.total + (critRoll ? critRoll.total : 0);
         const allDice = [...(roll.dice || []), ...(critRoll ? critRoll.dice || [] : [])].map((x) => ({ ...x, cls: "dmgd" })); // flat damage rolls carry no dice
         const modTxt = roll.mod ? ` ${fmtMod(roll.mod)}` : "";
-        if (allDice.length > 0 && allDice.length <= 6) {
+        if (allDice.length > 0 && allDice.length <= 20) { // >20 dice smells like a formula typo — fall back to text
           return { id: Math.random(), dice: allDice, dieSize: 24, t: `${modTxt} = ${total} ${dtype}${critRoll ? " (crit dice incl.)" : ""}`, k: "dmg", total };
         }
         return { t: `${dtype} ${total} [${roll.text}${critRoll ? ` + crit ${critRoll.text}` : ""}]`, k: "dmg", total };
@@ -4846,7 +4846,7 @@ export default function App() {
       const r = rollFormula(dice); if (!r) return;
       const tag = alt ? " (alt)" : " (conditional)";
       const modTxt = r.mod ? ` ${fmtMod(r.mod)}` : "";
-      const chip = r.dice && r.dice.length <= 6
+      const chip = r.dice && r.dice.length <= 20
         ? { id: Math.random(), dice: r.dice.map((x) => ({ ...x, cls: "dmgd" })), dieSize: 24, t: `${modTxt} = ${r.total} ${dtype}${tag}`, k: "dmg" }
         : { t: `${dtype} ${r.total} [${r.text}]${tag}`, k: "dmg" };
       setTimeout(() => setResults((res) => ({ ...res, [`${uid}:${ai}`]: [...(res[`${uid}:${ai}`] || []), chip] })), 0);
@@ -4860,7 +4860,7 @@ export default function App() {
       const dice = a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]);
       if (dice) {
         const r = rollFormula(dice);
-        if (r && r.dice && r.dice.length <= 6) {
+        if (r && r.dice && r.dice.length <= 20) {
           chips.push({ id: Math.random(), dice: r.dice.map((x) => ({ ...x, cls: "dmgd" })), dieSize: 24, t: `${r.mod ? ` ${fmtMod(r.mod)}` : ""} = ${r.total} · half ${Math.floor(r.total / 2)}`, k: "dmg" });
         } else if (r) chips.push({ t: `damage ${r.total} [${r.text}] · half ${Math.floor(r.total / 2)}`, k: "dmg" });
       }
