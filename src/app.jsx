@@ -183,6 +183,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .concring{position:absolute;inset:3px;border:1.5px solid rgba(102,146,222,.8);border-radius:5px;pointer-events:none}
 .advhint{cursor:pointer;display:inline-block;font-size:11px;color:#8fae87;background:rgba(122,168,110,.10);border:1px solid rgba(122,168,110,.28);border-radius:8px;padding:1px 7px;margin:1px 4px 1px 0;font-family:var(--mono)}
 .btn.cond{border-color:rgba(217,164,65,.45);color:var(--gold);background:rgba(217,164,65,.07);font-family:var(--mono);font-size:11px;padding:2px 8px}
+.btn.hitv{background:var(--ok);border-color:var(--ok);color:#14251a;font-weight:600}
+.btn.missv{background:var(--danger);border-color:var(--danger);color:#2b0f0c;font-weight:600}
 .chip.hit{border-color:var(--gold);color:var(--gold)}
 .chip.dmg{border-color:var(--enemy);color:#e8a49b}
 .chip.ok{border-color:var(--ok);color:var(--ok)}
@@ -1792,8 +1794,8 @@ function ResultChips({ chips, onApply, onMiss }) {
       // applies the damage in one tap, miss locks it out
       ? <span key={chip.id || j} className={`chip cond ${rev}`} style={{ animationDelay: `${D[j]}s`, display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           Does {chip.atkTotal} hit {chip.tName}?
-          <button className="btn small cond" onClick={() => onApply(chip)}>✓ Hit — apply {chip.total}</button>
-          <button className="btn small" onClick={() => onMiss(chip)}>✗ Miss</button>
+          <button className="btn small hitv" onClick={() => onApply(chip)}>✓ Hit — apply {chip.total}</button>
+          <button className="btn small missv" onClick={() => onMiss(chip)}>✗ Miss</button>
         </span>
       : chip.applyTo && onApply
       ? <button key={chip.id || j} className={`chip cond ${rev}`} style={{ cursor: "pointer", animationDelay: `${D[j]}s` }} onClick={() => onApply(chip)}>⚔ {chip.t}</button>
