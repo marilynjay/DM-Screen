@@ -3387,7 +3387,7 @@ function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSav
     a.href = url; a.download = `dm-screen-backup-${obj.exported.slice(0, 10)}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}.`);
+    setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${(obj.items || []).length} item${(obj.items || []).length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}.`);
   };
   const restoreFromFile = async (e) => {
     const file = e.target.files?.[0];
@@ -3397,7 +3397,7 @@ function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSav
       const obj = JSON.parse(await file.text());
       if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup file.");
       const r = await onImportAll(obj);
-      setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups (merged into what's here).`);
+      setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.items || 0} items, ${r.slots} encounters, ${r.groups} groups (merged into what's here).`);
       refresh();
     } catch (err) { setBkMsg(`Restore failed: ${err.message}`); }
   };
@@ -3639,19 +3639,54 @@ function AddAttackModal({ c, onAdd, onClose }) {
   );
 }
 
-function LootGiveModal({ c, onSave, onClose }) {
+const BLANK_ITEM_FORM = { origN: null, n: "", rarity: "C", d: "", isWpn: false, dmg: "1d6", dtype: "slashing", fin: false, rng: false, b: "0", heal: "", ch: "", c: false, acB: "" };
+function itemToForm(it) {
+  return {
+    origN: it.n, n: it.n, rarity: "CURVL".includes(it.rarity) ? it.rarity : "C", d: it.d || "",
+    isWpn: !!it.wpn, dmg: it.wpn?.dmg || "1d6", dtype: it.wpn?.dtype || "slashing",
+    fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, b: String(it.wpn?.b || 0),
+    heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
+  };
+}
+function formToItem(f) {
+  const it = { n: f.n.trim(), rarity: f.rarity, custom: 1 };
+  if (f.d.trim()) it.d = f.d.trim();
+  if (f.isWpn && f.dmg.trim()) {
+    it.wpn = { dmg: f.dmg.trim(), dtype: f.dtype };
+    if (f.fin) it.wpn.fin = 1;
+    if (f.rng) it.wpn.rng = 1;
+    if (parseInt(f.b, 10)) it.wpn.b = parseInt(f.b, 10);
+  }
+  if (f.heal.trim()) it.heal = f.heal.trim();
+  if (f.ch.trim() !== "" && !isNaN(parseInt(f.ch, 10))) it.ch = Math.max(0, parseInt(f.ch, 10));
+  if (f.c) it.c = 1;
+  if (parseInt(f.acB, 10)) it.acB = parseInt(f.acB, 10);
+  return it;
+}
+
+function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomItem, onSave, onClose }) {
   const [items, setItems] = useState(() => (c.loot || []).map(lootObj));
   const [custom, setCustom] = useState("");
   const [browse, setBrowse] = useState(false);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
+  const [form, setForm] = useState(null); // null = builder closed
   const filtered = ITEMS.filter((i) =>
     (tab === "all" || (tab === "W" ? i.rarity === "G" && i.wpn : tab === "A" ? i.rarity === "G" && !i.wpn : i.rarity === tab))
     && i.n.toLowerCase().includes(q.toLowerCase()));
+  const mineFiltered = customItems.filter((i) => (tab === "all" || i.rarity === tab) && i.n.toLowerCase().includes(q.toLowerCase()));
   const addCustomLine = () => {
     const t = custom.trim(); if (!t) return;
-    setItems([...items, lookupItem(t) || { n: t }]);
+    const mine = customItems.find((i) => i.n.toLowerCase() === t.toLowerCase());
+    setItems([...items, mine ? JSON.parse(JSON.stringify(mine)) : lookupItem(t) || { n: t }]);
     setCustom("");
+  };
+  const setF = (k, v) => setForm({ ...form, [k]: v });
+  const saveForm = () => {
+    const it = formToItem(form);
+    onSaveCustomItem(it, form.origN);
+    if (!form.origN) setItems([...items, JSON.parse(JSON.stringify(it))]); // creating from this creature's loot screen: hand it over too
+    setForm(null);
   };
   return (
     <div className="overlay" onClick={onClose}>
@@ -3674,9 +3709,58 @@ function LootGiveModal({ c, onSave, onClose }) {
             onKeyDown={(e) => e.key === "Enter" && addCustomLine()} style={{ flex: 1 }} />
           <button className="btn small" disabled={!custom.trim()} onClick={addCustomLine}>+ Add</button>
         </div>
-        <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setBrowse(!browse)}>
-          {browse ? "Hide catalog ▲" : "Browse magic items (SRD) ▼"}
-        </button>
+        <div className="frow" style={{ marginTop: 6 }}>
+          <button className="btn small ghost" onClick={() => setBrowse(!browse)}>
+            {browse ? "Hide catalog ▲" : "Browse magic items (SRD) ▼"}
+          </button>
+          <button className="btn small ghost" onClick={() => setForm(form ? null : { ...BLANK_ITEM_FORM })}>
+            {form && !form.origN ? "Close builder ▲" : "＋ New custom item…"}
+          </button>
+        </div>
+        {form && (
+          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{form.origN ? `Edit item — ${form.origN}` : "New custom item"}</div>
+            <div className="frow">
+              <input type="text" placeholder="Item name" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus />
+              <select value={form.rarity} onChange={(e) => setF("rarity", e.target.value)}>
+                {["C", "U", "R", "V", "L"].map((r) => (<option key={r} value={r}>{RARITY_NAME[r]}</option>))}
+              </select>
+            </div>
+            <div className="frow"><input type="text" placeholder="What it does (shown wherever the item appears)" style={{ flex: 1 }} value={form.d} onChange={(e) => setF("d", e.target.value)} /></div>
+            <div className="frow" style={{ flexWrap: "wrap" }}>
+              <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.isWpn} onChange={(e) => setF("isWpn", e.target.checked)} /> weapon (holder gets it as an attack)</label>
+            </div>
+            {form.isWpn && (
+              <div className="frow" style={{ flexWrap: "wrap" }}>
+                <input type="text" placeholder="1d8" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
+                <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
+                  {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                </select>
+                <select value={form.b} onChange={(e) => setF("b", e.target.value)} title="Magic bonus to hit and damage">
+                  {["0", "1", "2", "3"].map((n) => (<option key={n} value={n}>{n === "0" ? "no bonus" : `+${n}`}</option>))}
+                </select>
+                <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
+                <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
+              </div>
+            )}
+            <div className="frow" style={{ flexWrap: "wrap" }}>
+              <label style={{ minWidth: 0 }}>Heals</label>
+              <input type="text" placeholder="2d4+2" style={{ width: 76, flex: "none" }} value={form.heal} onChange={(e) => setF("heal", e.target.value)} />
+              <label style={{ minWidth: 0 }}>Charges</label>
+              <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} />
+              <label style={{ minWidth: 0 }}>+AC</label>
+              <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.acB} onChange={(e) => setF("acB", e.target.value)} title="Equippable AC bonus (shield, ring…)" />
+              <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.c} onChange={(e) => setF("c", e.target.checked)} /> single-use</label>
+            </div>
+            <div className="trait" style={{ color: "var(--faint)", fontSize: 11, marginTop: 2 }}>
+              All fields optional except the name. Heal/charges/single-use give it a Use button; +AC gives it Equip.
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
+              <button className="btn small" onClick={() => setForm(null)}>Cancel</button>
+              <button className="btn small primary" disabled={!form.n.trim()} onClick={saveForm}>{form.origN ? "Save changes" : "Save item"}</button>
+            </div>
+          </div>
+        )}
         {browse && (
           <div style={{ marginTop: 8 }}>
             <div className="frow">
@@ -3692,6 +3776,21 @@ function LootGiveModal({ c, onSave, onClose }) {
               ))}
             </div>
             <div style={{ maxHeight: 220, overflowY: "auto" }}>
+              {mineFiltered.length > 0 && (<>
+                <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0", letterSpacing: ".1em", textTransform: "uppercase" }}>My items</div>
+                {mineFiltered.map((it) => (
+                  <div className="targetline" key={"mine:" + it.n}>
+                    <span style={{ flex: 1 }}>
+                      {it.n} <span style={{ color: "var(--faint)", fontSize: 11 }}>· {rarityLabel(it)} · custom</span>
+                      <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>
+                    </span>
+                    <button className="btn small ghost" title="Edit this item" onClick={() => setForm(itemToForm(it))}>✎</button>
+                    <button className="btn small ghost" title="Delete from my items" onClick={() => onDeleteCustomItem(it.n)}>✕</button>
+                    <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>
+                  </div>
+                ))}
+                <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD catalog</div>
+              </>)}
               {filtered.map((it) => (
                 <div className="targetline" key={it.n}>
                   <span style={{ flex: 1 }}>
@@ -3701,7 +3800,7 @@ function LootGiveModal({ c, onSave, onClose }) {
                   <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>
                 </div>
               ))}
-              {filtered.length === 0 && <div className="trait">No matches.</div>}
+              {filtered.length === 0 && mineFiltered.length === 0 && <div className="trait">No matches.</div>}
             </div>
           </div>
         )}
@@ -3942,6 +4041,7 @@ export default function App() {
   const [moreMenu, setMoreMenu] = useState(false);
   const [restoreBanner, setRestoreBanner] = useState(null);
   const [myBestiary, setMyBestiary] = useState([]);
+  const [myItems, setMyItems] = useState([]);
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState("");
@@ -3953,6 +4053,7 @@ export default function App() {
     return () => clearTimeout(t);
   }, [state.activeUid, state.mode]);
   const bestRef = useRef(myBestiary); bestRef.current = myBestiary;
+  const itemsRef = useRef(myItems); itemsRef.current = myItems;
   const partyRef = useRef(party); partyRef.current = party;
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
@@ -3972,12 +4073,27 @@ export default function App() {
   /* One-time nudge after the first custom save: data lives only in this browser,
      so point at the backup file feature before a big collection builds up. */
   const backupSeenRef = useRef(true); // assume seen until the stored flag loads, so early saves can't double-fire
+  const noticePendingRef = useRef(false);
+  const tryShowBackupNotice = () => {
+    if (backupSeenRef.current || !noticePendingRef.current) return;
+    setModal((m) => {
+      if (m != null) return m; // another dialog is up — stay pending, retry on the next save or modal close
+      backupSeenRef.current = true;
+      noticePendingRef.current = false;
+      stSet("dm5e:backupNoticeSeen", 1);
+      return { type: "backup-notice" };
+    });
+  };
   const maybeShowBackupNotice = () => {
     if (backupSeenRef.current) return;
-    backupSeenRef.current = true;
-    stSet("dm5e:backupNoticeSeen", 1);
-    setTimeout(() => setModal((m) => (m == null || m.type === "bestiary" ? { type: "backup-notice" } : m)), 450);
+    noticePendingRef.current = true;
+    setTimeout(tryShowBackupNotice, 450);
   };
+  useEffect(() => {
+    if (modal != null) return;
+    const t = setTimeout(tryShowBackupNotice, 350);
+    return () => clearTimeout(t);
+  }, [modal]); // eslint-disable-line react-hooks/exhaustive-deps
   const upsertBestiary = (sbs) => {
     let list = [...bestRef.current];
     let added = 0, updated = 0;
@@ -3989,6 +4105,23 @@ export default function App() {
     saveMyBestiary(list);
     maybeShowBackupNotice();
     return { added, updated };
+  };
+  /* ---------- custom items ---------- */
+  const saveMyItems = (list) => { setMyItems(list); stSet("dm5e:items", list); };
+  const saveCustomItem = (item, origName) => {
+    const drop = new Set([item.n.toLowerCase(), (origName || item.n).toLowerCase()]);
+    const list = [...itemsRef.current.filter((x) => !drop.has(x.n.toLowerCase())), item]
+      .sort((a, b) => a.n.localeCompare(b.n));
+    saveMyItems(list);
+    pushToasts([{ kind: "good", text: `"${item.n}" ${origName ? "updated in" : "saved to"} your items.` }]);
+    maybeShowBackupNotice();
+  };
+  const deleteCustomItem = (name) => saveMyItems(itemsRef.current.filter((x) => x.n.toLowerCase() !== name.toLowerCase()));
+  const upsertItems = (arr) => {
+    const good = arr.filter((y) => y && typeof y.n === "string" && y.n.trim());
+    const names = new Set(good.map((y) => y.n.toLowerCase()));
+    saveMyItems([...itemsRef.current.filter((x) => !names.has(x.n.toLowerCase())), ...good].sort((a, b) => a.n.localeCompare(b.n)));
+    return good.length;
   };
 
   const pushToasts = (arr) => {
@@ -4034,6 +4167,8 @@ export default function App() {
       if (Array.isArray(best)) setMyBestiary(best);
       const pt = await stGet("dm5e:party");
       if (pt) setParty(pt);
+      const its = await stGet("dm5e:items");
+      if (Array.isArray(its)) setMyItems(its);
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -4906,14 +5041,15 @@ export default function App() {
     const slots = {}, groups = {};
     for (const k of slotKeys) slots[k.replace("dm5e:slot:", "")] = await stGet(k);
     for (const k of groupKeys) groups[k.replace("dm5e:group:", "")] = await stGet(k);
-    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, party: partyRef.current, slots, groups };
+    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, slots, groups };
   };
   const importAll = async (obj) => {
     // whoever restores a backup already knows about backups — never show them the nudge
     backupSeenRef.current = true;
     stSet("dm5e:backupNoticeSeen", 1);
-    const r = { bestiary: 0, slots: 0, groups: 0 };
+    const r = { bestiary: 0, items: 0, slots: 0, groups: 0 };
     if (Array.isArray(obj.bestiary) && obj.bestiary.length) { const { added, updated } = upsertBestiary(obj.bestiary); r.bestiary = added + updated; }
+    if (Array.isArray(obj.items) && obj.items.length) r.items = upsertItems(obj.items);
     for (const [k, v] of Object.entries(obj.slots || {})) { if (v) { await stSet(`dm5e:slot:${k}`, v); r.slots++; } }
     for (const [k, v] of Object.entries(obj.groups || {})) { if (Array.isArray(v)) { await stSet(`dm5e:group:${k}`, v); r.groups++; } }
     if (obj.party) { setParty(obj.party); stSet("dm5e:party", obj.party); }
@@ -5220,7 +5356,7 @@ export default function App() {
           }} />
       )}
       {modal?.type === "loot-give" && modalC && (
-        <LootGiveModal c={modalC} onClose={() => setModal(null)}
+        <LootGiveModal c={modalC} customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)}
           onSave={(items) => {
             mutate((d, L) => {
               const c = d.combatants.find((x) => x.uid === modal.uid); if (!c) return;
