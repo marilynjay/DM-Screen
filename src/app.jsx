@@ -3962,40 +3962,22 @@ function InitTieModal({ groups, onConfirm }) {
 /* Party opener: lives on the setup screen until the roster has a player, then
    gets out of the way. The party is remembered (dm5e:partyRoster, included in
    file backups) so every later session is one tap. Only names are required;
-   the optional level prefills the encounter balancer. */
-function PartySetupCard({ saved, onAdd, onSave }) {
-  const blankRow = { name: "", ac: "", hp: "", pp: "", dex: "", here: true };
-  const fromSaved = () => (saved?.members?.length ? saved.members.map((m) => ({ ...blankRow, ...m })) : [{ ...blankRow }, { ...blankRow }, { ...blankRow }, { ...blankRow }]);
-  const [editing, setEditing] = useState(!saved);
-  const [rows, setRows] = useState(fromSaved);
-  const [level, setLevel] = useState(saved?.level ?? "");
+   the optional level prefills the encounter balancer, the optional team name
+   labels the card (for DMs juggling multiple tables). */
+const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", pp: "", dex: "", here: true };
+const partyRowsFrom = (saved) =>
+  (saved?.members?.length ? saved.members.map((m) => ({ ...PARTY_BLANK_ROW, ...m })) : [{ ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }, { ...PARTY_BLANK_ROW }]);
+const partyRosterOf = (teamName, level, rows) => ({
+  name: teamName.trim() || null,
+  level: level !== "" && !isNaN(parseInt(level, 10)) ? parseInt(level, 10) : null,
+  members: rows.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() })),
+});
+
+function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) {
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
-  const named = rows.filter((r) => r.name.trim());
-  const going = named.filter((r) => r.here);
-  const add = () => {
-    const roster = { level: level !== "" && !isNaN(parseInt(level, 10)) ? parseInt(level, 10) : null, members: named.map((r) => ({ ...r, name: r.name.trim() })) };
-    onSave(roster);
-    onAdd(roster.members.filter((r) => r.here), roster.level);
-  };
-  if (!editing) {
-    return (
-      <div className="card">
-        <h3>Your party{saved.level ? <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}> · level {saved.level}</span> : null}</h3>
-        <div className="trait" style={{ marginBottom: 8 }}>
-          {saved.members.map((m, i) => (
-            <span key={i}>{i > 0 ? ", " : ""}<span style={m.here ? {} : { color: "var(--faint)", textDecoration: "line-through" }} title={m.here ? undefined : "Sitting out — tap Edit to change"}>{m.name}</span></span>
-          ))}
-        </div>
-        <div className="frow" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={() => { setRows(fromSaved()); setLevel(saved.level ?? ""); setEditing(true); }}>Edit party…</button>
-          <button className="btn primary" disabled={!saved.members.some((m) => m.here)} onClick={() => onAdd(saved.members.filter((m) => m.here), saved.level ?? null)}>Add party</button>
-        </div>
-      </div>
-    );
-  }
+  const FIELD = { background: "var(--panel)", border: "1px solid var(--line2)", borderRadius: 8, color: "var(--text)", WebkitTextFillColor: "var(--text)", caretColor: "var(--gold)", padding: "6px 8px", fontSize: 16 };
   return (
-    <div className="card">
-      <h3>Add your party</h3>
+    <>
       <div className="partygrid">
         <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC</span><span>HP</span><span>PP</span><span>DEX</span></div>
         {rows.map((r, i) => (
@@ -4010,15 +3992,76 @@ function PartySetupCard({ saved, onAdd, onSave }) {
         ))}
       </div>
       <div className="frow" style={{ marginTop: 8 }}>
-        <button className="btn small ghost" onClick={() => setRows([...rows, { ...blankRow }])}>+ Add row</button>
+        <button className="btn small ghost" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>+ Add row</button>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>Party level</span>
-        <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ width: 64, background: "var(--panel)", border: "1px solid var(--line2)", borderRadius: 8, color: "var(--text)", WebkitTextFillColor: "var(--text)", padding: "6px 8px", fontSize: 16 }} />
+        <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ ...FIELD, width: 64 }} />
       </div>
+      <div className="frow" style={{ marginTop: 6 }}>
+        <input type="text" placeholder="Team name (optional — e.g. Tuesday group)" value={teamName} onChange={(e) => setTeamName(e.target.value)} title="Handy if you run more than one table" style={{ ...FIELD, flex: 1, minWidth: 0, boxSizing: "border-box" }} />
+      </div>
+    </>
+  );
+}
+
+function PartySetupCard({ saved, onAdd, onSave }) {
+  const [editing, setEditing] = useState(!saved);
+  const [rows, setRows] = useState(() => partyRowsFrom(saved));
+  const [level, setLevel] = useState(saved?.level ?? "");
+  const [teamName, setTeamName] = useState(saved?.name ?? "");
+  const going = rows.filter((r) => r.name.trim() && r.here);
+  const resetFromSaved = () => { setRows(partyRowsFrom(saved)); setLevel(saved.level ?? ""); setTeamName(saved.name ?? ""); };
+  const add = () => {
+    const roster = partyRosterOf(teamName, level, rows);
+    onSave(roster);
+    onAdd(roster.members.filter((r) => r.here), roster.level);
+  };
+  if (!editing) {
+    return (
+      <div className="card">
+        <h3>{saved.name || "Your party"}{saved.level ? <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}> · level {saved.level}</span> : null}</h3>
+        <div className="trait" style={{ marginBottom: 8 }}>
+          {saved.members.map((m, i) => (
+            <span key={i}>{i > 0 ? ", " : ""}<span style={m.here ? {} : { color: "var(--faint)", textDecoration: "line-through" }} title={m.here ? undefined : "Sitting out — tap Edit to change"}>{m.name}</span></span>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn" onClick={() => { resetFromSaved(); setEditing(true); }}>Edit party…</button>
+          <button className="btn primary" disabled={!saved.members.some((m) => m.here)} onClick={() => onAdd(saved.members.filter((m) => m.here), saved.level ?? null)}>Add party</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <h3>Add your party</h3>
+      <PartyFields rows={rows} setRows={setRows} level={level} setLevel={setLevel} teamName={teamName} setTeamName={setTeamName} />
       <div className="trait" style={{ color: "var(--faint)" }}>Only names are required — ✓ marks who's here tonight. Initiative is collected when combat starts. HP (if filled) lets the app track their damage; PP shows on their row; DEX only breaks initiative ties and is never shown. Your party is remembered for next session.</div>
       <div className="frow" style={{ justifyContent: "flex-end" }}>
-        {saved ? <button className="btn" onClick={() => { setRows(fromSaved()); setLevel(saved.level ?? ""); setEditing(false); }}>Cancel</button> : null}
+        {saved ? <button className="btn" onClick={() => { resetFromSaved(); setEditing(false); }}>Cancel</button> : null}
         <button className="btn primary" disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ⋯ menu → Edit party: adjust the remembered party any time (level-ups, new HP,
+   roster changes, team name) without touching whoever is currently in the fight. */
+function PartyEditModal({ saved, onSave, onClose }) {
+  const [rows, setRows] = useState(() => partyRowsFrom(saved));
+  const [level, setLevel] = useState(saved?.level ?? "");
+  const [teamName, setTeamName] = useState(saved?.name ?? "");
+  const named = rows.filter((r) => r.name.trim());
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Edit party</h3>
+        <PartyFields rows={rows} setRows={setRows} level={level} setLevel={setLevel} teamName={teamName} setTeamName={setTeamName} />
+        <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time the party is added to the screen — players already in the fight aren't modified. Only names are required.</div>
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!named.length} onClick={() => { onSave(partyRosterOf(teamName, level, rows)); onClose(); }}>Save party</button>
+        </div>
       </div>
     </div>
   );
@@ -4623,7 +4666,8 @@ export default function App() {
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [partyRoster, setPartyRosterState] = useState(null); // remembered party for the one-tap opener
   const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
-  const savePartyRoster = (r) => { setPartyRosterState(r); stSet("dm5e:partyRoster", r); };
+  const [partyVer, setPartyVer] = useState(0); // bumps on save so the opener card remounts with fresh values
+  const savePartyRoster = (r) => { setPartyRosterState(r); setPartyVer((v) => v + 1); stSet("dm5e:partyRoster", r); };
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState(""); const [pDex, setPDex] = useState("");
   const stateRef = useRef(state); stateRef.current = state;
@@ -5834,6 +5878,7 @@ export default function App() {
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
+              <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit party…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={() => setPlayersWinTies(!playersWinTies)} title="When on, players act before monsters on tied initiative. Tracked player DEX breaks the remaining ties.">{playersWinTies ? "✓" : "✗"} Players win init ties</button>
               {state.combatants.some((c) => c.side === "ally") && (
@@ -5887,7 +5932,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <PartySetupCard key={partyRoster ? "saved" : "new"} saved={partyRoster} onAdd={addPartyNow} onSave={savePartyRoster} />
+          <PartySetupCard key={partyRoster ? `saved${partyVer}` : "new"} saved={partyRoster} onAdd={addPartyNow} onSave={savePartyRoster} />
         )}
 
         {legendaryWatch.map((c) => (
@@ -6155,6 +6200,9 @@ export default function App() {
         <BalanceModal state={state} party={party} onClose={() => setModal(null)}
           onSaveParty={(p) => { setParty(p); stSet("dm5e:party", p); }}
           onApply={applyBalance} />
+      )}
+      {modal?.type === "party-edit" && (
+        <PartyEditModal saved={partyRoster} onSave={savePartyRoster} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player" && (
         <div className="overlay" onClick={() => setModal(null)}>
