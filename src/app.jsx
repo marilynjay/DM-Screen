@@ -3223,6 +3223,9 @@ function DeathSavesModal({ c, onRecord, onClose }) {
           <button className="btn" onClick={() => onRecord("stabilize")}>Stabilized (magic/medicine)</button>
           <button className="btn ghost" onClick={() => onRecord("reset")}>Reset</button>
         </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn small" onClick={onClose}>Done</button>
+        </div>
       </div>
     </div>
   );
@@ -4673,6 +4676,8 @@ export default function App() {
     warnedTurn.current = key;
     const c = state.combatants.find((x) => x.uid === state.activeUid);
     if (!c || c.dead) return;
+    // downed and dying: their turn IS the death save — surface the recorder
+    if (c.unconscious && !c.stable) { setModal({ type: "deathsaves", uid: c.uid }); return; }
     const INCAP = ["Paralyzed", "Stunned", "Petrified", "Incapacitated", "Unconscious"];
     const bad = (c.conditions || []).filter((cd) => cd.name.startsWith("Command:") || INCAP.includes(cd.name));
     if (bad.length) setModal({ type: "turn-warn", uid: c.uid, conds: bad.map((cd) => ({ name: cd.name, spell: cd.spell || null })) });
@@ -6619,7 +6624,7 @@ export default function App() {
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
           onRecord={(kind) => {
             mutate((d, L, T) => { const c = d.combatants.find((x) => x.uid === modal.uid); if (c) applyDeathSave(c, kind, L, T); });
-            if (kind === "nat20") setModal(null);
+            if (kind !== "reset") setModal(null); // one save per turn — recording it is the whole interaction
           }} />
       )}
       {modal?.type === "log-text" && (
