@@ -1783,11 +1783,19 @@ function ChipText({ chip, base }) {
     <span className="chip-reveal" style={{ animationDelay: `${base + (hasMod ? 2 : 1) * ANIM.beat}s` }}>{s.slice(k)}</span>
   </>);
 }
-function ResultChips({ chips, onApply }) {
+function ResultChips({ chips, onApply, onMiss }) {
   const D = chipDelays(chips);
   const rev = ANIM.on ? "chip-reveal" : "";
   return chips.map((chip, j) => (
-    chip.applyTo && onApply
+    chip.verdict && onApply && onMiss
+      // unknown AC: the DM asks the table, then answers with a verdict — hit
+      // applies the damage in one tap, miss locks it out
+      ? <span key={chip.id || j} className={`chip cond ${rev}`} style={{ animationDelay: `${D[j]}s`, display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          Does {chip.atkTotal} hit {chip.tName}?
+          <button className="btn small cond" onClick={() => onApply(chip)}>✓ Hit — apply {chip.total}</button>
+          <button className="btn small" onClick={() => onMiss(chip)}>✗ Miss</button>
+        </span>
+      : chip.applyTo && onApply
       ? <button key={chip.id || j} className={`chip cond ${rev}`} style={{ cursor: "pointer", animationDelay: `${D[j]}s` }} onClick={() => onApply(chip)}>⚔ {chip.t}</button>
       : <span key={chip.id || j} className={`chip ${rev} ${chip.k || ""}`} style={{ animationDelay: `${D[j]}s` }}>
           {chip.dice && <DiceGroup dice={chip.dice} size={chip.dieSize} delayMs={Math.round(D[j] * 1000)} />}
@@ -2774,7 +2782,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
             <span className="ad">{o.d}</span>
             {atks.map((ar) => results && results[`${c.uid}:${ar.ai}`] ? (
               <span className="results" key={"r" + ar.ai}>
-                <ResultChips chips={results[`${c.uid}:${ar.ai}`]} />
+                <ResultChips chips={results[`${c.uid}:${ar.ai}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
               </span>
             ) : null)}
             {atks.map((ar) => openInfo === `${i}:a:${ar.ai}` ? (
@@ -2882,7 +2890,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
             </span>
             {results[`${c.uid}:${i}`] && (
               <span className="results">
-                <ResultChips chips={results[`${c.uid}:${i}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} />
+                <ResultChips chips={results[`${c.uid}:${i}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
               </span>
             )}
             <UsePips c={c} k={"a" + i} api={api} />
@@ -4978,7 +4986,9 @@ export default function App() {
         effAc = t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
         if (effAc != null) isHit = atk.crit || (!atk.fumble && atk.total >= effAc);
         if (isHit != null) chips.push({ t: `${isHit ? "HIT" : "MISS"} — ${t.name} AC ${effAc}`, k: isHit ? "sgood" : "sbad" });
-        else if (!atk.fumble) chips.push({ t: `${t.name}'s AC unknown — ask if ${atk.total} hits`, k: "cond" });
+        // tracked-HP targets get the hit/miss verdict row below instead; this ask-chip
+        // covers untracked targets, where damage is relayed verbally
+        else if (!atk.fumble && t.maxHp == null) chips.push({ t: `${t.name}'s AC unknown — ask if ${atk.total} hits`, k: "cond" });
       }
       const dmgChip = (roll, critRoll, dtype) => {
         const total = roll.total + (critRoll ? critRoll.total : 0);
@@ -5033,7 +5043,7 @@ export default function App() {
           }
           holdGhost(t, snap, flashAt);
         } else if (isHit == null && t.maxHp != null) {
-          chips.push({ id: Math.random(), applyTo: t.uid, parts, resKey: `${uid}:${ai}`, t: `Hit? Apply ${parts.reduce((s, p) => s + p.amt, 0)} to ${t.name}`, k: "cond" });
+          chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, k: "cond" });
         }
       }
       setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
@@ -5384,7 +5394,18 @@ export default function App() {
         holdGhost(t, snap, 600);
       });
       setResults((r) => {
-        const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ applied", k: "sgood" } : ch));
+        const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ HIT — applied", k: "sgood" } : ch));
+        return { ...r, [resKey]: arr };
+      });
+    },
+    markAttackMiss: (resKey, chipId, tName) => {
+      mutate((d, L) => {
+        const [auid] = String(resKey).split(":");
+        const c = d.combatants.find((x) => x.uid === auid);
+        L.push(`<b>${c ? c.name : "The attack"}</b> vs <b>${tName}</b> — reported <b>MISS</b>, no damage.`);
+      });
+      setResults((r) => {
+        const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: `✗ MISS — no damage to ${tName}`, k: "sbad" } : ch));
         return { ...r, [resKey]: arr };
       });
     },
