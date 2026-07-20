@@ -36,6 +36,7 @@ input[type=number]{width:64px}
   padding-top:calc(10px + env(safe-area-inset-top,0px));
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
 .activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
+.dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
 .turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
   padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--ink);border-top:1px solid var(--line)}
@@ -2797,7 +2798,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
               </button>
             ))}
             <span className="ad">
-              {a.kind === "atk" && <>{fmtMod(a.hit)} to hit{a.dmg ? <>, {a.dmg} {a.dtype}</> : null}{a.extra ? ` + ${a.extra} ${a.extraType}` : ""}. </>}
+              {a.kind === "atk" && <span className="dmgline">{fmtMod(a.hit)} to hit{a.dmg ? <>, {a.dmg} {a.dtype}</> : null}{a.extra ? ` + ${a.extra} ${a.extraType}` : ""}. </span>}
               {a.d}
             </span>
             {results[`${c.uid}:${i}`] && (
@@ -3320,13 +3321,25 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
 }
 
 /* Read-only statblock sheet for browsing — flavor text, full stats, no engine. */
+function FlavorText({ text }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 220;
+  const shown = open || !long ? text : text.slice(0, 200).replace(/\s+\S*$/, "") + "…";
+  return (
+    <div className="trait" style={{ fontStyle: "italic", whiteSpace: "pre-wrap", marginBottom: 8, color: "var(--dim)" }}>
+      {shown}
+      {long && <button className="btn tiny ghost" style={{ marginLeft: 6 }} onClick={() => setOpen(!open)}>{open ? "less ▴" : "read more ▾"}</button>}
+    </div>
+  );
+}
+
 function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
   const mods = sb.mods || {};
   return (
     <div>
       <div className="frow"><button className="btn small ghost" onClick={onBack}>← Back to list</button></div>
       <h3 style={{ marginTop: 6 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · Tome of Beasts" : ""}</span></h3>
-      {sb.fl && <div className="trait" style={{ fontStyle: "italic", whiteSpace: "pre-wrap", marginBottom: 8, color: "var(--dim)" }}>{sb.fl}</div>}
+      {sb.fl && <FlavorText text={sb.fl} />}
       <div className="statline">
         <b>AC</b> {sb.ac} · <b>HP</b> {sb.hp}{sb.hpF ? ` (${sb.hpF})` : ""} · <b>Speed</b> {sb.spd || "30 ft."}
         {sb.senses ? <> · <b>Senses</b> {sb.senses}</> : null}
@@ -3349,7 +3362,8 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
       {sb.multi && <div className="reminder" style={{ marginTop: 6 }}>⚔ <b>Multiattack:</b> {sb.multi}</div>}
       {sb.actions?.length ? (<div className="sect"><div className="lbl">Actions</div>{sb.actions.map((a, i) => (
         <div className="trait" key={i}><b>{a.n}{a.rech ? ` (Recharge ${a.rech}–6)` : ""}.</b>{" "}
-          {a.kind === "atk" ? `${fmtMod(a.hit)} to hit${a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}. ` : a.kind === "save" ? `DC ${a.save?.dc} ${a.save?.ability} save. ` : ""}
+          {a.kind === "atk" ? <span className="dmgline">{fmtMod(a.hit)} to hit{a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}. </span>
+            : a.kind === "save" ? <span className="dmgline">DC {a.save?.dc} {a.save?.ability} save{a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}. </span> : ""}
           {a.d}</div>
       ))}</div>) : null}
       {sb.bonus?.length ? (<div className="sect"><div className="lbl">Bonus Actions</div>{sb.bonus.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
@@ -3358,6 +3372,34 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
       <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
         <button className="btn" onClick={() => onClone(sb)}>⧉ Clone & tweak</button>
         <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add to combat{count > 1 ? ` ×${count}` : ""}</button>
+      </div>
+    </div>
+  );
+}
+
+/* Compact confirm card for the add-monster flow: enough to recognize the pick,
+   small enough to keep the table moving. */
+function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull }) {
+  return (
+    <div>
+      <h3 style={{ marginTop: 4 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · ToB" : ""}</span></h3>
+      <div className="statline"><b>AC</b> {sb.ac} · <b>HP</b> {sb.hp} · <b>Speed</b> {sb.spd || "30 ft."}</div>
+      {sb.multi && <div className="trait" style={{ marginTop: 4 }}>⚔ {sb.multi}</div>}
+      {(sb.actions || []).slice(0, 5).map((a, i) => (
+        <div className="trait" key={i}>
+          <b>{a.n}.</b>{" "}
+          {a.kind === "atk" ? <span className="dmgline">{fmtMod(a.hit)} to hit{a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}</span>
+            : a.kind === "save" ? <span className="dmgline">DC {a.save?.dc} {a.save?.ability}{a.dmg ? `, ${a.dmg} ${a.dtype || ""}` : ""}</span>
+            : <span style={{ color: "var(--faint)" }}>{(a.d || "").slice(0, 70)}{(a.d || "").length > 70 ? "…" : ""}</span>}
+        </div>
+      ))}
+      {(sb.actions || []).length > 5 && <div className="trait" style={{ color: "var(--faint)" }}>+{sb.actions.length - 5} more action{sb.actions.length - 5 === 1 ? "" : "s"}…</div>}
+      {sb.legendary && <div className="trait">👑 Legendary ({sb.legendary.count}/round)</div>}
+      <div className="frow" style={{ marginTop: 8 }}>
+        <button className="btn small ghost" onClick={onFull}>Full statblock ▸</button>
+        <span style={{ flex: 1 }} />
+        <button className="btn" onClick={onCancel}>Cancel</button>
+        <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add{count > 1 ? ` ×${count}` : ""}</button>
       </div>
     </div>
   );
@@ -3392,7 +3434,8 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
     return all.filter((b) => names.has(b.name));
   };
   const [detail, setDetail] = useState(null);
-  const pick = (b) => (browse ? setDetail(b) : onAdd(b, count, rollHp));
+  const [confirm, setConfirm] = useState(null);
+  const pick = (b) => (browse ? setDetail(b) : setConfirm(b));
 
   const doImport = () => {
     try {
@@ -3409,7 +3452,9 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        {detail ? <StatblockView sb={detail} count={count} rollHp={rollHp} onAdd={onAdd} onClone={onClone} onBack={() => setDetail(null)} /> : (<>
+        {detail ? <StatblockView sb={detail} count={count} rollHp={rollHp} onAdd={onAdd} onClone={onClone} onBack={() => setDetail(null)} />
+        : confirm ? <MiniStatCard sb={confirm} count={count} rollHp={rollHp} onAdd={onAdd} onCancel={() => setConfirm(null)} onFull={() => setDetail(confirm)} />
+        : (<>
         <h3>{browse ? "🐉 Bestiary" : "Add from bestiary"}</h3>
         <div className="frow">
           <input type="text" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus style={{ flex: 1 }} />
