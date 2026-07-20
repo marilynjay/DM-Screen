@@ -38,6 +38,14 @@ input[type=number]{width:64px}
 .activecard-anchor{scroll-margin-top:calc(54px + env(safe-area-inset-top,0px))}
 .dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
 .tobtag{font-size:9px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:2px;letter-spacing:.05em}
+.partygrid{display:flex;flex-direction:column;gap:5px}
+.pgh,.pgr{display:grid;grid-template-columns:22px minmax(0,1fr) 44px 46px 44px 48px;gap:4px;align-items:center}
+.pgh span{font-size:10px;color:var(--faint);letter-spacing:.05em;text-transform:uppercase;text-align:center}
+.pgh span:nth-child(2){text-align:left;padding-left:2px}
+.pgr input[type="text"],.pgr input[type="number"]{width:100%;box-sizing:border-box;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:6px 6px;font-size:16px}
+.pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
+.pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.pgr input[type="checkbox"]{width:17px;height:17px;accent-color:var(--gold);margin:0 auto}
 .ghostrail{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:8px;right:8px;z-index:95;
   display:flex;flex-direction:column;gap:6px;pointer-events:none}
 .ghostrow{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;
@@ -3951,6 +3959,71 @@ function InitTieModal({ groups, onConfirm }) {
   );
 }
 
+/* Party opener: lives on the setup screen until the roster has a player, then
+   gets out of the way. The party is remembered (dm5e:partyRoster, included in
+   file backups) so every later session is one tap. Only names are required;
+   the optional level prefills the encounter balancer. */
+function PartySetupCard({ saved, onAdd, onSave }) {
+  const blankRow = { name: "", ac: "", hp: "", pp: "", dex: "", here: true };
+  const fromSaved = () => (saved?.members?.length ? saved.members.map((m) => ({ ...blankRow, ...m })) : [{ ...blankRow }, { ...blankRow }, { ...blankRow }, { ...blankRow }]);
+  const [editing, setEditing] = useState(!saved);
+  const [rows, setRows] = useState(fromSaved);
+  const [level, setLevel] = useState(saved?.level ?? "");
+  const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const named = rows.filter((r) => r.name.trim());
+  const going = named.filter((r) => r.here);
+  const add = () => {
+    const roster = { level: level !== "" && !isNaN(parseInt(level, 10)) ? parseInt(level, 10) : null, members: named.map((r) => ({ ...r, name: r.name.trim() })) };
+    onSave(roster);
+    onAdd(roster.members.filter((r) => r.here), roster.level);
+  };
+  if (!editing) {
+    return (
+      <div className="card">
+        <h3>Your party{saved.level ? <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}> · level {saved.level}</span> : null}</h3>
+        <div className="trait" style={{ marginBottom: 8 }}>
+          {saved.members.map((m, i) => (
+            <span key={i}>{i > 0 ? ", " : ""}<span style={m.here ? {} : { color: "var(--faint)", textDecoration: "line-through" }} title={m.here ? undefined : "Sitting out — tap Edit to change"}>{m.name}</span></span>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn" onClick={() => { setRows(fromSaved()); setLevel(saved.level ?? ""); setEditing(true); }}>Edit party…</button>
+          <button className="btn primary" disabled={!saved.members.some((m) => m.here)} onClick={() => onAdd(saved.members.filter((m) => m.here), saved.level ?? null)}>Add party</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <h3>Add your party</h3>
+      <div className="partygrid">
+        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC</span><span>HP</span><span>PP</span><span>DEX</span></div>
+        {rows.map((r, i) => (
+          <div className="pgr" key={i}>
+            <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
+            <input type="text" placeholder="Name" value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
+            <input type="number" placeholder="–" title="Armor Class (optional)" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
+            <input type="number" placeholder="–" title="Max HP (optional) — fill in to track their HP in the app" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
+            <input type="number" placeholder="–" title="Passive Perception (optional)" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} />
+            <input type="number" placeholder="–" title="DEX modifier (optional) — breaks initiative ties, never shown" value={r.dex} onChange={(e) => set(i, "dex", e.target.value)} />
+          </div>
+        ))}
+      </div>
+      <div className="frow" style={{ marginTop: 8 }}>
+        <button className="btn small ghost" onClick={() => setRows([...rows, { ...blankRow }])}>+ Add row</button>
+        <span style={{ flex: 1 }} />
+        <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>Party level</span>
+        <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ width: 64, background: "var(--panel)", border: "1px solid var(--line2)", borderRadius: 8, color: "var(--text)", WebkitTextFillColor: "var(--text)", padding: "6px 8px", fontSize: 16 }} />
+      </div>
+      <div className="trait" style={{ color: "var(--faint)" }}>Only names are required — ✓ marks who's here tonight. Initiative is collected when combat starts. HP (if filled) lets the app track their damage; PP shows on their row; DEX only breaks initiative ties and is never shown. Your party is remembered for next session.</div>
+      <div className="frow" style={{ justifyContent: "flex-end" }}>
+        {saved ? <button className="btn" onClick={() => { setRows(fromSaved()); setLevel(saved.level ?? ""); setEditing(false); }}>Cancel</button> : null}
+        <button className="btn primary" disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
+      </div>
+    </div>
+  );
+}
+
 function RollInitModal({ list, onStart, onClose }) {
   const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, ""])));
   const ready = list.every((c) => String(vals[c.uid]).trim() !== "");
@@ -4548,6 +4621,9 @@ export default function App() {
   TIES.playersWin = playersWinTies;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
+  const [partyRoster, setPartyRosterState] = useState(null); // remembered party for the one-tap opener
+  const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
+  const savePartyRoster = (r) => { setPartyRosterState(r); stSet("dm5e:partyRoster", r); };
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState(""); const [pDex, setPDex] = useState("");
   const stateRef = useRef(state); stateRef.current = state;
@@ -4560,6 +4636,7 @@ export default function App() {
   const bestRef = useRef(myBestiary); bestRef.current = myBestiary;
   const itemsRef = useRef(myItems); itemsRef.current = myItems;
   const partyRef = useRef(party); partyRef.current = party;
+  const partyRosterRef = useRef(partyRoster); partyRosterRef.current = partyRoster;
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
   const pushUndo = (snap) => {
@@ -4681,6 +4758,9 @@ export default function App() {
       if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
+      const pr = await stGet("dm5e:partyRoster");
+      if (pr && Array.isArray(pr.members) && pr.members.length) setPartyRosterState(pr);
+      setPartyBoot(true);
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -5334,6 +5414,19 @@ export default function App() {
     setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp(""); setPDex("");
   };
 
+  const addPartyNow = (members, level) => {
+    if (!members.length) return;
+    mutate((d, L) => {
+      members.forEach((m) => {
+        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, dex: m.dex });
+        d.combatants.push(p);
+      });
+      L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
+    });
+    // prefill the encounter balancer with tonight's headcount (and level when known)
+    setParty((pp) => { const np = { ...pp, size: members.length, ...(level ? { level } : {}) }; stSet("dm5e:party", np); return np; });
+  };
+
   const applyBalance = (items) => {
     setModal(null);
     mutate((d, L) => {
@@ -5656,7 +5749,7 @@ export default function App() {
     const slots = {}, groups = {};
     for (const k of slotKeys) slots[k.replace("dm5e:slot:", "")] = await stGet(k);
     for (const k of groupKeys) groups[k.replace("dm5e:group:", "")] = await stGet(k);
-    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, slots, groups };
+    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, partyRoster: partyRosterRef.current, slots, groups };
   };
   const importAll = async (obj) => {
     // whoever restores a backup already knows about backups — never show them the nudge
@@ -5668,6 +5761,7 @@ export default function App() {
     for (const [k, v] of Object.entries(obj.slots || {})) { if (v) { await stSet(`dm5e:slot:${k}`, v); r.slots++; } }
     for (const [k, v] of Object.entries(obj.groups || {})) { if (Array.isArray(v)) { await stSet(`dm5e:group:${k}`, v); r.groups++; } }
     if (obj.party) { setParty(obj.party); stSet("dm5e:party", obj.party); }
+    if (obj.partyRoster && Array.isArray(obj.partyRoster.members) && obj.partyRoster.members.length) savePartyRoster(obj.partyRoster);
     return r;
   };
 
@@ -5792,20 +5886,8 @@ export default function App() {
           </div>
         )}
 
-        {state.mode === "setup" && (
-          <div className="card">
-            <h3>Add player</h3>
-            <div className="frow">
-              <input type="text" placeholder="Name" value={pName} onChange={(e) => setPName(e.target.value)} style={{ flex: 1, minWidth: 100 }} />
-              <input type="number" placeholder="Init (opt.)" value={pInit} onChange={(e) => setPInit(e.target.value)} title="Leave blank to enter initiative later, when combat starts" />
-              <input type="number" placeholder="AC (opt.)" style={{ width: 80 }} value={pAc} onChange={(e) => setPAc(e.target.value)} />
-              <input type="number" placeholder="HP (opt.)" style={{ width: 80 }} value={pHp} onChange={(e) => setPHp(e.target.value)} title="Fill in to track this player's HP in the app" />
-              <input type="number" placeholder="PP (opt.)" style={{ width: 80 }} value={pPp} onChange={(e) => setPPp(e.target.value)} title="Passive Perception — shown on their row for quick reference" />
-              <input type="number" placeholder="DEX mod (opt.)" style={{ width: 104 }} value={pDex} onChange={(e) => setPDex(e.target.value)} title="Dexterity modifier — used only to break initiative ties, never shown on the roster" />
-              <button className="btn primary" disabled={!pName.trim()} onClick={addPlayerNow}>Add</button>
-            </div>
-            <div className="trait" style={{ color: "var(--faint)" }}>Everything but the name is optional — blank initiative gets asked for when you start combat; blank HP means the player tracks their own. PP is passive Perception, shown on their row for quick stealth/ambush reference. DEX is their Dexterity modifier, used only to break initiative ties and never shown anywhere. With HP filled in, the app handles their damage, healing, and Bloodied like a monster.</div>
-          </div>
+        {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
+          <PartySetupCard key={partyRoster ? "saved" : "new"} saved={partyRoster} onAdd={addPartyNow} onSave={savePartyRoster} />
         )}
 
         {legendaryWatch.map((c) => (
