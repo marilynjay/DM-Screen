@@ -4004,7 +4004,9 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
   );
 }
 
-function PartySetupCard({ saved, onAdd, onSave }) {
+const partyLabel = (p, i) => (p.name && String(p.name).trim()) || (p.teamName && p.teamName.trim()) || `Party ${i + 1}`;
+
+function PartySetupCard({ parties, saved, onPick, onAdd, onSave }) {
   const [editing, setEditing] = useState(!saved);
   const [rows, setRows] = useState(() => partyRowsFrom(saved));
   const [level, setLevel] = useState(saved?.level ?? "");
@@ -4016,9 +4018,17 @@ function PartySetupCard({ saved, onAdd, onSave }) {
     onSave(roster);
     onAdd(roster.members.filter((r) => r.here), roster.level);
   };
+  const picker = parties.length > 1 ? (
+    <div className="sbook-lvls" style={{ marginBottom: 6 }}>
+      {parties.map((p, i) => (
+        <span key={p.id} className={`lvlchip ${p.id === saved?.id ? "on" : ""}`} onClick={() => onPick(p.id)}>{partyLabel(p, i)}</span>
+      ))}
+    </div>
+  ) : null;
   if (!editing) {
     return (
       <div className="card">
+        {picker}
         <h3>{saved.name || "Your party"}{saved.level ? <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}> · level {saved.level}</span> : null}</h3>
         <div className="trait" style={{ marginBottom: 8 }}>
           {saved.members.map((m, i) => (
@@ -4045,22 +4055,51 @@ function PartySetupCard({ saved, onAdd, onSave }) {
   );
 }
 
-/* ⋯ menu → Edit party: adjust the remembered party any time (level-ups, new HP,
-   roster changes, team name) without touching whoever is currently in the fight. */
-function PartyEditModal({ saved, onSave, onClose }) {
-  const [rows, setRows] = useState(() => partyRowsFrom(saved));
-  const [level, setLevel] = useState(saved?.level ?? "");
-  const [teamName, setTeamName] = useState(saved?.name ?? "");
-  const named = rows.filter((r) => r.name.trim());
+/* ⋯ menu → Edit parties: manage every remembered party any time — level-ups,
+   new HP, roster changes, team names, whole new tables. Never touches whoever
+   is currently in the fight. Edits are local until Save; empty parties (no
+   named members) are discarded on save. */
+function PartyEditModal({ parties, activeId, onSaveAll, onClose }) {
+  const toDraft = (p) => ({ id: p.id, teamName: p.name ?? "", level: p.level ?? "", rows: partyRowsFrom(p) });
+  const newDraft = () => ({ id: newUid(), teamName: "", level: "", rows: partyRowsFrom(null) });
+  const [st, setSt] = useState(() => {
+    const list = parties.length ? parties.map(toDraft) : [newDraft()];
+    const sel = list.some((d) => d.id === activeId) ? activeId : list[0].id;
+    return { list, sel };
+  });
+  const d = st.list.find((x) => x.id === st.sel);
+  const upd = (patch) => setSt((s) => ({ ...s, list: s.list.map((x) => (x.id === s.sel ? { ...x, ...patch } : x)) }));
+  const addParty = () => setSt((s) => { const nd = newDraft(); return { list: [...s.list, nd], sel: nd.id }; });
+  const deleteParty = () => setSt((s) => {
+    const list = s.list.filter((x) => x.id !== s.sel);
+    if (!list.length) list.push(newDraft());
+    return { list, sel: list[0].id };
+  });
+  const anyNamed = st.list.some((x) => x.rows.some((r) => r.name.trim()));
+  const save = () => {
+    const clean = st.list
+      .map((x) => ({ id: x.id, ...partyRosterOf(x.teamName, x.level, x.rows) }))
+      .filter((p) => p.members.length);
+    onSaveAll(clean, clean.some((p) => p.id === st.sel) ? st.sel : (clean[0]?.id ?? null));
+    onClose();
+  };
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Edit party</h3>
-        <PartyFields rows={rows} setRows={setRows} level={level} setLevel={setLevel} teamName={teamName} setTeamName={setTeamName} />
-        <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time the party is added to the screen — players already in the fight aren't modified. Only names are required.</div>
-        <div className="frow" style={{ justifyContent: "flex-end" }}>
+        <h3>Edit parties</h3>
+        <div className="sbook-lvls" style={{ marginBottom: 8 }}>
+          {st.list.map((x, i) => (
+            <span key={x.id} className={`lvlchip ${x.id === st.sel ? "on" : ""}`} onClick={() => setSt((s) => ({ ...s, sel: x.id }))}>{partyLabel(x, i)}</span>
+          ))}
+          <span className="lvlchip" onClick={addParty} title="Start another party — handy for DMs running more than one table">＋ New party</span>
+        </div>
+        <PartyFields rows={d.rows} setRows={(rows) => upd({ rows })} level={d.level} setLevel={(v) => upd({ level: v })} teamName={d.teamName} setTeamName={(v) => upd({ teamName: v })} />
+        <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time a party is added to the screen — players already in the fight aren't modified. Only names are required; a party with no named members is discarded when you save.</div>
+        <div className="frow">
+          <button className="btn small danger" onClick={deleteParty}>Delete this party</button>
+          <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!named.length} onClick={() => { onSave(partyRosterOf(teamName, level, rows)); onClose(); }}>Save party</button>
+          <button className="btn primary" disabled={!anyNamed && parties.length === 0} onClick={save}>Save parties</button>
         </div>
       </div>
     </div>
@@ -4664,10 +4703,25 @@ export default function App() {
   TIES.playersWin = playersWinTies;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
-  const [partyRoster, setPartyRosterState] = useState(null); // remembered party for the one-tap opener
+  const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
+  const [activePartyId, setActivePartyIdState] = useState(null);
   const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
   const [partyVer, setPartyVer] = useState(0); // bumps on save so the opener card remounts with fresh values
-  const savePartyRoster = (r) => { setPartyRosterState(r); setPartyVer((v) => v + 1); stSet("dm5e:partyRoster", r); };
+  const activeRoster = parties.find((p) => p.id === activePartyId) || parties[0] || null;
+  const savePartiesAll = (list, activeId) => {
+    setPartiesState(list); setPartyVer((v) => v + 1); stSet("dm5e:parties", list);
+    setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
+  };
+  const pickParty = (id) => { setActivePartyIdState(id); stSet("dm5e:activeParty", id); };
+  // upsert the active party (setup-card edits go through here)
+  const savePartyRoster = (roster) => {
+    const id = activeRoster?.id ?? newUid();
+    const withId = { id, ...roster };
+    savePartiesAll(parties.some((p) => p.id === id) ? parties.map((p) => (p.id === id ? withId : p)) : [...parties, withId], id);
+  };
+  // periodic backup reminder stamps: {first, last, snooze} (ms epochs)
+  const [bkStamps, setBkStamps] = useState(null);
+  const snoozeBackup = () => { const until = Date.now() + 14 * 864e5; setBkStamps((s) => ({ ...s, snooze: until })); stSet("dm5e:backupSnooze", until); };
   const [pName, setPName] = useState(""); const [pInit, setPInit] = useState(""); const [pAc, setPAc] = useState("");
   const [pHp, setPHp] = useState(""); const [pPp, setPPp] = useState(""); const [pDex, setPDex] = useState("");
   const stateRef = useRef(state); stateRef.current = state;
@@ -4680,7 +4734,7 @@ export default function App() {
   const bestRef = useRef(myBestiary); bestRef.current = myBestiary;
   const itemsRef = useRef(myItems); itemsRef.current = myItems;
   const partyRef = useRef(party); partyRef.current = party;
-  const partyRosterRef = useRef(partyRoster); partyRosterRef.current = partyRoster;
+  const partiesRef = useRef(parties); partiesRef.current = parties;
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
   const pushUndo = (snap) => {
@@ -4802,9 +4856,20 @@ export default function App() {
       if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
-      const pr = await stGet("dm5e:partyRoster");
-      if (pr && Array.isArray(pr.members) && pr.members.length) setPartyRosterState(pr);
+      let pl = await stGet("dm5e:parties");
+      if (!Array.isArray(pl)) { // migrate the single-party era
+        const legacy = await stGet("dm5e:partyRoster");
+        pl = legacy && Array.isArray(legacy.members) && legacy.members.length ? [{ id: newUid(), ...legacy }] : [];
+        if (pl.length) stSet("dm5e:parties", pl);
+      }
+      setPartiesState(pl.filter((p) => p && p.id && Array.isArray(p.members) && p.members.length));
+      const ap = await stGet("dm5e:activeParty");
+      if (ap) setActivePartyIdState(ap);
       setPartyBoot(true);
+      // backup-reminder stamps; first-seen anchors the grace period for new installs
+      let first = await stGet("dm5e:firstSeen");
+      if (!first) { first = Date.now(); stSet("dm5e:firstSeen", first); }
+      setBkStamps({ first, last: (await stGet("dm5e:lastBackup")) || null, snooze: (await stGet("dm5e:backupSnooze")) || null });
       backupSeenRef.current = !!(await stGet("dm5e:backupNoticeSeen"));
     })();
   }, []);
@@ -5793,7 +5858,10 @@ export default function App() {
     const slots = {}, groups = {};
     for (const k of slotKeys) slots[k.replace("dm5e:slot:", "")] = await stGet(k);
     for (const k of groupKeys) groups[k.replace("dm5e:group:", "")] = await stGet(k);
-    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, partyRoster: partyRosterRef.current, slots, groups };
+    const now = Date.now(); // producing an export counts as a backup — quiets the periodic reminder
+    setBkStamps((s) => ({ ...(s || { first: now }), last: now }));
+    stSet("dm5e:lastBackup", now);
+    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, parties: partiesRef.current, slots, groups };
   };
   const importAll = async (obj) => {
     // whoever restores a backup already knows about backups — never show them the nudge
@@ -5805,7 +5873,20 @@ export default function App() {
     for (const [k, v] of Object.entries(obj.slots || {})) { if (v) { await stSet(`dm5e:slot:${k}`, v); r.slots++; } }
     for (const [k, v] of Object.entries(obj.groups || {})) { if (Array.isArray(v)) { await stSet(`dm5e:group:${k}`, v); r.groups++; } }
     if (obj.party) { setParty(obj.party); stSet("dm5e:party", obj.party); }
-    if (obj.partyRoster && Array.isArray(obj.partyRoster.members) && obj.partyRoster.members.length) savePartyRoster(obj.partyRoster);
+    // parties: current backups carry an array; single-party-era backups carry partyRoster
+    const incoming = Array.isArray(obj.parties) ? obj.parties : (obj.partyRoster && Array.isArray(obj.partyRoster.members) && obj.partyRoster.members.length ? [obj.partyRoster] : []);
+    const good = incoming.filter((p) => p && Array.isArray(p.members) && p.members.length).map((p) => ({ ...p, id: p.id || newUid() }));
+    if (good.length) {
+      const merged = [...partiesRef.current];
+      good.forEach((p) => {
+        const byId = merged.findIndex((x) => x.id === p.id);
+        const byName = p.name ? merged.findIndex((x) => x.name === p.name) : -1;
+        const at = byId >= 0 ? byId : byName;
+        if (at >= 0) merged[at] = { ...p, id: merged[at].id }; else merged.push(p);
+        r.parties = (r.parties || 0) + 1;
+      });
+      savePartiesAll(merged, activePartyId ?? merged[0].id);
+    }
     return r;
   };
 
@@ -5878,7 +5959,7 @@ export default function App() {
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
-              <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit party…</button>
+              <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={() => setPlayersWinTies(!playersWinTies)} title="When on, players act before monsters on tied initiative. Tracked player DEX breaks the remaining ties.">{playersWinTies ? "✓" : "✗"} Players win init ties</button>
               {state.combatants.some((c) => c.side === "ally") && (
@@ -5897,6 +5978,23 @@ export default function App() {
             <span style={{ flex: 1 }}>Found an autosaved combat ({restoreBanner.combatants.length} combatants{restoreBanner.mode === "combat" ? `, round ${restoreBanner.round}` : ""}).</span>
             <button className="btn small primary" onClick={() => { setState(restoreBanner); setRestoreBanner(null); }}>Restore</button>
             <button className="btn small" onClick={() => { setRestoreBanner(null); stDel("dm5e:auto"); }}>Discard</button>
+          </div>
+        </div>
+      )}
+
+      {/* periodic backup reminder: only in setup, only when there's data worth losing,
+          21 days after install or the last export, snoozed 14 days by "Later" */}
+      {state.mode === "setup" && !restoreBanner && bkStamps
+        && (parties.length > 0 || myBestiary.length > 0 || myItems.length > 0)
+        && Date.now() > (bkStamps.last ?? bkStamps.first) + 21 * 864e5
+        && Date.now() > (bkStamps.snooze ?? 0) && (
+        <div className="main" style={{ paddingBottom: 0 }}>
+          <div className="notice" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ flex: 1 }}>
+              {bkStamps.last ? `It's been ${Math.round((Date.now() - bkStamps.last) / 864e5)} days since your last backup` : "You haven't made a backup file yet"} — parties, custom monsters, and saved encounters live only in this browser.
+            </span>
+            <button className="btn small primary" onClick={() => setModal({ type: "slots", showBackup: true })}>⬇ Back up now</button>
+            <button className="btn small" onClick={snoozeBackup}>Later</button>
           </div>
         </div>
       )}
@@ -5932,7 +6030,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <PartySetupCard key={partyRoster ? `saved${partyVer}` : "new"} saved={partyRoster} onAdd={addPartyNow} onSave={savePartyRoster} />
+          <PartySetupCard key={activeRoster ? `saved${partyVer}-${activeRoster.id}` : "new"} parties={parties} saved={activeRoster} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} />
         )}
 
         {legendaryWatch.map((c) => (
@@ -6202,7 +6300,7 @@ export default function App() {
           onApply={applyBalance} />
       )}
       {modal?.type === "party-edit" && (
-        <PartyEditModal saved={partyRoster} onSave={savePartyRoster} onClose={() => setModal(null)} />
+        <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player" && (
         <div className="overlay" onClick={() => setModal(null)}>
