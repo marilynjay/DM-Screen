@@ -500,10 +500,10 @@ const EXPANDED = { on: false, list: [], pools: {} };
    moderate budget ≈1500 XP unless noted). 'showcase' is the bespoke scaled trio. */
 const PLAYTEST_ENCOUNTERS = [
   { key: "showcase", name: "Legendary Showcase", blurb: "Goblin chaff, a spellcaster, and a legendary dragon — exercises every system at once.", special: true },
-  { key: "goblins", name: "Goblin War Party", blurb: "Boss, six warriors, two bugbears — nine bodies of action economy. Moderate.", list: [["Goblin Boss", 1], ["Goblin Warrior", 6], ["Bugbear Warrior", 2]] },
+  { key: "hobgoblins", name: "Hobgoblin Patrol", blurb: "Three disciplined warriors and their worg — a fair stand-up fight for two players. Moderate.", list: [["Hobgoblin Warrior", 3], ["Worg", 1]] },
   { key: "crypt", name: "Crypt of the Restless", blurb: "A wight commanding ghouls and skeletons — paralysis and life drain. Moderate.", list: [["Wight", 1], ["Ghoul", 2], ["Skeleton", 4]] },
-  { key: "bandits", name: "Bandit Ambush", blurb: "Captain, berserker muscle, bandits, and wolves — a classic roadside mugging. Moderate.", list: [["Bandit Captain", 1], ["Berserker", 1], ["Bandit", 4], ["Wolf", 2]] },
-  { key: "cult", name: "Cult Cell", blurb: "A priest, a ghast enforcer, and six chanting cultists — saves and stench. Moderate.", list: [["Priest", 1], ["Ghast", 1], ["Cultist", 6]] },
+  { key: "wolves", name: "Wolf Pack", blurb: "Two dire wolves and two wolves — pack tactics and knockdowns, sized for two players. Hard.", list: [["Dire Wolf", 2], ["Wolf", 2]] },
+  { key: "spiders", name: "Spider Hollow", blurb: "A giant spider and her wolf-spider brood — webs, poison, restrained checks. Moderate for two players.", list: [["Giant Spider", 1], ["Giant Wolf Spider", 3]] },
   { key: "troll", name: "Bridge Troll", blurb: "One regenerating troll with scout archers on the banks. Hard.", list: [["Troll", 1], ["Scout", 2]] },
   { key: "dragon", name: "Young White Dragon", blurb: "Solo boss — cold breath, flight, and a bad attitude. Hard, expect blood.", list: [["Young White Dragon", 1]] },
 ];
