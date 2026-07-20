@@ -727,11 +727,12 @@ function syncWeaponAttacks(c, logs) {
     const prof = Math.max(2, 2 + Math.floor((crToNum(c.cr) - 1) / 4));
     const b = it.wpn.b || 0;
     const dm = mod + b;
+    const flat = /^-?\d+$/.test(String(it.wpn.dmg).trim()); // "6"-style flat damage: fold the modifier in, "6-1" won't parse
     c.actions.push({
       n: it.n, kind: "atk", hit: prof + mod + b,
-      dmg: `${it.wpn.dmg}${dm ? (dm > 0 ? `+${dm}` : `${dm}`) : ""}`,
+      dmg: flat ? String(Math.max(1, parseInt(it.wpn.dmg, 10) + dm)) : `${it.wpn.dmg}${dm ? (dm > 0 ? `+${dm}` : `${dm}`) : ""}`,
       dtype: it.wpn.dtype, extra: it.wpn.extra, extraType: it.wpn.extraType,
-      d: it.d, fromItem: it.n, ready: true,
+      d: it.d, fromItem: it.n, ready: true, ...(it.wpn.ls ? { ls: 1 } : {}),
     });
     logs.push(`<b>${c.name}</b> wields <b>${it.n}</b> — added to attacks (${fmtMod(prof + mod + b)} to hit).`);
   }
@@ -3648,7 +3649,7 @@ const ITEM_KINDS = [
   ["armor", "🛡 Armor / shield", "Grants an AC bonus while equipped."],
   ["other", "📜 Trinket / other", "Descriptive item — no mechanics."],
 ];
-const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, b: "0", heal: "", ch: "", c: false, acB: "" };
+const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "" };
 function itemKindOf(it) {
   if (it.wpn) return "weapon";
   if (it.acB != null || it.armor) return "armor";
@@ -3660,7 +3661,7 @@ function itemToForm(it) {
   return {
     origN: it.n, kind: itemKindOf(it), n: it.n, rarity: "CURVL".includes(it.rarity) ? it.rarity : "C", d: it.d || "",
     dmg: it.wpn?.dmg || "1d6", dtype: it.wpn?.dtype || "slashing",
-    fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, b: String(it.wpn?.b || 0),
+    fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, ls: !!it.wpn?.ls, b: String(it.wpn?.b || 0),
     heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
   };
 }
@@ -3672,6 +3673,7 @@ function formToItem(f) {
     it.wpn = { dmg: f.dmg.trim(), dtype: f.dtype };
     if (f.fin) it.wpn.fin = 1;
     if (f.rng) it.wpn.rng = 1;
+    if (f.ls) it.wpn.ls = 1;
     if (parseInt(f.b, 10)) it.wpn.b = parseInt(f.b, 10);
     if (chN != null) it.ch = chN; // e.g. a mace with a 3-charge fear burst
   } else if (f.kind === "potion") {
@@ -3780,10 +3782,11 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
                 <div className="frow" style={{ flexWrap: "wrap" }}>
                   <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
                   <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
+                  <label style={{ minWidth: 0 }} title="On a hit, the wielder regains HP equal to half the damage dealt"><input type="checkbox" checked={form.ls} onChange={(e) => setF("ls", e.target.checked)} /> 🩸 lifesteal</label>
                   <label style={{ minWidth: 0 }}>Charges</label>
                   <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} title="Optional — for a weapon with a limited-use power described above" />
                 </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Charges are optional, for a limited-use power described above.</div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Lifesteal heals the wielder for half the damage dealt. Charges are optional, for a limited-use power described above.</div>
               </>)}
               {form.kind === "potion" && (<>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
@@ -4276,7 +4279,7 @@ export default function App() {
       }
       const dmgChip = (roll, critRoll, dtype) => {
         const total = roll.total + (critRoll ? critRoll.total : 0);
-        const allDice = [...roll.dice, ...(critRoll ? critRoll.dice : [])].map((x) => ({ ...x, cls: "dmgd" }));
+        const allDice = [...(roll.dice || []), ...(critRoll ? critRoll.dice || [] : [])].map((x) => ({ ...x, cls: "dmgd" })); // flat damage rolls carry no dice
         const modTxt = roll.mod ? ` ${fmtMod(roll.mod)}` : "";
         if (allDice.length > 0 && allDice.length <= 6) {
           return { id: Math.random(), dice: allDice, dieSize: 24, t: `${modTxt} = ${total} ${dtype}${critRoll ? " (crit dice incl.)" : ""}`, k: "dmg", total };
@@ -4305,9 +4308,16 @@ export default function App() {
       }
       if (t && parts.length) {
         if (isHit === true) {
+          const hpBefore = t.hp;
           parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, opts.T || []));
           const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
           chips.push({ t: `${dmgStr} applied to ${t.name}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}`, k: "sgood" });
+          if (a.ls) {
+            // lifesteal: half the damage actually dealt (post-resistance when the target tracks HP)
+            const dealt = t.maxHp != null && hpBefore != null ? Math.max(0, hpBefore - t.hp) : parts.reduce((s, p) => s + p.amt, 0);
+            const gain = Math.floor(dealt / 2);
+            if (gain > 0 && c.maxHp != null) { applyHeal(c, gain, L); chips.push({ t: `🩸 lifesteal — ${c.name} regains ${gain}`, k: "sgood" }); }
+          }
           const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`;
           setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), 0);
         } else if (isHit == null && t.maxHp != null) {
@@ -4635,8 +4645,18 @@ export default function App() {
     applyChipParts: (resKey, chipId, targetUid, parts) => {
       mutate((d, L, T) => {
         const t = d.combatants.find((x) => x.uid === targetUid); if (!t || t.dead) return;
+        const hpBefore = t.hp;
         parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, T));
         const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
+        // deferred-hit path (DM confirmed vs unknown AC): honor lifesteal here too
+        const [auid, ai] = String(resKey).split(":");
+        const atkC = d.combatants.find((x) => x.uid === auid);
+        const act = atkC?.actions?.[+ai];
+        if (act?.ls && atkC.maxHp != null) {
+          const dealt = t.maxHp != null && hpBefore != null ? Math.max(0, hpBefore - t.hp) : parts.reduce((s, p) => s + p.amt, 0);
+          const gain = Math.floor(dealt / 2);
+          if (gain > 0) applyHeal(atkC, gain, L);
+        }
         setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}${t.dead ? " ☠" : ""}`, id: Math.random() }), 0);
       });
       setResults((r) => {
