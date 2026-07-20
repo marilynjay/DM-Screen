@@ -1670,7 +1670,7 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
    then the total, then verdict/damage chips — one element per beat.
    ANIM is module-level so the render-time helpers below can read it; App assigns
    it from the persisted animation-speed setting during render, before children. */
-const ANIM_SPEEDS = { fast: 1.5, medium: 3, slow: 6 };
+const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 function diceTextStages(chip) {
   if (!chip.t) return 0;
@@ -5454,9 +5454,9 @@ export default function App() {
             <div className="trait" style={{ marginBottom: 8 }}>
               How roll results reveal: the die tumbles, then the modifier, total, hit/miss, and damage drop in one at a time.
             </div>
-            {[["fast", "Fast", "1.5s between elements"],
-              ["medium", "Medium", "3s between elements"],
-              ["slow", "Slow", "6s between elements"],
+            {[["fast", "Fast", "0.5s between elements"],
+              ["medium", "Medium", "1.5s between elements"],
+              ["slow", "Slow", "2.3s between elements"],
               ["off", "Off", "No dice tumble — everything appears instantly"]].map(([k, label, hint]) => (
               <button key={k} className={`btn ${animSpeed === k ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
                 onClick={() => setAnimSpeed(k)}>
