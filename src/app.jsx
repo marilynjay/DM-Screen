@@ -2620,7 +2620,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         <span className="acbox" title="Passive Perception">👁 {c.pp}</span>
       )}
 
-      {(c.loot || []).length > 0 && (
+      {c.type !== "player" && (c.loot || []).length > 0 && (
         <span className="lootico" style={{ cursor: "pointer" }} title={`Carrying: ${c.loot.map(lootName).join(", ")} — tap to view/edit`}
           onClick={() => api.openLoot(c.uid)}>💰</span>
       )}
@@ -2679,7 +2679,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
             {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
             {c.type === "monster" && atkMaxOf(c) > 0 && <button onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>}
-            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
+            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "Give loot…"}</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
@@ -4987,7 +4987,7 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Loot — {c.name}</h3>
+        <h3>{c.type === "player" ? `🎒 ${c.name}'s bag` : `Loot — ${c.name}`}</h3>
         {items.length === 0 && <div className="trait">Nothing carried yet.</div>}
         {items.map((it, i) => (
           <div className="targetline" key={i}>
