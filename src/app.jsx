@@ -75,8 +75,7 @@ input[type=number]{width:64px}
 @keyframes fxdot{20%{opacity:.95;transform:scale(1.15) rotate(8deg)}100%{opacity:0;transform:scale(.7) rotate(-6deg)}}
 .dmgfx .fxskull{opacity:0;font-size:12px;line-height:1;filter:drop-shadow(0 0 5px rgba(150,90,220,.95));animation:fxskullk .8s ease forwards}
 @keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
-.dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);
-  background:repeating-linear-gradient(70deg,transparent 0 10px,rgba(255,230,150,.45) 10px 14px);animation:fxrays .85s ease forwards}
+.dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);animation:fxrays .85s ease forwards}
 @keyframes fxrays{18%{opacity:.95}80%{opacity:.55}100%{opacity:0;transform:translateX(18%)}}
 .dmgfx .fxringsm{width:10px;height:10px;border-radius:50%;transform:scale(.2);animation:fxringsm .6s cubic-bezier(.2,.7,.3,1) forwards}
 @keyframes fxringsm{0%{opacity:1}100%{transform:scale(5);opacity:0}}
@@ -1978,13 +1977,11 @@ function DmgFx({ type }) {
       ))],
     // like the slash, but a violet line rising bottom → top
     force: [flash("rgba(180,140,255,.25)"), <i key="fr" className="fxriser" />],
-    // ripples all over the bar — mostly purple, the odd green one
-    psychic: [
-      ...[[14, 30, 0, 0], [34, 65, 0.1, 0], [54, 22, 0.05, 0], [74, 60, 0.16, 0], [88, 32, 0.22, 1], [24, 52, 0.19, 0], [64, 40, 0.26, 0]].map(([x, y, d, g], i) => (
-        <i key={`ps${i}`} className="fxringsm" style={{ left: `${x}%`, top: `${y}%`, border: `2px solid ${g ? "rgba(140,230,140,.85)" : "rgba(200,140,255,.9)"}`, animationDelay: `${d}s` }} />
-      ))],
+    // god rays like radiant, but purple with lime green streaks — trippy
+    psychic: [flash("rgba(190,120,255,.25)"),
+      <i key="pr" className="fxrays" style={{ background: "repeating-linear-gradient(70deg,transparent 0 9px,rgba(200,120,255,.5) 9px 13px,transparent 13px 22px,rgba(180,240,80,.45) 22px 25px,transparent 25px 34px,rgba(200,120,255,.5) 34px 38px)" }} />],
     // god rays sweeping through
-    radiant: [flash("rgba(255,215,120,.3)"), <i key="rr" className="fxrays" />],
+    radiant: [flash("rgba(255,215,120,.3)"), <i key="rr" className="fxrays" style={{ background: "repeating-linear-gradient(70deg,transparent 0 10px,rgba(255,230,150,.45) 10px 14px)" }} />],
     // dark drain sweep plus a haunting of little skulls
     necrotic: [flash("rgba(80,40,110,.3)"),
       <i key="s" className="fxsweep" style={{ background: "linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)" }} />,
