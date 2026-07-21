@@ -1153,6 +1153,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false, hidTurn: false,
+    spellDC: null, spellAtk: null, // optional — set once, auto-fills the save box when this player casts
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -3634,8 +3635,9 @@ function PlayerCard({ c, api, results }) {
           <div className="pcactions">
             {c.atkCount < 10
               ? <button className="btn primary" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount === 0 ? "Attack" : `${ATK_ORD[c.atkCount]} attack?`}</button>
-              : <button className="btn" disabled title="Ten attacks logged this turn — apply any further hits with Damage / heal">⚔ Apply further manually</button>}
+              : <button className="btn" disabled title="Ten attacks logged this turn — apply any further hits by tapping the target's HP in the roster">⚔ Apply further manually</button>}
             <button className="btn" disabled={c.hidTurn} onClick={() => api.openHide(c.uid)}>🥷 {c.hidTurn ? "Hid" : "Hide"}</button>
+            <button className="btn" onClick={() => api.openCast(c.uid)}>✨ Cast a spell</button>
             <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
             <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
             <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Readied" : "Ready"}</button>
@@ -3643,10 +3645,9 @@ function PlayerCard({ c, api, results }) {
         </div>
       )}
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        {c.hp != null && <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
+        <button className="btn small" onClick={() => api.openHeal(c.uid)}>💊 Heal…</button>
         <button className="btn small" onClick={() => api.addCondition(c.uid)}>Add condition…</button>
-        <button className="btn small" onClick={() => api.setConc(c.uid)}>Set concentration…</button>
-        <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>Adv/dis on rolls</button>
+        <button className="btn small" onClick={() => api.openAdv(c.uid)}>Advantage…</button>
       </div>
     </div>
   );
@@ -3678,11 +3679,11 @@ function EffectCard({ c, api, round }) {
 
 /* -------- modals -------- */
 
-function DamageModal({ state, presetUid, onApply, onClose }) {
+function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
   const targets = state.combatants.filter((c) => c.type !== "effect");
   const [amt, setAmt] = useState("");
   const [dtype, setDtype] = useState("");
-  const [mode, setMode] = useState("dmg"); // dmg | heal | thp
+  const [mode, setMode] = useState(initMode || "dmg"); // dmg | heal | thp
   const heal = mode === "heal";
   const [sel, setSel] = useState(() => new Set(presetUid ? [presetUid] : []));
   const [half, setHalf] = useState(() => new Set());
@@ -5449,6 +5450,77 @@ function ReadiedOverlay({ c, api, results, onClose }) {
   );
 }
 
+function PlayerCastModal({ c, api, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const [q, setQ] = useState("");
+  const [pick, setPick] = useState(null);
+  const [dc, setDc] = useState(c.spellDC ?? "");
+  const [atk, setAtk] = useState(c.spellAtk ?? "");
+  const commit = () => api.setSpellStats(c.uid, dc, atk);
+  const matches = q.trim().length >= 2
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 40)
+    : [];
+  const s = pick ? SPELL_REF[pick] : null;
+  const saveAb = s ? (s.d.match(/(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/i) || [])[1] : null;
+  const isAttack = s ? /spell attack/i.test(s.d) : false;
+  const conc = s ? /Concentration/i.test(s.du || "") : false;
+  const sd = s ? spellSaveDmg(s.d, 1) : null;
+  const castSave = () => {
+    commit();
+    api.openGroupSave({
+      name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
+      dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
+      dc: dc === "" ? null : Number(dc), single: singleTargetText(s.d), casterUid: c.uid,
+      noDmg: !/damage/i.test(s.d), ...(spellCondFrom(s.d, s.du) || {}),
+      ...(conc ? { concSrc: c.uid, concCast: s.n } : {}),
+    });
+  };
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>✨ {c.name} casts a spell</h3>
+        <div className="frow" style={{ gap: 6, fontSize: 12 }}>
+          <label style={{ minWidth: 0 }}>Save DC</label>
+          <input type="number" inputMode="numeric" style={{ width: 56 }} value={dc} placeholder="—" onChange={(e) => setDc(e.target.value)} onBlur={commit} />
+          <label style={{ minWidth: 0 }}>Spell atk</label>
+          <input type="number" inputMode="numeric" style={{ width: 56 }} value={atk} placeholder="—" onChange={(e) => setAtk(e.target.value)} onBlur={commit} />
+          <span style={{ fontSize: 11, color: "var(--faint)" }}>optional — saved on {c.name}</span>
+        </div>
+        {!pick ? (
+          <>
+            <input className="sbook-search" autoFocus placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
+            {q.trim().length < 2
+              ? <div className="trait" style={{ fontSize: 12 }}>Type to search the compendium. {c.name} rolls their own dice — this just sets up the targets' saves, damage, and concentration.</div>
+              : matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{q.trim()}”.</div>
+              : <div className="mlist">{matches.map((k) => (
+                  <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
+                    {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+                  </button>))}</div>}
+          </>
+        ) : (
+          <>
+            <div className="statline" style={{ fontSize: 14, marginTop: 4 }}><b>{s.n}</b> — {s.m}</div>
+            <div className="spellstats">Casting: {s.ct} · Range: {s.rg} · Duration: {s.du}{conc ? " · ◈ Concentration" : ""}</div>
+            <div className="pcactions" style={{ marginTop: 10 }}>
+              {saveAb
+                ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
+                : isAttack
+                ? <button className="btn primary" onClick={() => { commit(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
+                : <button className="btn primary" onClick={() => { commit(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
+            </div>
+            {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
+            {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
+            <div className="frow" style={{ justifyContent: "flex-start", marginTop: 8 }}>
+              <button className="btn small ghost" onClick={() => setPick(null)}>← back to search</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function HideCheckModal({ c, api, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
@@ -6203,6 +6275,22 @@ export default function App() {
     openReadied: (uid) => setReadiedUid(uid),
     clearReadied: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; L.push(`<b>${c.name}</b> drops their readied action.`); }),
     resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
+    openHeal: (uid) => setModal({ type: "damage", uid, mode: "heal" }),
+    openCast: (uid) => setModal({ type: "player-cast", uid }),
+    setSpellStats: (uid, dc, atk) => mutate((d) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      c.spellDC = dc === "" || dc == null ? null : Number(dc);
+      c.spellAtk = atk === "" || atk == null ? null : Number(atk);
+    }),
+    castUtility: (uid, name, conc) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
+      if (conc) c.concentration = name;
+    }),
+    castSpellAttack: (uid, name, conc) => {
+      mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; L.push(`<b>${c.name}</b> casts <b>${name}</b> — spell attack${conc ? " (concentrating)" : ""}.`); if (conc) c.concentration = name; });
+      setModal({ type: "player-attack", uid });
+    },
     openHide: (uid) => setModal({ type: "hide-check", uid }),
     hide: (uid, success) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
@@ -7338,7 +7426,7 @@ export default function App() {
       })()}
 
       {/* modals */}
-      {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} onApply={applyDamageModal} onClose={() => setModal(null)} />}
+      {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} initMode={modal.mode} onApply={applyDamageModal} onClose={() => setModal(null)} />}
       {modal?.type === "save" && modalC && <SaveRollModal c={modalC} rolled={modal.rolled} onRoll={applySaveRoll} onClose={() => setModal(null)} />}
       {modal?.type === "cond" && <ConditionModal state={state} presetUid={modal.uid} onAdd={applyCondModal} onClose={() => setModal(null)} />}
       {modal?.type === "custom" && <CustomMonsterForm
@@ -7879,6 +7967,9 @@ export default function App() {
       )}
       {modal?.type === "hide-check" && modalC && (
         <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "player-cast" && modalC && (
+        <PlayerCastModal c={modalC} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
