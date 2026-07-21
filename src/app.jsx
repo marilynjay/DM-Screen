@@ -102,6 +102,34 @@ input[type=number]{width:64px}
 .sfx .jaw.b{bottom:0;animation:sfxjaw-b .55s cubic-bezier(.45,0,.35,1) forwards}
 @keyframes sfxjaw-t{0%{transform:translateY(-101%)}44%{transform:translateY(28%)}60%{transform:translateY(28%)}100%{transform:translateY(-101%)}}
 @keyframes sfxjaw-b{0%{transform:translateY(101%)}44%{transform:translateY(-28%)}60%{transform:translateY(-28%)}100%{transform:translateY(101%)}}
+/* claw: three parallel gashes raking across on a diagonal */
+.sfx .claw{position:absolute;top:-25%;height:150%;width:6px;border-radius:4px;
+  background:linear-gradient(180deg,transparent,rgba(255,240,240,.95) 22%,rgba(255,110,110,.92) 50%,rgba(255,240,240,.95) 78%,transparent);
+  box-shadow:0 0 14px rgba(255,80,80,.85);animation:sfxclaw .5s cubic-bezier(.3,.5,.2,1) forwards}
+@keyframes sfxclaw{0%{opacity:0;transform:rotate(20deg) translateX(-62vw)}18%{opacity:1}100%{opacity:0;transform:rotate(20deg) translateX(62vw)}}
+/* slam: shockwave ring + flash + edge punch */
+.sfx .slam-ring{position:absolute;left:50%;top:50%;width:20px;height:20px;border-radius:50%;border:6px solid rgba(255,235,200,.9);transform:translate(-50%,-50%) scale(.2);animation:sfxslamring .5s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes sfxslamring{0%{opacity:1}100%{transform:translate(-50%,-50%) scale(34);opacity:0}}
+.sfx .slam-flash{position:absolute;inset:0;opacity:0;background:radial-gradient(circle,rgba(255,240,220,.55),transparent 62%);animation:sfxslamflash .45s ease forwards}
+@keyframes sfxslamflash{0%{opacity:.9}100%{opacity:0}}
+.sfx .slam-vig{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 120px 42px rgba(70,45,22,.72);animation:sfxslamvig .5s ease forwards}
+@keyframes sfxslamvig{18%{opacity:1}100%{opacity:0}}
+/* gore: bone horns thrusting up from the bottom edge */
+.sfx .gore{position:absolute;bottom:-12%;width:15px;height:72%;border-radius:9px 9px 0 0;
+  background:linear-gradient(0deg,rgba(224,214,194,.96),rgba(224,214,194,.3) 68%,transparent);box-shadow:0 0 16px rgba(255,110,80,.6);
+  transform:translateY(106%);animation:sfxgore .52s cubic-bezier(.2,.8,.3,1) forwards}
+@keyframes sfxgore{0%{opacity:0;transform:translateY(106%) rotate(var(--gr,0deg))}30%{opacity:1}62%{transform:translateY(-8%) rotate(var(--gr,0deg))}100%{opacity:0;transform:translateY(-8%) rotate(var(--gr,0deg))}}
+.sfx .gore-vig{position:absolute;inset:0;opacity:0;box-shadow:inset 0 -80px 70px -20px rgba(170,25,25,.5);animation:sfxvig .52s ease forwards}
+/* sting: a fast venom-green whip snapping across */
+.sfx .sting{position:absolute;top:-12%;left:50%;height:124%;width:4px;border-radius:3px;
+  background:linear-gradient(180deg,transparent,rgba(205,255,165,.96),rgba(120,220,90,.92),transparent);box-shadow:0 0 12px rgba(140,240,100,.9);
+  animation:sfxsting .42s ease-in forwards}
+@keyframes sfxsting{0%{opacity:0;transform:rotate(34deg) translateX(-42vw)}25%{opacity:1}100%{opacity:0;transform:rotate(34deg) translateX(42vw)}}
+/* ranged: a projectile streaking across */
+.sfx .arrow{position:absolute;top:44%;left:-16%;width:130px;height:3px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,rgba(255,240,210,.9) 78%,#fff);box-shadow:0 0 9px rgba(255,220,160,.85);
+  animation:sfxarrow .4s cubic-bezier(.4,0,.7,1) forwards}
+@keyframes sfxarrow{0%{opacity:0;left:-16%}16%{opacity:1}100%{opacity:.85;left:112%}}
 .demorow{position:relative;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);
   border-radius:8px;padding:8px 10px;overflow:hidden;margin:4px 0;font-size:13px}
 .row.fxshake{animation:fxshake .45s ease}
@@ -1880,6 +1908,11 @@ const SFX = { on: true }; // whole-screen attack effects (edge-framed) on a hit;
 // attack-name → whole-screen archetype (keyword match; falls back to no screen effect)
 const ATTACK_FX = [
   { fx: "bite", re: /\b(bite|bites|beak|maw|jaws?|chomp|snap)\b/i },
+  { fx: "claw", re: /\b(claws?|rend|talons?|scratch|rake|rip)\b/i },
+  { fx: "gore", re: /\b(gore|gores|horns?|tusks?|antlers?)\b/i },
+  { fx: "sting", re: /\b(sting|stinger|tail)\b/i },
+  { fx: "ranged", re: /\b(bow|longbow|shortbow|crossbow|sling|javelin|arrow|dart|bolt|blowgun|harpoon|spit)\b/i },
+  { fx: "slam", re: /\b(slam|fist|hooves?|hoof|ram|stomp|smash|punch|pound|club)\b/i },
 ];
 const attackArchetype = (name) => { for (const a of ATTACK_FX) if (a.re.test(name || "")) return a.fx; return null; };
 function diceTextStages(chip) {
@@ -1997,6 +2030,47 @@ function ScreenFx({ kind }) {
         <i className="sfx-vig" />
         <span className="jaw t"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points={tp.join(" ")} fill={fill} /></svg></span>
         <span className="jaw b"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points={bt.join(" ")} fill={fill} /></svg></span>
+      </span>
+    );
+  }
+  if (kind === "claw") {
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="sfx-vig" />
+        {[40, 48, 56].map((x, i) => <i key={i} className="claw" style={{ left: `${x}%`, animationDelay: `${i * 0.05}s` }} />)}
+      </span>
+    );
+  }
+  if (kind === "slam") {
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="slam-vig" />
+        <i className="slam-flash" />
+        <i className="slam-ring" />
+      </span>
+    );
+  }
+  if (kind === "gore") {
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="gore-vig" />
+        <i className="gore" style={{ left: "40%", "--gr": "-11deg" }} />
+        <i className="gore" style={{ left: "56%", "--gr": "11deg" }} />
+      </span>
+    );
+  }
+  if (kind === "sting") {
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="sfx-vig" style={{ boxShadow: "inset 0 0 90px 20px rgba(90,180,40,.35)" }} />
+        <i className="sting" />
+      </span>
+    );
+  }
+  if (kind === "ranged") {
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="arrow" />
       </span>
     );
   }
@@ -6733,7 +6807,9 @@ export default function App() {
               <span className="dchip" style={{ "--dc": "#8fd6a0" }} onClick={() => previewRow("heal")}>heal ✦</span>
             </div>
             <div className="pickgrid">
-              <span className="lvlchip" onClick={() => fireScreenFx("bite", 0, true)}>🦷 Bite (screen)</span>
+              {[["bite", "🦷 Bite"], ["claw", "🐾 Claw"], ["slam", "💥 Slam"], ["gore", "🐗 Gore"], ["sting", "🦂 Sting"], ["ranged", "🏹 Ranged"]].map(([k, lbl]) => (
+                <span key={k} className="lvlchip" onClick={() => fireScreenFx(k, 0, true)}>{lbl}</span>
+              ))}
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
             <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
