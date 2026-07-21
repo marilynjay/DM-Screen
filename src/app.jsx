@@ -146,6 +146,26 @@ input[type=number]{width:64px}
 .sfx .burst-ring{position:absolute;left:50%;top:50%;width:20px;height:20px;border-radius:50%;border:5px solid var(--sc);
   transform:translate(-50%,-50%) scale(.2);animation:sfxburstring .55s cubic-bezier(.15,.7,.3,1) forwards}
 @keyframes sfxburstring{0%{opacity:1}100%{transform:translate(-50%,-50%) scale(36);opacity:0}}
+/* missiles: a volley of darts streaking in and converging */
+.sfx .msl{position:absolute;left:50%;top:50%;width:32px;height:3px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,#fff);box-shadow:0 0 9px var(--sc);opacity:0;animation:sfxmsl .55s cubic-bezier(.3,0,.45,1) forwards}
+@keyframes sfxmsl{0%{opacity:0;transform:translate(var(--fx),var(--fy)) rotate(var(--mr))}22%{opacity:1}80%{opacity:1;transform:translate(-12px,0) rotate(var(--mr))}100%{opacity:0;transform:translate(-12px,0) rotate(var(--mr))}}
+/* storm: streaks raining down from the top edge */
+.sfx .drop{position:absolute;top:-14%;width:3px;height:42px;border-radius:2px;
+  background:linear-gradient(180deg,transparent,var(--sc));box-shadow:0 0 6px var(--sc);opacity:0;animation:sfxdrop .6s ease-in forwards}
+@keyframes sfxdrop{12%{opacity:.9}100%{opacity:0;transform:translateY(125vh)}}
+/* beam: a clean straight ray lancing across */
+.sfx .beam{position:absolute;top:47%;left:-8%;width:116%;height:8px;border-radius:5px;transform:scaleX(0);transform-origin:left center;
+  background:linear-gradient(90deg,var(--sc),#fff 50%,var(--sc));box-shadow:0 0 22px var(--sc);opacity:0;animation:sfxbeam .5s ease-out forwards}
+@keyframes sfxbeam{0%{opacity:0;transform:scaleX(0)}26%{opacity:1;transform:scaleX(1)}70%{opacity:.9}100%{opacity:0;transform:scaleX(1)}}
+/* column: a pillar slamming down from above */
+.sfx .column{position:absolute;left:50%;top:-10%;width:34%;height:130%;transform:translateX(-50%) scaleY(0);transform-origin:top center;filter:blur(1px);
+  background:linear-gradient(180deg,var(--sc),rgba(255,255,255,.4) 42%,var(--sc) 72%,transparent);box-shadow:0 0 34px var(--sc);opacity:0;animation:sfxcolumn .55s ease-out forwards}
+@keyframes sfxcolumn{0%{opacity:0;transform:translateX(-50%) scaleY(0)}24%{opacity:.95;transform:translateX(-50%) scaleY(1)}70%{opacity:.85}100%{opacity:0;transform:translateX(-50%) scaleY(1)}}
+/* wave: concentric shove rippling outward */
+.sfx .wave-r{position:absolute;left:50%;top:50%;width:24px;height:24px;border-radius:50%;border:4px solid var(--sc);
+  transform:translate(-50%,-50%) scale(.2);opacity:0;animation:sfxwave .58s ease-out forwards}
+@keyframes sfxwave{0%{opacity:.9}100%{transform:translate(-50%,-50%) scale(32);opacity:0}}
 .demorow{position:relative;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);
   border-radius:8px;padding:8px 10px;overflow:hidden;margin:4px 0;font-size:13px}
 .row.fxshake{animation:fxshake .45s ease}
@@ -1932,13 +1952,19 @@ const ATTACK_FX = [
   { fx: "slam", re: /\b(slam|fist|hooves?|hoof|ram|stomp|smash|punch|pound|club)\b/i },
 ];
 const attackArchetype = (name) => { for (const a of ATTACK_FX) if (a.re.test(name || "")) return a.fx; return null; };
-// spell/breath name → delivery shape (order matters: lightning breath is a bolt, not a cone)
+// spell/breath name → delivery shape (order matters: more specific shapes first;
+// lightning stays a jagged bolt while focused rays get a clean straight beam)
 const SPELL_FX = [
-  { fx: "bolt", re: /\b(lightning|bolt|line|ray|beam|arc)\b/i },
-  { fx: "burst", re: /\b(fireball|blast|nova|explos|shatter|storm|burst|eruption|detonat|boulder|rock)\b/i },
+  { fx: "missiles", re: /\b(magic missile|missile|dart)\b/i },
+  { fx: "storm", re: /(storm|cloud|meteor|hail|sleet|blizzard|plague|swarm)/i },
+  { fx: "column", re: /\b(flame strike|sacred flame|pillar|column)\b/i },
+  { fx: "wave", re: /(thunderwave|\bwave\b)/i },
+  { fx: "bolt", re: /\b(lightning|arc)\b/i },
+  { fx: "beam", re: /(\bray\b|beam|guiding bolt|fire bolt|eldritch|scorching|disintegrate)/i },
+  { fx: "burst", re: /\b(fireball|blast|nova|explos|shatter|burst|eruption|detonat|boulder|rock)\b/i },
   { fx: "cone", re: /\b(breath|cone|burning hands|spray|exhal|gout|glare|roar|visage)\b/i },
 ];
-const SPELL_KINDS = new Set(["cone", "bolt", "burst"]);
+const SPELL_KINDS = new Set(["cone", "bolt", "burst", "missiles", "storm", "beam", "column", "wave"]);
 const spellShape = (name) => { for (const s of SPELL_FX) if (s.re.test(name || "")) return s.fx; return "burst"; };
 const dtypeColor = (dtype) => DTYPE_COLORS[String(dtype || "").toLowerCase()] || "#cdd6e0";
 function diceTextStages(chip) {
@@ -2065,6 +2091,25 @@ function ScreenFx({ kind, color }) {
   }
   if (kind === "burst") {
     return <span className="sfx" aria-hidden><i className="burst" style={{ "--sc": color || "#ff9a4d" }} /><i className="burst-ring" style={{ "--sc": color || "#ff9a4d" }} /></span>;
+  }
+  if (kind === "missiles") {
+    const sc = color || "#b48ae0";
+    const darts = [["-46vw", "16vh", "-18deg"], ["-42vw", "-20vh", "16deg"], ["-52vw", "-2vh", "0deg"], ["-36vw", "30vh", "-30deg"]];
+    return <span className="sfx" aria-hidden>{darts.map(([fx, fy, mr], i) => <i key={i} className="msl" style={{ "--sc": sc, "--fx": fx, "--fy": fy, "--mr": mr, animationDelay: `${i * 0.06}s` }} />)}</span>;
+  }
+  if (kind === "storm") {
+    const sc = color || "#a8dcff";
+    return <span className="sfx" aria-hidden>{Array.from({ length: 13 }, (_, i) => <i key={i} className="drop" style={{ "--sc": sc, left: `${(i * 31 + 5) % 100}%`, animationDelay: `${((i * 7) % 10) / 22}s`, height: 30 + ((i * 11) % 24) }} />)}</span>;
+  }
+  if (kind === "beam") {
+    return <span className="sfx" aria-hidden><i className="beam" style={{ "--sc": color || "#ffe0a0" }} /></span>;
+  }
+  if (kind === "column") {
+    return <span className="sfx" aria-hidden><i className="column" style={{ "--sc": color || "#ff9a4d" }} /></span>;
+  }
+  if (kind === "wave") {
+    const sc = color || "#f0eee8";
+    return <span className="sfx" aria-hidden>{[0, 0.12, 0.24].map((d, i) => <i key={i} className="wave-r" style={{ "--sc": sc, animationDelay: `${d}s` }} />)}</span>;
   }
   if (kind === "bite") {
     const tp = ["0,0", "100,0"]; // top jaw: straight top edge, sawtooth teeth below
@@ -6877,7 +6922,8 @@ export default function App() {
               ))}
             </div>
             <div className="pickgrid">
-              {[["cone", "🔥 Cone", "fire"], ["bolt", "⚡ Bolt", "lightning"], ["burst", "💥 Burst", "fire"], ["cone", "❄ Cone", "cold"], ["burst", "☣ Burst", "acid"]].map(([k, lbl, ty], i) => (
+              {[["cone", "🔥 Cone", "fire"], ["bolt", "⚡ Bolt", "lightning"], ["burst", "💥 Burst", "fire"], ["cone", "❄ Cone", "cold"], ["burst", "☣ Burst", "acid"],
+                ["missiles", "🌟 Missiles", "force"], ["storm", "🌧 Storm", "cold"], ["beam", "☀ Beam", "radiant"], ["column", "🔆 Column", "fire"], ["wave", "〰 Wave", "thunder"]].map(([k, lbl, ty], i) => (
                 <span key={i} className="lvlchip" onClick={() => fireScreenFx(k, 0, true, DTYPE_COLORS[ty])}>{lbl}</span>
               ))}
             </div>
