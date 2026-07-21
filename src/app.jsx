@@ -60,8 +60,29 @@ input[type=number]{width:64px}
 @keyframes fxslash{100%{left:110%}}
 .dmgfx .fxbolt{inset:0;width:100%;height:100%;filter:drop-shadow(0 0 6px rgba(140,200,255,.9));animation:fxbolt .5s steps(1) forwards;opacity:0}
 @keyframes fxbolt{0%{opacity:1}18%{opacity:.25}30%{opacity:1}55%{opacity:.4}70%{opacity:.9}100%{opacity:0}}
-.dmgfx .fxbub{bottom:-6px;width:7px;height:7px;border-radius:50%;opacity:0;animation:fxbub .7s ease-out forwards}
+.dmgfx .fxbub{bottom:-6px;border-radius:50%;opacity:0;animation:fxbub .7s ease-out forwards}
 @keyframes fxbub{10%{opacity:.9}100%{transform:translateY(-46px);opacity:0}}
+.dmgfx .fxflame{bottom:0;height:100%;border-radius:50% 50% 0 0;filter:blur(1px);transform:translateY(105%);
+  background:linear-gradient(0deg,rgba(255,110,30,.65),rgba(255,190,70,.35) 55%,transparent);animation:fxflame .9s ease-in-out forwards}
+@keyframes fxflame{0%{transform:translateY(105%)}30%{transform:translateY(22%)}50%{transform:translateY(48%)}75%{transform:translateY(8%)}100%{transform:translateY(-8%);opacity:0}}
+.dmgfx .fxfrost{top:0;bottom:0;width:52%;transform:scaleX(0);animation:fxfrost .75s ease forwards}
+.dmgfx .fxfrost.l{left:0;transform-origin:left center;background:linear-gradient(90deg,rgba(170,220,255,.55),rgba(200,235,255,.25),transparent)}
+.dmgfx .fxfrost.r{right:0;transform-origin:right center;background:linear-gradient(270deg,rgba(170,220,255,.55),rgba(200,235,255,.25),transparent)}
+@keyframes fxfrost{0%{opacity:.95}55%{transform:scaleX(1);opacity:.95}80%{transform:scaleX(1);opacity:.85}100%{transform:scaleX(1);opacity:0}}
+.dmgfx .fxdot{width:9px;height:9px;border-radius:50%;opacity:0;box-shadow:0 0 6px rgba(140,220,90,.7);animation:fxdot .65s ease forwards}
+@keyframes fxdot{20%{opacity:1;transform:scale(1.3)}100%{opacity:0;transform:scale(.5)}}
+.dmgfx .fxskull{opacity:0;font-size:12px;line-height:1;filter:drop-shadow(0 0 5px rgba(150,90,220,.95));animation:fxskullk .8s ease forwards}
+@keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
+.dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);
+  background:repeating-linear-gradient(70deg,transparent 0 10px,rgba(255,230,150,.45) 10px 14px);animation:fxrays .85s ease forwards}
+@keyframes fxrays{18%{opacity:.95}80%{opacity:.55}100%{opacity:0;transform:translateX(18%)}}
+.dmgfx .fxringsm{width:10px;height:10px;border-radius:50%;transform:scale(.2);animation:fxringsm .6s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes fxringsm{0%{opacity:1}100%{transform:scale(5);opacity:0}}
+.dmgfx .fxringbig{left:50%;top:50%;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%) scale(.2);animation:fxringbig .5s ease-out forwards}
+@keyframes fxringbig{0%{opacity:1}100%{transform:translate(-50%,-50%) scale(46);opacity:0}}
+.dmgfx .fxriser{left:4%;right:4%;bottom:-6%;height:3px;border-radius:2px;box-shadow:0 0 8px rgba(190,150,255,.8);
+  background:linear-gradient(90deg,transparent,rgba(205,175,255,.95) 45%,rgba(235,225,255,.95) 55%,transparent);animation:fxriser .42s ease-in forwards}
+@keyframes fxriser{100%{bottom:108%}}
 .dmgfx .fxspark{opacity:0;font-size:13px;line-height:1;color:#ffe9a8;text-shadow:0 0 8px rgba(255,230,150,.9);animation:fxspark .75s ease forwards}
 @keyframes fxspark{15%{opacity:1;transform:scale(1.3) rotate(20deg)}100%{opacity:0;transform:scale(.4) rotate(50deg)}}
 .row.fxshake{animation:fxshake .45s ease}
@@ -1918,26 +1939,59 @@ const SHAKE_FX = new Set(["bludgeoning", "thunder"]);
 function DmgFx({ type }) {
   const t = String(type || "").toLowerCase();
   const flash = (c) => <i key="f" className="fxflash" style={{ background: c }} />;
-  const ring = (c, w = 2, delay = 0) => <i key={`r${delay}`} className="fxring" style={{ border: `${w}px solid ${c}`, animationDelay: delay ? `${delay}s` : undefined }} />;
-  const sweep = (g) => <i key="s" className="fxsweep" style={{ background: g }} />;
-  const bubs = (c) => [16, 44, 72].map((x, i) => <i key={`b${i}`} className="fxbub" style={{ left: `${x}%`, background: c, animationDelay: `${i * 0.09}s` }} />);
+  const ring = (c, w = 2) => <i key="r" className="fxring" style={{ border: `${w}px solid ${c}` }} />;
+  const BOLT = "#cfe8ff";
   const inner = {
-    lightning: [flash("rgba(170,215,255,.35)"),
-      <svg key="bolt" className="fxbolt" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,12 16,7 28,16 44,4 57,18 71,8 84,14 100,10" fill="none" stroke="#cfe8ff" strokeWidth="2.4" /></svg>],
-    fire: [flash("rgba(255,140,50,.28)"), sweep("linear-gradient(90deg,transparent,rgba(255,120,40,.55),rgba(255,205,80,.4),transparent)")],
-    cold: [flash("rgba(170,215,255,.3)"), sweep("linear-gradient(90deg,transparent,rgba(150,210,255,.5),rgba(230,245,255,.35),transparent)")],
+    // thin main bolt with small branches forking off
+    lightning: [flash("rgba(170,215,255,.3)"),
+      <svg key="bolt" className="fxbolt" viewBox="0 0 100 24" preserveAspectRatio="none">
+        <polyline points="0,12 16,7 28,16 44,4 57,18 71,8 84,14 100,10" fill="none" stroke={BOLT} strokeWidth="1.3" />
+        <polyline points="28,16 33,22 38,20" fill="none" stroke={BOLT} strokeWidth="0.8" />
+        <polyline points="44,4 48,1 53,4" fill="none" stroke={BOLT} strokeWidth="0.8" />
+        <polyline points="57,18 61,23" fill="none" stroke={BOLT} strokeWidth="0.7" />
+        <polyline points="71,8 75,3 80,6" fill="none" stroke={BOLT} strokeWidth="0.8" />
+      </svg>],
+    // dancing flames rising from the bottom, each tongue on its own rhythm
+    fire: [flash("rgba(255,140,50,.2)"),
+      ...[[1, 26, 0, 0.9], [19, 22, 0.12, 1.0], [37, 30, 0.05, 0.82], [56, 24, 0.18, 1.05], [73, 28, 0.1, 0.9], [88, 20, 0.22, 0.98]].map(([x, w, d, dur], i) => (
+        <i key={`fl${i}`} className="fxflame" style={{ left: `${x}%`, width: `${w}%`, animationDelay: `${d}s`, animationDuration: `${dur}s` }} />
+      ))],
+    // frost creeping in from both edges toward the center
+    cold: [flash("rgba(170,215,255,.18)"), <i key="fl" className="fxfrost l" />, <i key="fr" className="fxfrost r" />],
     slashing: [flash("rgba(255,255,255,.14)"), <i key="sl" className="fxslash" />],
     piercing: [flash("rgba(255,255,255,.2)"), ring("#fff", 2)],
-    bludgeoning: [flash("rgba(200,190,180,.25)"), ring("rgba(200,190,180,.8)", 3)],
-    acid: [flash("rgba(140,220,90,.25)"), ring("rgba(150,230,90,.9)", 3)],
-    poison: [flash("rgba(120,210,90,.2)"), ...bubs("rgba(130,220,100,.75)")],
-    force: [flash("rgba(180,140,255,.3)"), ring("rgba(190,150,255,.9)", 2)],
-    psychic: [ring("rgba(255,140,220,.9)", 2), ring("rgba(255,140,220,.6)", 2, 0.12)],
-    radiant: [flash("rgba(255,215,120,.45)"), ring("rgba(255,220,130,.9)", 2)],
-    necrotic: [flash("rgba(80,40,110,.35)"), sweep("linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)")],
-    thunder: [flash("rgba(255,255,255,.25)"), ring("rgba(255,255,255,.95)", 4)],
+    // one hard white flash; the row shake does the rest
+    bludgeoning: [flash("rgba(255,255,255,.55)")],
+    // scattered green droplets popping
+    acid: [flash("rgba(140,220,90,.2)"),
+      ...[[12, 25, 0], [28, 60, 0.08], [45, 20, 0.14], [60, 65, 0.05], [75, 30, 0.2], [88, 55, 0.12], [37, 45, 0.24]].map(([x, y, d], i) => (
+        <i key={`ad${i}`} className="fxdot" style={{ left: `${x}%`, top: `${y}%`, background: ["#a6e06b", "#7fbf5a", "#5a9e46", "#c4ef8a"][i % 4], animationDelay: `${d}s` }} />
+      ))],
+    // a bubbling cauldron of rising bubbles
+    poison: [flash("rgba(120,210,90,.2)"),
+      ...[[7, 7, 0], [19, 5, 0.12], [31, 8, 0.05], [43, 6, 0.2], [55, 7, 0.09], [67, 5, 0.16], [79, 8, 0.02], [91, 6, 0.22]].map(([x, sz, d], i) => (
+        <i key={`b${i}`} className="fxbub" style={{ left: `${x}%`, width: sz, height: sz, background: "rgba(130,220,100,.75)", animationDelay: `${d}s` }} />
+      ))],
+    // like the slash, but a violet line rising bottom → top
+    force: [flash("rgba(180,140,255,.25)"), <i key="fr" className="fxriser" />],
+    // ripples all over the bar — mostly purple, the odd green one
+    psychic: [
+      ...[[14, 30, 0, 0], [34, 65, 0.1, 0], [54, 22, 0.05, 0], [74, 60, 0.16, 0], [88, 32, 0.22, 1], [24, 52, 0.19, 0], [64, 40, 0.26, 0]].map(([x, y, d, g], i) => (
+        <i key={`ps${i}`} className="fxringsm" style={{ left: `${x}%`, top: `${y}%`, border: `2px solid ${g ? "rgba(140,230,140,.85)" : "rgba(200,140,255,.9)"}`, animationDelay: `${d}s` }} />
+      ))],
+    // god rays sweeping through
+    radiant: [flash("rgba(255,215,120,.3)"), <i key="rr" className="fxrays" />],
+    // dark drain sweep plus a haunting of little skulls
+    necrotic: [flash("rgba(80,40,110,.3)"),
+      <i key="s" className="fxsweep" style={{ background: "linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)" }} />,
+      ...[[10, 20, 0], [30, 55, 0.12], [50, 14, 0.06], [70, 55, 0.18], [87, 25, 0.24]].map(([x, y, d], i) => (
+        <i key={`sk${i}`} className="fxskull" style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${d}s` }}>💀</i>
+      ))],
+    // a much bigger pulse of light than bludgeoning, plus the shake
+    thunder: [flash("radial-gradient(circle, rgba(255,255,255,.7), rgba(255,255,255,.12))"),
+      <i key="rb" className="fxringbig" style={{ border: "4px solid rgba(255,255,255,.95)" }} />],
     heal: [flash("rgba(150,230,140,.16)"),
-      ...[[8, 18, 0], [30, 55, 0.1], [52, 12, 0.18], [70, 58, 0.08], [88, 28, 0.24]].map(([x, y, d], i) => (
+      ...[[5, 15, 0], [16, 55, 0.1], [27, 20, 0.16], [38, 60, 0.06], [49, 12, 0.2], [60, 55, 0.12], [71, 25, 0.02], [82, 60, 0.22], [92, 30, 0.26], [22, 35, 0.28], [56, 38, 0.24]].map(([x, y, d], i) => (
         <i key={`sp${i}`} className="fxspark" style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${d}s` }}>✦</i>
       ))],
   }[t] || [flash("rgba(255,255,255,.2)")];
