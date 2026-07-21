@@ -2127,32 +2127,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         )}
       </span>
 
-      <span className="menu-anchor" ref={menuRef} style={{ marginLeft: "auto" }}>
-        <button className="btn small ghost" onClick={() => setMenu(!menu)}>⋮</button>
-        {menu && (
-          <div className="menu" onClick={() => setMenu(false)}>
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
-            {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
-            <button onClick={() => api.rename(c.uid)}>Rename…</button>
-            {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
-            {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
-            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
-            <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
-            {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
-            {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
-            {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
-            {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
-            {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>}
-            {c.type === "monster" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark dead</button>}
-            {c.type === "object" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark destroyed</button>}
-            {(c.dead || c.unconscious) && <button onClick={() => api.revive(c.uid)}>Revive (1 HP)</button>}
-            <button className="warn" onClick={() => api.remove(c.uid)}>Remove from combat</button>
-          </div>
-        )}
-      </span>
       </div>
 
       <div className="rline r2">
@@ -2244,6 +2218,33 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         </button>
       )}
 
+
+      <span className="menu-anchor" ref={menuRef}>
+        <button className="btn small ghost" onClick={() => setMenu(!menu)}>⋮</button>
+        {menu && (
+          <div className="menu" onClick={() => setMenu(false)}>
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
+            {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
+            <button onClick={() => api.rename(c.uid)}>Rename…</button>
+            {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
+            {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
+            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
+            <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
+            {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
+            {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
+            {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
+            {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
+            {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>}
+            {c.type === "monster" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark dead</button>}
+            {c.type === "object" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark destroyed</button>}
+            {(c.dead || c.unconscious) && <button onClick={() => api.revive(c.uid)}>Revive (1 HP)</button>}
+            <button className="warn" onClick={() => api.remove(c.uid)}>Remove from combat</button>
+          </div>
+        )}
+      </span>
       </div>
     </div>
   );
