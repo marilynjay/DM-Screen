@@ -426,6 +426,15 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   padding:1px 6px;color:var(--faint);flex-shrink:0}
 .rtog.on{border-color:var(--ok);color:var(--ok)}
 .rtog.readied{border-color:var(--gold);color:var(--gold);background:var(--gold-soft);animation:badgepop .35s ease}
+.advcallouts{display:flex;flex-direction:column;gap:6px;margin:8px 0 12px}
+.advcallout{font-size:13px;line-height:1.55;background:var(--raised);border:1px solid var(--line2);border-left-width:3px;border-radius:8px;padding:8px 11px}
+.advcallout.adv{border-left-color:#7fbf8e}
+.advcallout.dis{border-left-color:#e0645a}
+.advcallout .subj{color:var(--dim)}
+.advkw{font-family:var(--disp);font-weight:700;letter-spacing:.6px;color:var(--dim)}
+.advkw.adv{color:#9fd3ab}
+.advkw.dis{color:#e8a49c}
+.advfrom{color:var(--gold);font-weight:700}
 .readied-modal{max-height:88vh;overflow-y:auto}
 .readied-banner{font-size:12.5px;color:var(--gold);background:var(--gold-soft);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;margin-bottom:8px;text-align:center}
 .advchip{font-family:var(--mono);font-size:11px;border-radius:5px;padding:1px 6px;flex-shrink:0;background:none;
@@ -1268,6 +1277,21 @@ function selfAdvTrait(c) {
   return null;
 }
 const selfAdv = (c) => (selfAdvTrait(c) ? "adv" : "none");
+// What conditions/traits do to the creature's OWN attack rolls (Poisoned/Frightened/
+// Blinded/Prone/Restrained → DIS, Invisible → ADV, self-advantage aura → ADV). Net of
+// any that cancel. Returns {mode, from, cancel} or null.
+function condOwnAdv(c) {
+  let adv = false, dis = false; const froms = [];
+  const aura = selfAdvTrait(c);
+  if (aura) { adv = true; froms.push(aura); }
+  for (const cd of c.conditions || []) {
+    const v = ADV_HINT[cd.name];
+    if (v === "adv" && !froms.includes(cd.name)) { adv = true; froms.push(cd.name); }
+    if (v === "dis" && !froms.includes(cd.name)) { dis = true; froms.push(cd.name); }
+  }
+  if (!adv && !dis) return null;
+  return { mode: adv && dis ? "none" : adv ? "adv" : "dis", from: froms.join(", "), cancel: adv && dis };
+}
 const ownAdv = (c) => combineAdv(c.advMode, selfAdv(c)); // the creature's effective advantage on its own d20s
 const vsState = (t) => (t.advVs && t.advVs !== "none" ? t.advVs : (condAdvVs(t) || {}).mode || "none");
 const combineAdv = (aMode, tMode) => {
@@ -5249,10 +5273,31 @@ function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
 /* One dialog for both directions of advantage: the creature's own rolls and
    attacks made against it. Segmented pickers instead of blind three-state
    cycling; shows what conditions already derive. */
+function AdvKw({ mode }) {
+  if (mode === "adv") return <b className="advkw adv">ADVANTAGE</b>;
+  if (mode === "dis") return <b className="advkw dis">DISADVANTAGE</b>;
+  return <b className="advkw">Normal</b>;
+}
+function AdvCallout({ info, subject, overridden }) {
+  if (!info) return null;
+  return (
+    <div className={`advcallout ${info.cancel ? "" : info.mode}`}>
+      <span className="subj">{subject} </span>
+      {info.mode === "adv*"
+        ? <><AdvKw mode="adv" /> <span className="subj">in melee (≤5 ft),</span> <AdvKw mode="dis" /> <span className="subj">at range</span></>
+        : info.cancel
+        ? <><AdvKw mode="adv" /> <span className="subj">&</span> <AdvKw mode="dis" /> <span className="subj">cancel → Normal</span></>
+        : <AdvKw mode={info.mode} />}
+      {" "}<span className="subj">from</span> <span className="advfrom">{info.from}</span>
+      {overridden && <span className="subj"> — overridden by your setting below</span>}
+    </div>
+  );
+}
 function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
-  const derived = condAdvVs(c);
+  const own = condOwnAdv(c);
+  const vs = condAdvVs(c);
   const seg = (cur, onPick) => (
     <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
       {[["none", "Normal"], ["adv", "ADV"], ["dis", "DIS"]].map(([v, lb]) => (
@@ -5265,16 +5310,16 @@ function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Advantage — {c.name}</h3>
+        {(own || vs) && (
+          <div className="advcallouts">
+            <AdvCallout info={own} subject={`${c.name}'s attacks & saves:`} overridden={(c.advMode || "none") !== "none"} />
+            <AdvCallout info={vs} subject={`Attacks against ${c.name}:`} overridden={(c.advVs || "none") !== "none"} />
+          </div>
+        )}
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "6px 0 4px" }}>{c.name}'s own rolls (attacks & saves)</div>
         {seg(c.advMode || "none", onSetOwn)}
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "6px 0 4px" }}>Attacks against {c.name}</div>
         {seg(c.advVs || "none", onSetVs)}
-        {derived && (
-          <div className="trait" style={{ marginBottom: 8 }}>
-            Conditions already grant attackers {derived.mode === "adv*" ? "ADV in melee (within 5 ft) and DIS at range" : derived.mode.toUpperCase()} (from {derived.from}).{" "}
-            {(c.advVs || "none") === "none" ? "That applies while the setting above is Normal." : "Your manual setting above overrides it."}
-          </div>
-        )}
         <div className="frow" style={{ justifyContent: "flex-end" }}>
           <button className="btn primary" onClick={() => { if (armed()) onClose(); }}>Done</button>
         </div>
