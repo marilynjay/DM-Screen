@@ -130,6 +130,9 @@ input[type=number]{width:64px}
   background:linear-gradient(90deg,transparent,rgba(255,240,210,.9) 78%,#fff);box-shadow:0 0 9px rgba(255,220,160,.85);
   animation:sfxarrow .4s cubic-bezier(.4,0,.7,1) forwards}
 @keyframes sfxarrow{0%{opacity:0;left:-16%}16%{opacity:1}100%{opacity:.85;left:112%}}
+/* generic hit: a soft neutral edge pulse — every landed attack registers */
+.sfx .hit-vig{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 60px 10px rgba(232,224,196,.42);animation:sfxhit .36s ease forwards}
+@keyframes sfxhit{32%{opacity:1}100%{opacity:0}}
 .demorow{position:relative;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);
   border-radius:8px;padding:8px 10px;overflow:hidden;margin:4px 0;font-size:13px}
 .row.fxshake{animation:fxshake .45s ease}
@@ -2073,6 +2076,9 @@ function ScreenFx({ kind }) {
         <i className="arrow" />
       </span>
     );
+  }
+  if (kind === "hit") {
+    return <span className="sfx" aria-hidden><i className="hit-vig" /></span>;
   }
   return null;
 }
@@ -5534,11 +5540,12 @@ export default function App() {
             setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
           }
           holdGhost(t, snap, flashAt, fxTypesOf(parts));
-          // beat one: whole-screen attack effect the instant the HIT chip reveals (during the damage roll)
+          // beat one: whole-screen attack effect the instant the HIT chip reveals (during the damage roll).
+          // signature attacks get their archetype; every other landed hit gets the generic pulse.
           const hitIdx = chips.findIndex((ch) => ch.k === "sgood" && /^HIT/.test(ch.t || ""));
-          fireScreenFx(attackArchetype(a.n), hitIdx >= 0 ? Math.round(chipDelays(chips)[hitIdx] * 1000) : 0);
+          fireScreenFx(attackArchetype(a.n) || "hit", hitIdx >= 0 ? Math.round(chipDelays(chips)[hitIdx] * 1000) : 0);
         } else if (isHit == null && t.maxHp != null) {
-          chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, arch: attackArchetype(a.n), k: "cond" });
+          chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, arch: attackArchetype(a.n) || "hit", k: "cond" });
         }
       }
       setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
@@ -6790,7 +6797,7 @@ export default function App() {
             <button className={`btn ${dmgSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setDmgSfx(!dmgSfx)}>
               🦷 Attack effects on screen{dmgSfx ? " ✓" : ""}<br />
-              <span style={{ fontSize: 11, color: dmgSfx ? "inherit" : "var(--faint)" }}>Signature attacks (a bite, for now) flash an edge-framed effect across the screen the moment the hit lands.</span>
+              <span style={{ fontSize: 11, color: dmgSfx ? "inherit" : "var(--faint)" }}>Every landed hit flashes the screen edge — signature attacks (bite, claw, gore…) get their own flair, everything else a soft pulse. Nothing on a miss.</span>
             </button>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Preview</div>
             <div className="trait" style={{ marginBottom: 4 }}>Tap to see an effect. Damage types &amp; heal play over the sample row; attack styles flash the screen.</div>
@@ -6807,7 +6814,7 @@ export default function App() {
               <span className="dchip" style={{ "--dc": "#8fd6a0" }} onClick={() => previewRow("heal")}>heal ✦</span>
             </div>
             <div className="pickgrid">
-              {[["bite", "🦷 Bite"], ["claw", "🐾 Claw"], ["slam", "💥 Slam"], ["gore", "🐗 Gore"], ["sting", "🦂 Sting"], ["ranged", "🏹 Ranged"]].map(([k, lbl]) => (
+              {[["bite", "🦷 Bite"], ["claw", "🐾 Claw"], ["slam", "💥 Slam"], ["gore", "🐗 Gore"], ["sting", "🦂 Sting"], ["ranged", "🏹 Ranged"], ["hit", "⚔ Any hit"]].map(([k, lbl]) => (
                 <span key={k} className="lvlchip" onClick={() => fireScreenFx(k, 0, true)}>{lbl}</span>
               ))}
             </div>
