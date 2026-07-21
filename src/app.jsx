@@ -5906,7 +5906,11 @@ export default function App() {
         const amt = half.includes(uid) ? Math.floor(amount / 2) : amount;
         if (mode === "heal") applyHeal(c, amt, L);
         else if (mode === "thp") grantTempHp(c, amt, L);
-        else applyDamage(c, amt, dtype, L, T);
+        else {
+          const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
+          applyDamage(c, amt, dtype, L, T);
+          holdGhost(c, snap, 600, dtype || null); // manual damage gets the same presentation as attacks
+        }
       });
     });
   };
