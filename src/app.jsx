@@ -425,6 +425,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rtog{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:5px;
   padding:1px 6px;color:var(--faint);flex-shrink:0}
 .rtog.on{border-color:var(--ok);color:var(--ok)}
+.rtog.readied{border-color:var(--gold);color:var(--gold);background:var(--gold-soft);animation:badgepop .35s ease}
+.readied-modal{max-height:88vh;overflow-y:auto}
+.readied-banner{font-size:12.5px;color:var(--gold);background:var(--gold-soft);border:1px solid var(--line2);border-radius:10px;padding:7px 10px;margin-bottom:8px;text-align:center}
 .advchip{font-family:var(--mono);font-size:11px;border-radius:5px;padding:1px 6px;flex-shrink:0;background:none;
   border:1px dashed var(--line);color:var(--faint);opacity:.75;display:inline-flex;gap:5px;align-items:center;cursor:pointer}
 .advchip.on{opacity:1;border-style:solid;border-color:var(--line2);color:var(--text)}
@@ -1140,7 +1143,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
-    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false,
+    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false,
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -1690,7 +1693,7 @@ function onTurnStart(c, state, logs, toasts) {
   c.reaction = true;
   c.acBoost = 0;
   c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0;
-  c.atkCount = 0; c.dodging = false; // player-turn helpers: attack tally + Dodge both last until this creature acts again
+  c.atkCount = 0; c.dodging = false; c.readied = false; // player-turn helpers: attack tally, Dodge, and an untriggered readied action all last until this creature acts again
   if (c.legendary) c.legendary.rem = c.legendary.max;
   // hazards fire before durations tick (players get a popup instead — handled in the UI)
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Burning")) {
@@ -2600,6 +2603,11 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
           onSpend={() => api.confirmUse(c.uid, "use", k)} onReset={() => api.confirmUse(c.uid, "use", k)} />
       ))}
 
+      {c.type === "player" && c.readied && !c.dead && (
+        <button className="rtog readied" title="Readied action — tap to resolve it now (even off-turn)" onClick={() => api.openReadied(c.uid)}>
+          ⏳ Readied
+        </button>
+      )}
       {c.type !== "effect" && c.type !== "object" && !c.dead && (
         <button className={`rtog ${c.reaction ? "on" : ""}`} title={`Reaction ${c.reaction ? "available" : "spent"} — tap to toggle`} onClick={() => api.toggleReaction(c.uid)}>
           React
@@ -3603,6 +3611,7 @@ function PlayerCard({ c, api, results }) {
             <button className="btn" onClick={() => api.openHide(c.uid)}>🥷 Hide</button>
             <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
             <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
+            <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Readied" : "Ready"}</button>
           </div>
         </div>
       )}
@@ -5375,6 +5384,23 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
   );
 }
 
+function ReadiedOverlay({ c, api, results, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal readied-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="readied-banner">⏳ Readied action — {c.name} acts off-turn{c.reaction ? "" : " · ⚠ their reaction is already spent"}</div>
+        <PlayerCard c={c} api={api} results={results} />
+        <div className="frow" style={{ justifyContent: "space-between", marginTop: 6 }}>
+          <button className="btn ghost" onClick={() => { if (armed()) onClose(); }}>Close (stay readied)</button>
+          <button className="btn primary" onClick={() => { if (armed()) api.resolveReadied(c.uid); }}>Done — reaction spent</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HideCheckModal({ c, api, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
@@ -5484,6 +5510,7 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const [results, setResults] = useState({});
   const [modal, setModal] = useState(null); // {type, uid?}
+  const [readiedUid, setReadiedUid] = useState(null); // a readied player's card, surfaced off-turn (independent of `modal` so the attack picker can stack on top)
   const [showLog, setShowLog] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const logRef = useRef(null);
@@ -6124,6 +6151,10 @@ export default function App() {
     }),
     dodge: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.dodging = true; L.push(`<b>${c.name}</b> takes the <b>Dodge</b> action — attacks against them have DISADVANTAGE until their next turn.`); }),
     dash: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) L.push(`<b>${c.name}</b> takes the <b>Dash</b> action.`); }),
+    readyAction: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = true; L.push(`<b>${c.name}</b> <b>readies</b> an action (triggers on their reaction).`); }),
+    openReadied: (uid) => setReadiedUid(uid),
+    clearReadied: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; L.push(`<b>${c.name}</b> drops their readied action.`); }),
+    resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
     openHide: (uid) => setModal({ type: "hide-check", uid }),
     hide: (uid, success) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
@@ -7250,6 +7281,12 @@ export default function App() {
           <button className="btn primary" onClick={requestNext}>Next ▶</button>
         </div>
       )}
+
+      {/* readied-action overlay — rendered before the modals so the attack picker / group-save stack on top */}
+      {readiedUid && (() => {
+        const rc = state.combatants.find((x) => x.uid === readiedUid);
+        return rc && !rc.dead ? <ReadiedOverlay c={rc} api={api} results={results} onClose={() => setReadiedUid(null)} /> : null;
+      })()}
 
       {/* modals */}
       {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} onApply={applyDamageModal} onClose={() => setModal(null)} />}
