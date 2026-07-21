@@ -391,7 +391,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .skullghost{position:absolute;left:50%;top:-4px;font-size:14px;pointer-events:none;animation:skullfloat 1.5s ease-out forwards;z-index:6}
 @keyframes badgepop{0%{transform:scale(.55);opacity:0}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
 .cond{animation:badgepop .35s ease}
-.condicons{display:inline-flex;gap:3px;align-items:center;margin-left:6px;vertical-align:middle}
+.rowconds{display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;margin-left:8px;vertical-align:middle}
+.cond .condicon,.cond .condsvg{margin-right:3px}
 .condicon{font-size:13px;line-height:1;cursor:pointer}
 .condsvg{width:14px;height:14px;color:var(--dim);cursor:pointer;flex:none}
 .pgr-icon,.lvlchip .condicon,.lvlchip .condsvg{margin-right:3px;vertical-align:-2px}
@@ -415,8 +416,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .shield{cursor:pointer;opacity:.5;font-size:13px}
 .shield.on{opacity:1;filter:drop-shadow(0 0 3px var(--gold))}
 .badges{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1 1 auto}
-.cond{font-size:11px;background:var(--raised);border:1px solid var(--line2);border-radius:10px;
-  padding:0 7px;line-height:18px;cursor:pointer;white-space:nowrap}
+.cond{display:inline-flex;align-items:center;font-size:11px;background:var(--raised);border:1px solid var(--line2);border-radius:10px;
+  padding:0 7px;line-height:18px;min-height:18px;cursor:pointer;white-space:nowrap;vertical-align:middle}
 .cond:hover{border-color:var(--danger)}
 .cond .rt{color:var(--gold);font-family:var(--mono)}
 .conc{font-size:11px;border:1px solid var(--fx);color:#aab8e0;border-radius:10px;padding:0 7px;
@@ -1125,6 +1126,7 @@ function makeMonster(sb, state, opts = {}) {
   m.spellUses = buildSpellUses(m);
   const ab = parseAtkBudget(m.multi, m.actions);
   m.atkMax = ab.max; m.atkCaps = ab.caps;
+  m.replaceActs = parseReplaceActs(m.multi, m.actions);
   m.atkUsed = 0; m.atkUsedBy = {}; m.atkGrant = 0;
   return m;
 }
@@ -1247,14 +1249,48 @@ function parseAtkBudget(multi, actions) {
   return { max, caps };
 }
 
+// Some creatures roll their own attacks AND saves at advantage from an aura/trait
+// (Hobgoblin's Aura of Authority; Berserker's Bloodied Frenzy while bloodied). We
+// derive it live so it turns off when the gating condition (Bloodied, Incapacitated) changes.
+const INCAP_CONDS = new Set(["Incapacitated", "Stunned", "Paralyzed", "Unconscious", "Petrified"]);
+function selfAdvTrait(c) {
+  if (!c || c.type !== "monster" || c.dead || c.unconscious) return null;
+  if ((c.conditions || []).some((cd) => INCAP_CONDS.has(cd.name))) return null;
+  for (const t of c.traits || []) {
+    if (/Advantage on attack rolls and (?:on )?saving throws/i.test(t.d || "")) {
+      if (/\bBloodied\b/i.test(t.d)) { if (isBloodied(c)) return t.n; }
+      else return t.n;
+    }
+  }
+  return null;
+}
+const selfAdv = (c) => (selfAdvTrait(c) ? "adv" : "none");
+const ownAdv = (c) => combineAdv(c.advMode, selfAdv(c)); // the creature's effective advantage on its own d20s
 const vsState = (t) => (t.advVs && t.advVs !== "none" ? t.advVs : (condAdvVs(t) || {}).mode || "none");
 const combineAdv = (aMode, tMode) => {
   const adv = aMode === "adv" || tMode === "adv";
   const dis = aMode === "dis" || tMode === "dis";
   return adv && dis ? "none" : adv ? "adv" : dis ? "dis" : "none";
 };
+// Non-attack actions a Multiattack lets the creature substitute for an attack
+// ("It can replace one attack with a use of Life Drain") — these draw from the
+// attack budget so a creature can't both use its full Multiattack AND this.
+function parseReplaceActs(multi, actions) {
+  if (!multi) return [];
+  const names = (actions || []).filter((a) => a.kind !== "atk").map((a) => a.n);
+  const out = [];
+  const re = /replace\s+(?:one|two|three|four|\d+|an|its|one of its)?\s*(?:of (?:its|these) )?attacks?\s+with\s+(?:a use of |a |an |the )?([A-Z][\w'’ ]+?)(?=[.,;]|$| and | or | to )/gi;
+  let m;
+  while ((m = re.exec(multi))) {
+    const cand = m[1].trim();
+    const hit = names.find((nm) => cand === nm || cand.startsWith(nm) || nm.startsWith(cand));
+    if (hit && hit !== "Spellcasting" && !out.includes(hit)) out.push(hit);
+  }
+  return out;
+}
 const atkMaxOf = (c) => c.atkMax ?? parseAtkBudget(c.multi, c.actions).max;
 const atkLeft = (c) => atkMaxOf(c) + (c.atkGrant || 0) - (c.atkUsed || 0);
+const replacesAttack = (c, a) => !!(a && a.kind !== "atk" && (c.replaceActs || []).includes(a.n));
 const atkNameLeft = (c, name) => {
   const caps = c.atkCaps || parseAtkBudget(c.multi, c.actions).caps;
   const cap = (caps[name] != null ? caps[name] : atkMaxOf(c)) + (c.atkGrant || 0);
@@ -1433,7 +1469,7 @@ function applyDamage(c, amt, dtype, logs, toasts) {
       logs.push(`<b>${c.name}</b>: concentration check needed — DC ${dc} CON save (${concLabel(c)}).`);
       return;
     }
-    const r = d20(conMod(c), c.advMode);
+    const r = d20(conMod(c), ownAdv(c));
     const pass = r.total >= dc;
     logs.push(`<b>${c.name}</b> concentration check (DC ${dc}): ${r.text} — <b>${pass ? "HOLDS" : "FAILS"}</b>${pass ? "" : ` — loses ${c.concentration}`}`);
     toasts.push({ kind: pass ? "good" : "bad", text: `${c.name}: concentration on ${concLabel(c)} ${pass ? "holds" : "BROKEN"} (${r.text} vs DC ${dc})` });
@@ -1900,12 +1936,13 @@ function Toasts({ toasts }) {
 
 /* Small condition icon shown after the name on the roster and in the picker.
    Three are hand-drawn (eye/ear with a strike, a fallen figure); the rest are emoji. */
-function CondIcon({ name, onTap }) {
+function CondIcon({ name, onTap, plain }) {
   const v = CONDITION_ICONS[name];
   if (!v) return null;
+  const tap = plain ? undefined : onTap; // inside a badge the parent chip handles the click
   const svg = (paths) => (
     <svg className="condsvg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
-      onClick={onTap} title={name}>{paths}</svg>
+      onClick={tap} title={name}>{paths}</svg>
   );
   if (v === "svg:blind") return svg(<>
     <path d="M2.5 10 C5 5.5 15 5.5 17.5 10 C15 14.5 5 14.5 2.5 10 Z" />
@@ -1918,13 +1955,13 @@ function CondIcon({ name, onTap }) {
     <path d="M10.5 13.6 l2.2 3.2 M14 13.6 l2.2 3.2 M9 13.4 l2.4 -3" />
     <path d="M4 8.5 v-2.2 M7.5 7.2 l1.2 -1.8" strokeWidth="1.2" opacity="0.7" />
   </>);
-  return <span className="condicon" onClick={onTap} title={name}>{v}</span>;
+  return <span className="condicon" onClick={tap} title={name}>{v}</span>;
 }
 
 function CondBadge({ cond, onTap }) {
   return (
     <span className="cond" title={`${CONDITIONS[cond.name] || "Custom effect"} (tap for details)`} onClick={onTap}>
-      {cond.name}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
+      <CondIcon name={cond.name} plain />{cond.name}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
     </span>
   );
 }
@@ -2465,6 +2502,14 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         {c.unconscious && !c.dead && <span className="sub">(unconscious)</span>}
         {bloody && <span className="bloodtag" title="At or below half HP">Bloodied</span>}
         {c.type === "effect" && c.rounds != null && <span className="sub">{c.rounds}r left</span>}
+        {!c.dead && (c.conditions.length > 0 || condGhost) && (
+          <span className="rowconds">
+            {c.conditions.map((cd, i) => (
+              <CondBadge key={i} cond={cd} onTap={(e) => { e.stopPropagation(); api.openCondInfo(c.uid, cd.name); }} />
+            ))}
+            {condGhost && <span key={condGhost.id} className="cond condghost"><CondIcon name={condGhost.name} plain />{condGhost.name}</span>}
+          </span>
+        )}
         {flash && <span className="rowflash" key={flash.id}>{flash.text}</span>}
         {saveBadge && !c.dead && (
           <span className={`savetag ${saveBadge.ok === true ? "good" : saveBadge.ok === false ? "bad" : ""}`}
@@ -2474,14 +2519,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
           </span>
         )}
       </span>
-      {!c.dead && c.conditions.some((cd) => CONDITION_ICONS[cd.name]) && (
-        <span className="condicons">
-          {c.conditions.filter((cd) => CONDITION_ICONS[cd.name]).map((cd, i) => (
-            <CondIcon key={i} name={cd.name} onTap={(e) => { e.stopPropagation(); api.openCondInfo(c.uid, cd.name); }} />
-          ))}
-        </span>
-      )}
-
       </div>
 
       <div className="rline r2">
@@ -2532,10 +2569,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
       )}
 
       <span className="badges">
-        {c.conditions.map((cd, i) => (
-          <CondBadge key={i} cond={cd} onTap={() => api.openCondInfo(c.uid, cd.name)} />
-        ))}
-        {condGhost && <span key={condGhost.id} className="cond condghost">{condGhost.name}</span>}
         {c.concentration && (
           <span className="conc" title="Concentrating — tap for details" onClick={() => api.concInfo(c.uid)}>
             ◈ {c.concentration}
@@ -2583,6 +2616,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             <button onClick={() => api.rename(c.uid)}>Rename…</button>
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
             {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
+            {c.type === "monster" && atkMaxOf(c) > 0 && <button onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>}
             {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
@@ -3385,15 +3419,15 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
           <ResultChips chips={results[`${c.uid}:save`]} />
         </div>
       )}
+      {selfAdvTrait(c) && <div className="reminder" style={{ marginTop: 8 }}>⬆ <b>{selfAdvTrait(c)}:</b> rolling attacks & saving throws at ADVANTAGE.</div>}
       {c.multi && <div className="reminder" style={{ marginTop: 8 }}>⚔ <b>Multiattack:</b> {c.multi}</div>}
       {c.legendary && <div className="reminder" style={{ marginTop: 8 }}>👑 Legendary actions: {c.legendary.rem}/{c.legendary.max} available (spend between other creatures' turns)</div>}
 
       <div className="sect">
         <div className="lbl">Actions
           {!peek && atkMaxOf(c) > 0 && (
-            <span className="atkbudget" title={`Attack rolls left this turn (Multiattack allows ${atkMaxOf(c)})`}>
+            <span className="atkbudget" title={`Attack rolls left this turn (Multiattack allows ${atkMaxOf(c)}). Grant an extra one from the roster ⋮ menu.`}>
               ⚔ {Math.max(atkLeft(c), 0)}/{atkMaxOf(c)}
-              <button className="btn tiny ghost" title="Grant an extra attack this turn (Haste, etc.)" onClick={() => api.grantAttack(c.uid)}>+1</button>
             </span>
           )}
         </div>
@@ -3408,18 +3442,22 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
               </button>
             )}
             {a.kind === "save" && (
-              <button className="btn small primary" disabled={(a.rech && !a.ready) || peek} title={peek ? "Actions happen on the creature's own turn" : undefined} onClick={() => api.useSaveAction(c.uid, i)}>
-                Use — DC {a.save?.dc} {a.save?.ability}
+              <button className="btn small primary" disabled={(a.rech && !a.ready) || peek || (!peek && replacesAttack(c, a) && atkLeft(c) <= 0)}
+                title={peek ? "Actions happen on the creature's own turn" : replacesAttack(c, a) && atkLeft(c) <= 0 ? "No attacks left to replace — this uses one of the Multiattack's attacks" : replacesAttack(c, a) ? "Replaces one of the Multiattack's attacks" : undefined}
+                onClick={() => api.useSaveAction(c.uid, i)}>
+                Use — DC {a.save?.dc} {a.save?.ability}{replacesAttack(c, a) ? " (⚔−1)" : ""}
               </button>
             )}
-            {a.kind === "save" && a.save?.dc && (
+            {a.kind === "save" && a.save?.dc && !replacesAttack(c, a) && (
               <button className="btn small cond" disabled={a.rech && !a.ready} title="Roll this save for multiple targets and apply damage"
                 onClick={() => api.openGroupSave({ name: `${c.name} — ${a.n}`, ability: a.save.ability, dc: a.save.dc, dmg: a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]) || "", dtype: a.dtype || "", casterUid: c.uid })}>
                 ⭗ Group
               </button>
             )}
             {a.kind !== "atk" && a.kind !== "save" && (
-              <button className="btn small" disabled={peek} title={peek ? "Actions happen on the creature's own turn" : undefined} onClick={() => api.useTextAction(c.uid, i)}>Use</button>
+              <button className="btn small" disabled={peek || (!peek && replacesAttack(c, a) && atkLeft(c) <= 0)}
+                title={peek ? "Actions happen on the creature's own turn" : replacesAttack(c, a) && atkLeft(c) <= 0 ? "No attacks left to replace" : undefined}
+                onClick={() => api.useTextAction(c.uid, i)}>Use{replacesAttack(c, a) ? " (⚔−1)" : ""}</button>
             )}
             {a.conc && <span className="chip" title="Concentration spell">conc</span>}
             {a.rech && !a.ready && <span className="chip bad">not recharged</span>}
@@ -5892,7 +5930,7 @@ export default function App() {
       const t = opts.targetUid ? d.combatants.find((x) => x.uid === opts.targetUid) : null;
       const tMode0 = t ? (opts.vsOverride || vsState(t)) : "none";
       const tMode = tMode0 === "adv*" ? "adv" : tMode0;
-      const mode = t ? combineAdv(c.advMode, tMode) : c.advMode;
+      const mode = t ? combineAdv(ownAdv(c), tMode) : ownAdv(c);
       if (opts.countAtk) {
         c.atkUsed = (c.atkUsed || 0) + 1;
         c.atkUsedBy = c.atkUsedBy || {};
@@ -6139,7 +6177,7 @@ export default function App() {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         const cd = c.conditions.find((x) => x.name === condName && x.rpt); if (!cd) return;
         const cov = cd.rpt.ab === "dex" ? coverBonus(c) : 0;
-        const r = d20(saveMod(c, cd.rpt.ab) + cov, c.advMode);
+        const r = d20(saveMod(c, cd.rpt.ab) + cov, ownAdv(c));
         const ok = r.total >= cd.rpt.dc;
         L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name}): ${r.text} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
         cd.rptDone = `${d.round}:${d.activeUid}`;
@@ -6472,6 +6510,11 @@ export default function App() {
     useSaveAction: (uid, ai) => mutate((d, L, T) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const a = c.actions[ai];
+      if (replacesAttack(c, a) && d.activeUid === c.uid) {
+        if (atkLeft(c) <= 0) return; // no attack left to substitute
+        c.atkUsed = (c.atkUsed || 0) + 1;
+        L.push(`<b>${c.name}</b> replaces one attack with <b>${a.n}</b>.`);
+      }
       const chips = [{ t: `DC ${a.save?.dc} ${a.save?.ability} save`, k: "hit" }];
       const dice = a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]);
       if (dice) {
@@ -6489,6 +6532,11 @@ export default function App() {
     useTextAction: (uid, ai) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const a = c.actions[ai];
+      if (replacesAttack(c, a) && d.activeUid === c.uid) {
+        if (atkLeft(c) <= 0) return;
+        c.atkUsed = (c.atkUsed || 0) + 1;
+        L.push(`<b>${c.name}</b> replaces one attack with <b>${a.n}</b>.`);
+      }
       if (a.conc) c.concentration = a.n.replace(/\s*\((spell|bonus)\)\s*/i, "");
       L.push(`<b>${c.name}</b> uses <b>${a.n}</b>${a.conc ? " (concentrating)" : ""}.`);
     }),
@@ -6815,7 +6863,7 @@ export default function App() {
         }
         const cov = ability === "dex" ? coverBonus(c) : 0;
         const mod = saveMod(c, ability) + cov;
-        const r = d20(mod, c.advMode);
+        const r = d20(mod, ownAdv(c));
         const ok = r.total >= dc;
         let amt = null, note = "";
         if (dmgRoll) {
@@ -6865,7 +6913,7 @@ export default function App() {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const cov = ab === "dex" ? coverBonus(c) : 0;
       const mod = saveMod(c, ab) + cov;
-      const r = d20(mod, c.advMode);
+      const r = d20(mod, ownAdv(c));
       const dcTxt = dc ? ` vs DC ${dc} — <b>${r.total >= dc ? "SUCCESS" : "FAIL"}</b>` : "";
       L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${r.text}${cov ? ` (incl. +${cov} cover)` : ""}${dcTxt}`);
       const both = r.adv !== "none";
