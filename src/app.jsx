@@ -1015,6 +1015,28 @@ const lookupItem = (name) => {
 };
 const lootObj = (x) => (typeof x === "string" ? { n: x } : x);
 const lootName = (x) => { const it = lootObj(x); return it.n + (it.ch != null ? ` (${it.ch} charge${it.ch === 1 ? "" : "s"})` : ""); };
+// Opportunistically spend a matching item from a creature's loot when it's used (charges tick down; otherwise the entry is removed). No-op when nothing matches — player loot usually isn't tracked here.
+function consumeLootInDraft(c, terms, L) {
+  if (!c || !c.loot || !c.loot.length || !terms || !terms.length) return;
+  const lc = terms.map((t) => String(t).toLowerCase()).filter(Boolean);
+  const idx = c.loot.findIndex((x) => { const n = lootObj(x).n.toLowerCase(); return lc.every((t) => n.includes(t)); });
+  if (idx < 0) return;
+  const o = lootObj(c.loot[idx]);
+  if (o.ch != null && o.ch > 1) { c.loot = c.loot.map((x, i) => (i === idx ? { ...o, ch: o.ch - 1 } : x)); L.push(`<b>${c.name}</b> expends a charge of <b>${o.n}</b> (${o.ch - 1} left).`); }
+  else { c.loot = c.loot.filter((_, i) => i !== idx); L.push(`<b>${c.name}</b> uses up <b>${o.n}</b>.`); }
+}
+const HEAL_POTIONS = [
+  { n: "Potion of Healing", f: "2d4+2" },
+  { n: "Potion of Greater Healing", f: "4d4+4" },
+  { n: "Potion of Superior Healing", f: "8d4+8" },
+  { n: "Potion of Supreme Healing", f: "10d4+20" },
+];
+const ALCH_ITEMS = [
+  { n: "Alchemist's Fire", f: "1d4", dt: "fire", cond: "Burning" },
+  { n: "Acid (vial)", f: "2d6", dt: "acid" },
+  { n: "Holy Water", f: "2d6", dt: "radiant" },
+  { n: "Oil (flask, lit)", f: "5", dt: "fire", cond: "Burning" },
+];
 
 /* weapon items in a monster's loot become real attacks; removed items take their attack with them */
 function syncWeaponAttacks(c, logs) {
@@ -3589,6 +3611,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
         <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>
+        <button className="btn small" onClick={() => api.openUseItem(c.uid)}>🎒 Use item…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>
           Rolls: {c.advMode === "none" ? "normal" : c.advMode === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}
         </button>
@@ -3646,6 +3669,7 @@ function PlayerCard({ c, api, results }) {
               : <button className="btn" disabled title="Ten attacks logged this turn — apply any further hits by tapping the target's HP in the roster">⚔ Apply further manually</button>}
             <button className="btn" disabled={c.hidTurn} onClick={() => api.openHide(c.uid)}>🥷 {c.hidTurn ? "Hid" : "Hide"}</button>
             <button className="btn" onClick={() => api.openCast(c.uid)}>✨ Cast a spell</button>
+            <button className="btn" onClick={() => api.openUseItem(c.uid)}>🎒 Use item</button>
             <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
             <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
             <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Readied" : "Ready"}</button>
@@ -5458,14 +5482,15 @@ function ReadiedOverlay({ c, api, results, onClose }) {
   );
 }
 
-function PlayerCastModal({ c, api, onClose }) {
+function PlayerCastModal({ c, api, fromItem, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(null);
   const [dc, setDc] = useState(c.spellDC ?? "");
-  const [noLearn, setNoLearn] = useState(false);
+  const [noLearn, setNoLearn] = useState(!!fromItem); // scroll/wand casts never join the spellbook
   const commit = () => api.setSpellDC(c.uid, dc);
+  const consumeScroll = () => { if (fromItem && pick) api.consumeItem(c.uid, ["scroll", SPELL_REF[pick].n]); };
   const matches = q.trim().length >= 2
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 40)
     : [];
@@ -5476,7 +5501,7 @@ function PlayerCastModal({ c, api, onClose }) {
   const sd = s ? spellSaveDmg(s.d, 1) : null;
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
-    commit(); learn();
+    commit(); learn(); consumeScroll();
     api.openGroupSave({
       name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
@@ -5488,7 +5513,7 @@ function PlayerCastModal({ c, api, onClose }) {
   return (
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>✨ {c.name} casts a spell</h3>
+        <h3>{fromItem ? `📜 ${c.name} casts from a scroll` : `✨ ${c.name} casts a spell`}</h3>
         <div className="frow" style={{ gap: 6, fontSize: 12 }}>
           <label style={{ minWidth: 0 }}>Spell save DC</label>
           <input type="number" inputMode="numeric" style={{ width: 56 }} value={dc} placeholder="—" onChange={(e) => setDc(e.target.value)} onBlur={commit} />
@@ -5525,17 +5550,126 @@ function PlayerCastModal({ c, api, onClose }) {
               {saveAb
                 ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                 : isAttack
-                ? <button className="btn primary" onClick={() => { commit(); learn(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
-                : <button className="btn primary" onClick={() => { commit(); learn(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
+                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
+                : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
             </div>
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
             {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--faint)", marginTop: 8, cursor: "pointer" }}>
-              <input type="checkbox" checked={noLearn} onChange={(e) => setNoLearn(e.target.checked)} style={{ width: 15, height: 15 }} />
-              Don't save to spellbook (scroll / one-off)
-            </label>
+            {fromItem
+              ? <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 8 }}>Cast from a scroll — not added to {c.name}'s spellbook.</div>
+              : <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--faint)", marginTop: 8, cursor: "pointer" }}>
+                  <input type="checkbox" checked={noLearn} onChange={(e) => setNoLearn(e.target.checked)} style={{ width: 15, height: 15 }} />
+                  Don't save to spellbook (scroll / one-off)
+                </label>}
             <div className="frow" style={{ justifyContent: "flex-start", marginTop: 8 }}>
               <button className="btn small ghost" onClick={() => setPick(null)}>← back to search</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function UseItemModal({ c, state, api, onScroll, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const isMonster = c.type === "monster";
+  const [cat, setCat] = useState(null);
+  const [pot, setPot] = useState(null); const [pf, setPf] = useState(""); const [pamt, setPamt] = useState(""); const [ptar, setPtar] = useState(c.uid);
+  const [alch, setAlch] = useState(null); const [af, setAf] = useState(""); const [adt, setAdt] = useState(""); const [atar, setAtar] = useState(""); const [aphase, setAphase] = useState("pick"); const [aamt, setAamt] = useState("");
+  const [oNote, setONote] = useState("");
+  const healTargets = state.combatants.filter((x) => !x.dead && x.maxHp != null && (x.uid === c.uid || x.side === c.side));
+  const enemies = state.combatants.filter((x) => !x.dead && x.type !== "effect" && x.type !== "object" && x.uid !== c.uid && (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
+  const t = atar ? state.combatants.find((x) => x.uid === atar) : null;
+  const tAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const term1 = (n) => n.replace(/[^a-z ]/gi, "").trim().split(" ")[0].toLowerCase();
+  const amtRow = (label, formula, val, setVal) => (
+    <div className="frow" style={{ gap: 6 }}>
+      <label style={{ minWidth: 0 }}>{label}</label>
+      <input type="number" inputMode="numeric" style={{ width: 70 }} value={val} onChange={(e) => setVal(e.target.value)} placeholder={isMonster ? "" : "your roll"} />
+      {formula && <button className="btn small ghost" onClick={() => setVal(String(rollFormula(formula).total))}>🎲 {isMonster ? "roll" : "roll it"}</button>}
+      {formula && <span style={{ fontSize: 11, color: "var(--faint)" }}>{formula}</span>}
+    </div>
+  );
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🎒 {c.name} uses an item</h3>
+        {cat && <button className="btn small ghost" style={{ marginBottom: 6 }} onClick={() => { setCat(null); setPot(null); setAlch(null); setAphase("pick"); }}>← item types</button>}
+        {!cat && (
+          <div className="pcactions">
+            <button className="btn" onClick={() => setCat("potion")}>🧪 Healing potion</button>
+            <button className="btn" onClick={onScroll}>📜 Spell scroll / wand</button>
+            <button className="btn" onClick={() => setCat("alch")}>💥 Thrown / alchemical</button>
+            <button className="btn" onClick={() => setCat("other")}>📦 Other</button>
+          </div>
+        )}
+        {cat === "potion" && (!pot ? (
+          <div className="pcactions">
+            {HEAL_POTIONS.map((tp) => (
+              <button key={tp.n} className="btn" onClick={() => { setPot(tp); setPf(tp.f); if (isMonster) setPamt(String(rollFormula(tp.f).total)); }}>{tp.n} <span className="cr">{tp.f}</span></button>))}
+            <button className="btn" onClick={() => { setPot({ n: "Potion", f: "" }); setPf(""); }}>Custom…</button>
+          </div>
+        ) : (
+          <>
+            <div className="statline" style={{ fontSize: 13 }}><b>{pot.n}</b></div>
+            {pot.f === "" && <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Formula</label><input type="text" style={{ width: 90 }} value={pf} onChange={(e) => setPf(e.target.value)} placeholder="2d4+2" /></div>}
+            {amtRow("Healed", pf, pamt, setPamt)}
+            <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Target</label>
+              <select className="sbook-search" style={{ width: "auto", margin: 0, flex: 1 }} value={ptar} onChange={(e) => setPtar(e.target.value)}>
+                {healTargets.map((x) => <option key={x.uid} value={x.uid}>{x.uid === c.uid ? "Self" : x.name}</option>)}
+              </select></div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn primary" disabled={pamt === ""} onClick={() => { api.itemHeal(c.uid, ptar, pamt, pot.n, ["potion", "healing"]); onClose(); }}>Apply {pamt !== "" ? `+${pamt}` : "heal"}</button>
+            </div>
+          </>
+        ))}
+        {cat === "alch" && (!alch ? (
+          <div className="pcactions">
+            {ALCH_ITEMS.map((a) => (
+              <button key={a.n} className="btn" onClick={() => { setAlch(a); setAf(a.f); setAdt(a.dt); if (isMonster) setAamt(String(rollFormula(a.f).total)); }}>{a.n} <span className="cr">{a.f} {a.dt}{a.cond ? ` +${a.cond}` : ""}</span></button>))}
+            <button className="btn" onClick={() => { setAlch({ n: "Thrown item", f: "", dt: "", custom: true }); setAf(""); setAdt(""); }}>Custom…</button>
+          </div>
+        ) : (
+          <>
+            <div className="statline" style={{ fontSize: 13 }}><b>{alch.n}</b>{alch.cond ? ` — inflicts ${alch.cond} on a hit` : ""}</div>
+            {alch.custom && (
+              <div className="frow" style={{ gap: 6 }}>
+                <label style={{ minWidth: 0 }}>Dmg</label><input type="text" style={{ width: 78 }} value={af} onChange={(e) => setAf(e.target.value)} placeholder="2d6" />
+                <select className="sbook-search" style={{ width: 110, margin: 0 }} value={adt} onChange={(e) => setAdt(e.target.value)}><option value="">type…</option>{DTYPES.map((d) => <option key={d} value={d}>{d}</option>)}</select>
+              </div>
+            )}
+            <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Target</label>
+              <select className="sbook-search" style={{ width: "auto", margin: 0, flex: 1 }} value={atar} onChange={(e) => setAtar(e.target.value)}>
+                <option value="">— choose —</option>
+                {enemies.map((x) => <option key={x.uid} value={x.uid}>{x.name}{x.ac != null ? ` (AC ${x.ac + (x.acBoost || 0) + coverBonus(x)})` : ""}</option>)}
+              </select></div>
+            {atar && aphase === "pick" && (
+              <>
+                <div className="trait" style={{ fontSize: 12, color: "var(--faint)", margin: "2px 0 8px" }}>{c.name} rolls the attack{tAc != null ? ` — did they reach AC ${tAc}?` : " — did it hit?"}</div>
+                <div className="frow" style={{ gap: 8 }}>
+                  <button className="btn hitbtn" style={{ flex: 1 }} onClick={() => { if (isMonster && aamt === "") setAamt(String(rollFormula(af || "0").total)); setAphase("dmg"); }}>✓ Hit</button>
+                  <button className="btn missbtn" style={{ flex: 1 }} onClick={() => { api.itemMiss(c.uid, atar, alch.n, [term1(alch.n)]); onClose(); }}>✗ Miss</button>
+                </div>
+              </>
+            )}
+            {atar && aphase === "dmg" && (
+              <>
+                {amtRow("Damage", af, aamt, setAamt)}
+                <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
+                  <button className="btn small ghost" onClick={() => setAphase("pick")}>← back</button>
+                  <button className="btn primary" disabled={aamt === ""} onClick={() => { api.itemDamage(c.uid, atar, aamt, adt, alch.n, alch.cond || null, [term1(alch.n)]); onClose(); }}>Apply {aamt !== "" ? `${aamt}${adt ? ` ${adt}` : ""}` : "damage"}</button>
+                </div>
+              </>
+            )}
+          </>
+        ))}
+        {cat === "other" && (
+          <>
+            <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Item</label><input type="text" style={{ flex: 1 }} value={oNote} onChange={(e) => setONote(e.target.value)} placeholder="e.g. Thunderstone, Antitoxin…" autoFocus /></div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
+              <button className="btn primary" disabled={!oNote.trim()} onClick={() => { api.itemLog(c.uid, oNote.trim(), [term1(oNote)]); onClose(); }}>Log it</button>
             </div>
           </>
         )}
@@ -6380,6 +6514,39 @@ export default function App() {
       persistMember(c.memberId, { spells: list });
     },
     openSpellbook: (uid) => setModal({ type: "spellbook", uid }),
+    openUseItem: (uid) => setModal({ type: "use-item", uid }),
+    consumeItem: (uid, terms) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) consumeLootInDraft(c, terms, L); }),
+    itemHeal: (uid, targetUid, amt, itemName, terms) => mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === uid);
+      const t = d.combatants.find((x) => x.uid === targetUid) || c;
+      if (!c || !t) return;
+      const n = Math.max(0, Math.round(Number(amt) || 0));
+      if (n > 0 && t.maxHp != null) { const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() }; applyHeal(t, n, L); holdGhost(t, snap, 600, "heal"); }
+      L.push(`<b>${c.name}</b> uses <b>${itemName}</b>${t.uid === c.uid ? "" : ` on <b>${t.name}</b>`}${n > 0 ? ` — heals ${n}` : ""}.`);
+      consumeLootInDraft(c, terms, L);
+    }),
+    itemDamage: (uid, targetUid, amt, dtype, itemName, cond, terms) => mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === uid);
+      const t = d.combatants.find((x) => x.uid === targetUid);
+      if (!c || !t) return;
+      const n = Math.max(0, Math.round(Number(amt) || 0));
+      const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
+      if (n > 0 && t.maxHp != null) { applyDamage(t, n, dtype || null, L, T); holdGhost(t, snap, 600, dtype || null); }
+      if (cond && !t.dead && !t.conditions.some((cd) => cd.name === cond)) t.conditions.push({ name: cond, rounds: null });
+      L.push(`<b>${c.name}</b> hits <b>${t.name}</b> with <b>${itemName}</b>${n > 0 ? ` — ${n}${dtype ? ` ${dtype}` : ""}` : ""}${cond ? ` + ${cond}` : ""}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}.`);
+      consumeLootInDraft(c, terms, L);
+    }),
+    itemMiss: (uid, targetUid, itemName, terms) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); const t = d.combatants.find((x) => x.uid === targetUid);
+      if (!c) return;
+      L.push(`<b>${c.name}</b> misses${t ? ` <b>${t.name}</b>` : ""} with <b>${itemName}</b>.`);
+      consumeLootInDraft(c, terms, L);
+    }),
+    itemLog: (uid, note, terms) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      L.push(`<b>${c.name}</b> uses <b>${note || "an item"}</b>.`);
+      consumeLootInDraft(c, terms, L);
+    }),
     castUtility: (uid, name, conc) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
@@ -8067,10 +8234,15 @@ export default function App() {
         <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player-cast" && modalC && (
-        <PlayerCastModal c={modalC} api={api} onClose={() => setModal(null)} />
+        <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem} onClose={() => setModal(null)} />
       )}
       {modal?.type === "spellbook" && modalC && (
         <SpellbookModal c={modalC} api={api} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "use-item" && modalC && (
+        <UseItemModal c={modalC} state={state} api={api}
+          onScroll={() => setModal({ type: "player-cast", uid: modal.uid, fromItem: "scroll" })}
+          onClose={() => setModal(null)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
