@@ -510,6 +510,19 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   color:var(--gold);margin-bottom:12px}
 .frow{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .frow label{font-size:12px;color:var(--dim);min-width:90px}
+.rxlist{display:flex;flex-direction:column;gap:6px}
+.rxrow{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);cursor:pointer}
+.rxrow.on{border-color:var(--gold);background:var(--gold-soft)}
+.rxrow input[type=checkbox]{margin-top:2px;width:18px;height:18px;flex:0 0 auto}
+.rxico{font-size:18px;flex:0 0 auto;line-height:1.2}
+.rxbody{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rxbody b{font-size:13px;color:var(--text)}
+.rxdesc{font-size:11.5px;color:var(--faint);line-height:1.35}
+.rxparam{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--dim);margin-left:8px}
+.rxparam input{width:62px;font-size:16px;padding:1px 5px;color:var(--text);-webkit-text-fill-color:var(--text);background:var(--raised);border:1px solid var(--line2);border-radius:6px}
+.rxchoices{display:flex;flex-direction:column;gap:7px;margin:4px 0 2px}
+.rxpick{text-align:left;font-size:13px;padding:10px 12px;border-color:var(--gold);background:var(--gold-soft);color:var(--text)}
+.rxpick:active{background:var(--gold)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -1083,7 +1096,7 @@ function makeMonster(sb, state, opts = {}) {
     legendary: sb.legendary ? { max: sb.legendary.count, rem: sb.legendary.count, options: sb.legendary.options || [] } : null,
     legRes: sb.legRes ? { max: sb.legRes, rem: sb.legRes } : null,
     init: init.total, initText: `Initiative ${init.text}`,
-    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none",
+    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {},
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false, notes: opts.notes || "", loot: sb.loot ? sb.loot.map((x) => (typeof x === "string" ? x : { ...x })) : [],
   };
   {
@@ -1114,7 +1127,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
-    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none",
+    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {},
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -1989,6 +2002,70 @@ const ATTACK_FX = [
   { fx: "slam", re: /\b(slam|fist|hooves?|hoof|ram|stomp|smash|punch|pound|club)\b/i },
 ];
 const attackArchetype = (name) => { for (const a of ATTACK_FX) if (a.re.test(name || "")) return a.fx; return null; };
+
+/* ---- defensive reactions (Shield, Uncanny Dodge, …) ----
+   A creature's c.rx flags which of these it can use. When an attack hits, the
+   attacker's turn pauses and the DM is asked whether the target reacts. AC-flip
+   reactions turn the hit into a miss; damage reactions reduce the rolled damage.
+   All of them spend the creature's one reaction (c.reaction). */
+const DEF_REACTIONS = [
+  { id: "shield", n: "Shield", icon: "🛡", kind: "ac", bonus: 5, persist: true,
+    d: "Cast as a reaction when hit: +5 AC until the start of your next turn, including against the triggering attack." },
+  { id: "defDuelist", n: "Defensive Duelist", icon: "🤺", kind: "ac", param: "ddBonus", persist: false, meleeOnly: true,
+    d: "Wielding a finesse weapon, add your proficiency bonus to AC against one melee attack that would hit you." },
+  { id: "uncannyDodge", n: "Uncanny Dodge", icon: "🌀", kind: "halve",
+    d: "When an attacker you can see hits you, halve that attack's damage." },
+  { id: "absorbElem", n: "Absorb Elements", icon: "🔥", kind: "resistType",
+    d: "When you take acid, cold, fire, lightning, or thunder damage: resistance to that type — halve it." },
+  { id: "deflectMissiles", n: "Deflect Missiles", icon: "🏹", kind: "reduceRoll", param: "dmDice", rangedOnly: true,
+    d: "When hit by a ranged weapon attack, reduce the damage by the rolled amount (Monk: 1d10 + Dex + level)." },
+];
+const ABSORB_TYPES = new Set(["acid", "cold", "fire", "lightning", "thunder"]);
+const attackRange = (a) => {
+  const d = a?.d || "";
+  if (/Ranged Attack Roll/i.test(d)) return "ranged";
+  if (/Melee Attack Roll/i.test(d)) return "melee";
+  if (attackArchetype(a?.n) === "ranged") return "ranged";
+  return null; // unknown — treat permissively for melee-only reactions
+};
+// Reduce a set of damage parts in place; returns a short note for the log/chip.
+function applyReduction(parts, red) {
+  if (!red || !parts.length) return "";
+  if (red.kind === "halve") { parts.forEach((p) => (p.amt = Math.floor(p.amt / 2))); return " (halved)"; }
+  if (red.kind === "resistType") { parts.forEach((p) => { if ((p.dtype || "").toLowerCase() === red.elem) p.amt = Math.floor(p.amt / 2); }); return ` (${red.elem} halved)`; }
+  if (red.kind === "reduceRoll") {
+    const r = rollFormula(red.formula || "1d10"); let rem = r.total;
+    parts.forEach((p) => { const cut = Math.min(p.amt, rem); p.amt -= cut; rem -= cut; });
+    return ` (−${r.total})`;
+  }
+  return "";
+}
+// Which reactions can the target use against this specific attack? (label-carrying options)
+function eligibleReactions(t, a, atk, effAc) {
+  if (!t || !t.reaction || !t.rx || effAc == null) return [];
+  const rng = attackRange(a);
+  const out = [];
+  if (!atk.crit) { // a natural 20 always hits — an AC boost can't save you
+    if (t.rx.shield && atk.total >= effAc && atk.total < effAc + 5)
+      out.push({ id: "shield", n: "Shield", kind: "ac", bonus: 5, persist: true, label: `🛡 Cast Shield — +5 AC (${effAc}→${effAc + 5}); this hit misses` });
+    if (t.rx.defDuelist && rng !== "ranged") {
+      const pb = Number(t.rx.ddBonus) || 2;
+      if (atk.total >= effAc && atk.total < effAc + pb)
+        out.push({ id: "defDuelist", n: "Defensive Duelist", kind: "ac", bonus: pb, persist: false, label: `🤺 Defensive Duelist — +${pb} AC; this hit misses` });
+    }
+  }
+  if (t.rx.uncannyDodge)
+    out.push({ id: "uncannyDodge", n: "Uncanny Dodge", kind: "reduce", reduction: { kind: "halve" }, label: "🌀 Uncanny Dodge — halve the damage" });
+  if (t.rx.deflectMissiles && rng === "ranged") {
+    const f = (t.rx.dmDice && String(t.rx.dmDice).trim()) || "1d10";
+    out.push({ id: "deflectMissiles", n: "Deflect Missiles", kind: "reduce", reduction: { kind: "reduceRoll", formula: f }, label: `🏹 Deflect Missiles — reduce by ${f}` });
+  }
+  if (t.rx.absorbElem) {
+    const elem = [a.dtype, a.extraType].filter(Boolean).map((s) => s.toLowerCase()).find((ty) => ABSORB_TYPES.has(ty));
+    if (elem) out.push({ id: "absorbElem", n: "Absorb Elements", kind: "reduce", reduction: { kind: "resistType", elem }, label: `🔥 Absorb Elements — halve ${elem} damage` });
+  }
+  return out;
+}
 // spell/breath name → delivery shape (order matters: more specific shapes first;
 // lightning stays a jagged bolt while focused rays get a clean straight beam)
 const SPELL_FX = [
@@ -2497,6 +2574,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
             {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
@@ -5130,6 +5208,70 @@ function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
   );
 }
 
+function ReactionsConfigModal({ c, onSave, onClose }) {
+  const [rx, setRx] = useState(() => ({ ...(c.rx || {}) }));
+  const set = (k, v) => setRx((r) => ({ ...r, [k]: v }));
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Reactions — {c.name}</h3>
+        <div className="trait" style={{ fontSize: 12.5, color: "var(--faint)", marginBottom: 10 }}>
+          Flag which defensive reactions {c.name} can use. When an attack hits{c.ac == null ? " (needs a tracked AC for the AC ones)" : ""}, you'll be asked whether to spend their reaction.
+        </div>
+        <div className="rxlist">
+          {DEF_REACTIONS.map((r) => (
+            <label key={r.id} className={`rxrow ${rx[r.id] ? "on" : ""}`}>
+              <input type="checkbox" checked={!!rx[r.id]} onChange={(e) => set(r.id, e.target.checked)} />
+              <span className="rxico">{r.icon}</span>
+              <span className="rxbody">
+                <b>{r.n}</b>
+                {r.param === "ddBonus" && rx[r.id] && (
+                  <span className="rxparam">+<input type="number" inputMode="numeric" value={rx.ddBonus ?? ""} placeholder="prof"
+                    onChange={(e) => set("ddBonus", e.target.value)} onClick={(e) => e.preventDefault()} /> AC</span>
+                )}
+                {r.param === "dmDice" && rx[r.id] && (
+                  <span className="rxparam"><input type="text" style={{ width: 68 }} value={rx.dmDice ?? ""} placeholder="1d10+3"
+                    onChange={(e) => set("dmDice", e.target.value)} onClick={(e) => e.preventDefault()} /></span>
+                )}
+                <span className="rxdesc">{r.d}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={() => onSave(rx)}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ReactionPromptModal({ data, onChoose }) {
+  // opens under the attack tap — swallow the echo so a reaction can't be picked unseen
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  return (
+    <div className="overlay">
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>⚡ Reaction? — {data.tName}</h3>
+        <div className="statline" style={{ fontSize: 14 }}>
+          <b>{data.cName}</b>'s {data.aName} hits ({data.total} vs AC {data.effAc}).
+        </div>
+        {!data.reactAvail && <div className="trait" style={{ color: "var(--danger)", fontSize: 12.5, marginBottom: 4 }}>⚠ reaction already used this round</div>}
+        <div className="rxchoices">
+          {data.options.map((o) => (
+            <button key={o.id} className="btn rxpick" onClick={() => { if (armed()) onChoose(o.id); }}>{o.label}</button>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn danger" onClick={() => { if (armed()) onChoose(null); }}>Take the hit</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
   // opens under the tap that chose the menu item — swallow the tap echo so it
   // can't dismiss the confirmation (or worse, confirm it) unseen
@@ -5528,6 +5670,7 @@ export default function App() {
   // setState + setTimeout(0) painted one unmasked frame: the roster dipped, bounced
   // back up (a phantom "+N" heal pulse), then dropped again at the reveal.
   const hpHoldsRef = useRef({});
+  const reactPendingRef = useRef(null); // a hit paused mid-resolution, awaiting the target's reaction choice
   const [, setHoldTick] = useState(0); // re-render trigger for hold release
   // Damage presentation: the target's roster row slides down as a ghost 450ms
   // before revealAt so the drop plays out live inside it, lingers, slides away.
@@ -5608,7 +5751,9 @@ export default function App() {
         c.atkUsedBy[a.n] = (c.atkUsedBy[a.n] || 0) + 1;
       }
       const manual = opts.manual || null;
-      const atk = manual
+      const atk = opts.preRolled // a reaction resolution re-runs this attack with the same to-hit roll
+        ? opts.preRolled
+        : manual
         ? { nat: manual.d20, total: manual.d20 + (a.hit || 0), crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${a.hit ? fmtMod(a.hit) : ""} = ${manual.d20 + (a.hit || 0)} (your roll)` }
         : d20(a.hit, mode);
       const both = atk.adv !== "none";
@@ -5623,10 +5768,22 @@ export default function App() {
       if (t) {
         effAc = t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
         if (effAc != null) isHit = atk.crit || (!atk.fumble && atk.total >= effAc);
-        if (isHit != null) chips.push({ t: `${isHit ? "HIT" : "MISS"} — ${t.name} AC ${effAc}`, k: isHit ? "sgood" : "sbad" });
+        if (isHit != null) chips.push({ t: `${!isHit && opts.reactedBy ? `${opts.reactedBy}! ` : ""}${isHit ? "HIT" : "MISS"} — ${t.name} AC ${effAc}`, k: isHit ? "sgood" : "sbad" });
         // tracked-HP targets get the hit/miss verdict row below instead; this ask-chip
         // covers untracked targets, where damage is relayed verbally
         else if (!atk.fumble && t.maxHp == null) chips.push({ t: `${t.name}'s AC unknown — ask if ${atk.total} hits`, k: "cond" });
+      }
+      // A landed hit on a creature flagged with a defensive reaction pauses here: show
+      // the hit, ask the DM whether the target reacts, then resume (miss, reduce, or full).
+      if (t && isHit === true && !opts.skipReact) {
+        const reactOpts = eligibleReactions(t, a, atk, effAc);
+        if (reactOpts.length) {
+          setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
+          reactPendingRef.current = { uid, ai, targetUid: t.uid, atk, effAc, options: reactOpts, manual: opts.manual || null };
+          setTimeout(() => setModal({ type: "reaction", data: { cName: c.name, aName: a.n, tName: t.name, total: atk.total, effAc, reactAvail: t.reaction, options: reactOpts.map((o) => ({ id: o.id, label: o.label })) } }), 0);
+          L.push(`<b>${c.name}</b> — ${a.n} vs <b>${t.name}</b>: ${atk.text} to hit — <b>HIT</b> vs AC ${effAc} · awaiting ${t.name}'s reaction…`);
+          return;
+        }
       }
       const dmgChip = (roll, critRoll, dtype) => {
         const total = roll.total + (critRoll ? critRoll.total : 0);
@@ -5663,6 +5820,12 @@ export default function App() {
       }
       if (t && parts.length) {
         if (isHit === true) {
+          if (opts.reduction) { // a damage-reduction reaction (Uncanny Dodge, Absorb Elements, Deflect Missiles)
+            const before = parts.reduce((s, p) => s + p.amt, 0);
+            const note = applyReduction(parts, opts.reduction);
+            const after = parts.reduce((s, p) => s + p.amt, 0);
+            chips.push({ t: `${opts.reactedBy ? `${opts.reactedBy}: ` : ""}${before} → ${after}${note}`, k: "sgood" });
+          }
           const hpBefore = t.hp;
           const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
           parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, opts.T || []));
@@ -5715,6 +5878,34 @@ export default function App() {
     const c = stateRef.current.combatants.find((x) => x.uid === p.uid);
     if (MANUAL.on && c?.type === "monster") setModal({ type: "manual-roll", p });
     else performAttack(p);
+  };
+  /* The DM answered the reaction prompt. Resume the paused attack with the same
+     to-hit roll: AC-flip reactions turn it into a miss (Shield's boost persists),
+     damage reactions re-run the hit with a reduction, "take it" re-runs at full. */
+  const resolveReaction = (choiceId) => {
+    const p = reactPendingRef.current;
+    reactPendingRef.current = null;
+    setModal(null);
+    if (!p) return;
+    const opt = p.options.find((o) => o.id === choiceId) || null;
+    mutate((d, L, T) => {
+      const t = d.combatants.find((x) => x.uid === p.targetUid);
+      const c = d.combatants.find((x) => x.uid === p.uid);
+      if (!c || !t) return;
+      if (opt && opt.kind === "ac") {
+        // temporarily raise AC so the re-run reads as a miss; Shield keeps the boost
+        t.reaction = false;
+        const prevBoost = t.acBoost || 0;
+        t.acBoost = prevBoost + opt.bonus;
+        attackRollCore(d, L, p.uid, p.ai, { targetUid: p.targetUid, preRolled: p.atk, skipReact: true, manual: p.manual, T, reactedBy: opt.n });
+        if (!opt.persist) t.acBoost = prevBoost; // Defensive Duelist only negates this one attack
+      } else if (opt && opt.kind === "reduce") {
+        t.reaction = false;
+        attackRollCore(d, L, p.uid, p.ai, { targetUid: p.targetUid, preRolled: p.atk, skipReact: true, manual: p.manual, T, reduction: opt.reduction, reactedBy: opt.n });
+      } else {
+        attackRollCore(d, L, p.uid, p.ai, { targetUid: p.targetUid, preRolled: p.atk, skipReact: true, manual: p.manual, T });
+      }
+    });
   };
 
   /* ---------- api passed to components ---------- */
@@ -5970,6 +6161,14 @@ export default function App() {
     breakConc: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { L.push(`<b>${c.name}</b> stops concentrating on ${c.concentration}`); c.concentration = null; } }),
     setConc: (uid) => setModal({ type: "conc-prompt", uid }),
     toggleReaction: (uid) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.reaction = !c.reaction; }),
+    openReactions: (uid) => setModal({ type: "reactions-config", uid }),
+    setReactions: (uid, rx) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      c.rx = rx;
+      const on = DEF_REACTIONS.filter((r) => rx[r.id]).map((r) => r.n);
+      L.push(`<b>${c.name}</b> defensive reactions: ${on.length ? on.join(", ") : "none"}`);
+    }),
+    resolveReaction,
     toggleShield: (uid) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c || !c.acReaction) return;
       if (!c.acBoost) { c.acBoost = c.acReaction.acBonus; c.reaction = false; L.push(`<b>${c.name}</b> uses <b>${c.acReaction.n}</b> — AC ${c.ac} → ${c.ac + c.acBoost} until its next turn`); }
@@ -7353,6 +7552,13 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+      {modal?.type === "reactions-config" && modalC && (
+        <ReactionsConfigModal c={modalC} onClose={() => setModal(null)}
+          onSave={(rx) => { api.setReactions(modal.uid, rx); setModal(null); }} />
+      )}
+      {modal?.type === "reaction" && modal.data && (
+        <ReactionPromptModal data={modal.data} onChoose={(id) => api.resolveReaction(id)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
