@@ -67,19 +67,21 @@ input[type=number]{width:64px}
 @keyframes fxflame{0%{transform:translateY(105%)}30%{transform:translateY(22%)}55%{transform:translateY(44%)}80%{transform:translateY(0)}100%{transform:translateY(0);opacity:0}}
 .dmgfx .fxfireall{inset:0;opacity:0;background:linear-gradient(0deg,rgba(255,85,20,.8),rgba(255,165,50,.6));animation:fxfireall .95s ease forwards}
 @keyframes fxfireall{0%{opacity:0}50%{opacity:.12}78%{opacity:.92}88%{opacity:.85}100%{opacity:0}}
-.dmgfx .fxfrost{top:0;bottom:0;width:62%;transform:scaleX(0);animation:fxfrost .8s ease-in forwards}
+.dmgfx .fxfrost{top:0;bottom:0;width:51%;transform:scaleX(0);animation:fxfrost .9s ease-in forwards}
 .dmgfx .fxfrost.l{left:0;transform-origin:left center;background:linear-gradient(90deg,rgba(165,218,255,.62) 65%,rgba(165,218,255,.2))}
 .dmgfx .fxfrost.r{right:0;transform-origin:right center;background:linear-gradient(270deg,rgba(165,218,255,.62) 65%,rgba(165,218,255,.2))}
-@keyframes fxfrost{0%{opacity:.95}68%{transform:scaleX(1);opacity:.95}86%{transform:scaleX(1);opacity:.95}100%{transform:scaleX(1);opacity:0}}
+@keyframes fxfrost{0%{opacity:.95}55%{transform:scaleX(1);opacity:.95}88%{transform:scaleX(1);opacity:.95}100%{transform:scaleX(1);opacity:0}}
+.dmgfx .fxcoldall{inset:0;opacity:0;background:rgba(168,220,255,.75);animation:fxcoldall .9s ease forwards}
+@keyframes fxcoldall{55%{opacity:0}75%{opacity:.9}88%{opacity:.9}100%{opacity:0}}
 .dmgfx .fxdot{opacity:0;filter:blur(.5px);box-shadow:0 0 10px rgba(140,220,90,.6);animation:fxdot .7s ease forwards}
 @keyframes fxdot{20%{opacity:.95;transform:scale(1.15) rotate(8deg)}100%{opacity:0;transform:scale(.7) rotate(-6deg)}}
 .dmgfx .fxskull{opacity:0;font-size:12px;line-height:1;filter:drop-shadow(0 0 5px rgba(150,90,220,.95));animation:fxskullk .8s ease forwards}
 @keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
 .dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);animation:fxrays .85s ease forwards}
 .dmgfx .fxspokes{left:50%;top:50%;width:240%;aspect-ratio:1/1;opacity:0;filter:blur(1px) brightness(1);
-  transform:translate(-50%,-50%) rotate(0deg);animation:fxspokes 1.45s ease-in-out forwards}
+  transform:translate(-50%,-50%) rotate(0deg);animation:fxspokes .95s ease-in-out forwards}
 @keyframes fxspokes{10%{opacity:.9}65%{opacity:1;filter:blur(1px) brightness(1.6)}88%{opacity:1;filter:blur(2.5px) brightness(2.8)}100%{transform:translate(-50%,-50%) rotate(90deg);opacity:0;filter:blur(3px) brightness(3)}}
-.dmgfx .fxblowout{inset:0;opacity:0;background:radial-gradient(circle, rgba(255,250,230,.98), rgba(255,235,170,.92));animation:fxblowout 1.45s ease forwards}
+.dmgfx .fxblowout{inset:0;opacity:0;background:radial-gradient(circle, rgba(255,250,230,.98), rgba(255,235,170,.92));animation:fxblowout .95s ease forwards}
 @keyframes fxblowout{50%{opacity:0}77%{opacity:.85}82%{opacity:1}90%{opacity:1}96%{opacity:0}100%{opacity:0}}
 @keyframes fxrays{18%{opacity:.95}80%{opacity:.55}100%{opacity:0;transform:translateX(18%)}}
 .dmgfx .fxringsm{width:10px;height:10px;border-radius:50%;transform:scale(.2);animation:fxringsm .6s cubic-bezier(.2,.7,.3,1) forwards}
@@ -1963,7 +1965,7 @@ function DmgFx({ type }) {
         <i key={`fl${i}`} className="fxflame" style={{ left: `${x}%`, width: `${w}%`, animationDelay: `${d}s`, animationDuration: `${dur}s` }} />
       ))],
     // frost creeping in from both edges toward the center
-    cold: [flash("rgba(170,215,255,.18)"), <i key="fl" className="fxfrost l" />, <i key="fr" className="fxfrost r" />],
+    cold: [flash("rgba(170,215,255,.18)"), <i key="fl" className="fxfrost l" />, <i key="fr" className="fxfrost r" />, <i key="fa" className="fxcoldall" />],
     slashing: [flash("rgba(255,255,255,.14)"), <i key="sl" className="fxslash" />],
     piercing: [flash("rgba(255,255,255,.2)"), ring("#fff", 2)],
     // one hard white flash; the row shake does the rest
@@ -1975,10 +1977,10 @@ function DmgFx({ type }) {
          [78, 15, 0.2, 34, "45% 55% 60% 40% / 55% 42% 58% 45%"], [88, 50, 0.12, 42, "40% 60% 48% 52% / 62% 38% 55% 45%"]].map(([x, y, d, sz, br], i) => (
         <i key={`ad${i}`} className="fxdot" style={{ left: `${x}%`, top: `${y}%`, width: sz, height: sz, borderRadius: br, background: ["#a6e06b", "#7fbf5a", "#5a9e46", "#c4ef8a"][i % 4], animationDelay: `${d}s` }} />
       ))],
-    // a properly bubbling cauldron — 40 bubbles, deterministic scatter
+    // a properly bubbling cauldron — 40 bubbles, one fixed random scatter
     poison: [flash("rgba(120,210,90,.2)"),
-      ...Array.from({ length: 40 }, (_, i) => (
-        <i key={`b${i}`} className="fxbub" style={{ left: `${(i * 37 + 3) % 100}%`, width: 3 + ((i * 13) % 7), height: 3 + ((i * 13) % 7), background: `rgba(130,220,100,${0.55 + ((i * 11) % 4) / 10})`, animationDelay: `${((i * 7) % 12) / 22}s` }} />
+      ...[[3.1, 5, 0.2, 0.53], [4.5, 3, 0.08, 0.57], [8.3, 6, 0.02, 0.54], [12.1, 8, 0.24, 0.75], [13.4, 3, 0.34, 0.9], [13.7, 4, 0.12, 0.75], [15.5, 9, 0.46, 0.91], [16.4, 8, 0.12, 0.71], [21.9, 5, 0.49, 0.88], [22.3, 7, 0.01, 0.59], [23.1, 7, 0.47, 0.54], [25.2, 7, 0.21, 0.76], [25.9, 8, 0.34, 0.6], [26.7, 9, 0.0, 0.86], [28.2, 4, 0.23, 0.93], [31.1, 9, 0.39, 0.6], [34.7, 4, 0.35, 0.52], [34.8, 4, 0.25, 0.54], [35.0, 5, 0.18, 0.8], [44.1, 3, 0.49, 0.67], [46.7, 3, 0.49, 0.74], [48.7, 3, 0.44, 0.63], [51.5, 5, 0.38, 0.65], [53.0, 9, 0.31, 0.9], [57.5, 6, 0.01, 0.92], [61.3, 7, 0.1, 0.67], [61.4, 3, 0.37, 0.61], [62.4, 7, 0.21, 0.7], [62.9, 6, 0.44, 0.79], [65.3, 7, 0.03, 0.67], [67.0, 5, 0.14, 0.6], [67.4, 8, 0.32, 0.77], [73.3, 3, 0.05, 0.54], [81.4, 7, 0.13, 0.52], [83.2, 6, 0.14, 0.79], [84.1, 5, 0.49, 0.84], [84.4, 9, 0.4, 0.61], [87.7, 7, 0.44, 0.64], [90.5, 8, 0.36, 0.81], [95.6, 7, 0.13, 0.75]].map(([x, sz, d, o], i) => (
+        <i key={`b${i}`} className="fxbub" style={{ left: `${x}%`, width: sz, height: sz, background: `rgba(130,220,100,${o})`, animationDelay: `${d}s` }} />
       ))],
     // like the slash, but a violet line rising bottom → top
     force: [flash("rgba(180,140,255,.25)"), <i key="fr" className="fxriser" />],
