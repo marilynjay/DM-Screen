@@ -76,6 +76,9 @@ input[type=number]{width:64px}
 .dmgfx .fxskull{opacity:0;font-size:12px;line-height:1;filter:drop-shadow(0 0 5px rgba(150,90,220,.95));animation:fxskullk .8s ease forwards}
 @keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
 .dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);animation:fxrays .85s ease forwards}
+.dmgfx .fxspokes{left:50%;top:50%;width:240%;aspect-ratio:1/1;opacity:0;filter:blur(1px);
+  transform:translate(-50%,-50%) rotate(0deg);animation:fxspokes 1.15s ease-in-out forwards}
+@keyframes fxspokes{12%{opacity:.95}75%{opacity:.75}100%{transform:translate(-50%,-50%) rotate(90deg);opacity:0}}
 @keyframes fxrays{18%{opacity:.95}80%{opacity:.55}100%{opacity:0;transform:translateX(18%)}}
 .dmgfx .fxringsm{width:10px;height:10px;border-radius:50%;transform:scale(.2);animation:fxringsm .6s cubic-bezier(.2,.7,.3,1) forwards}
 @keyframes fxringsm{0%{opacity:1}100%{transform:scale(5);opacity:0}}
@@ -1980,8 +1983,8 @@ function DmgFx({ type }) {
     // god rays like radiant, but purple with lime green streaks — trippy
     psychic: [flash("rgba(190,120,255,.25)"),
       <i key="pr" className="fxrays" style={{ background: "repeating-linear-gradient(70deg,transparent 0 9px,rgba(200,120,255,.5) 9px 13px,transparent 13px 22px,rgba(180,240,80,.45) 22px 25px,transparent 25px 34px,rgba(200,120,255,.5) 34px 38px)" }} />],
-    // god rays sweeping through
-    radiant: [flash("rgba(255,215,120,.3)"), <i key="rr" className="fxrays" style={{ background: "repeating-linear-gradient(70deg,transparent 0 10px,rgba(255,230,150,.45) 10px 14px)" }} />],
+    // spokes of light turning from vertical to horizontal, like a wheel
+    radiant: [flash("rgba(255,215,120,.3)"), <i key="rr" className="fxspokes" style={{ background: "repeating-linear-gradient(90deg,transparent 0 12px,rgba(255,230,150,.45) 12px 16px)" }} />],
     // dark drain sweep plus a haunting of little skulls
     necrotic: [flash("rgba(80,40,110,.3)"),
       <i key="s" className="fxsweep" style={{ background: "linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)" }} />,
