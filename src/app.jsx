@@ -1143,7 +1143,7 @@ function makeMonster(sb, state, opts = {}) {
   return m;
 }
 
-function makePlayer({ name, init, ac, side, hp, pp, dex }) {
+function makePlayer({ name, init, ac, side, hp, pp, dex, spells, memberId, spellDC }) {
   const hpN = hp != null && hp !== "" ? Number(hp) : null;
   const initN = init == null || init === "" || isNaN(Number(init)) ? null : Number(init);
   const ppN = pp != null && pp !== "" ? Number(pp) : null;
@@ -1153,7 +1153,9 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false, hidTurn: false,
-    spellDC: null, // optional — set once, auto-fills the save box when this player casts (players roll their own attacks, so no attack bonus needed)
+    spellDC: spellDC == null || spellDC === "" ? null : Number(spellDC), // optional — auto-fills the save box when this player casts (players roll their own attacks, so no attack bonus needed)
+    spells: Array.isArray(spells) ? [...spells] : [], // this player's spellbook (compendium keys); persists to their saved party member
+    memberId: memberId || null, // links back to the stored party member so spellbook/DC edits survive across sessions
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -2654,6 +2656,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
+            {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
             {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
@@ -4627,7 +4630,7 @@ const partyRowsFrom = (saved) =>
 const partyRosterOf = (teamName, level, rows) => ({
   name: teamName.trim() || null,
   level: level !== "" && !isNaN(parseInt(level, 10)) ? parseInt(level, 10) : null,
-  members: rows.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim() })),
+  members: rows.filter((r) => r.name.trim()).map((r) => ({ ...r, name: r.name.trim(), id: r.id || newUid(), spells: Array.isArray(r.spells) ? r.spells : [] })),
 });
 
 function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) {
@@ -5465,8 +5468,9 @@ function PlayerCastModal({ c, api, onClose }) {
   const isAttack = s ? /spell attack/i.test(s.d) : false;
   const conc = s ? /Concentration/i.test(s.du || "") : false;
   const sd = s ? spellSaveDmg(s.d, 1) : null;
+  const learn = () => api.learnSpell(c.uid, pick);
   const castSave = () => {
-    commit();
+    commit(); learn();
     api.openGroupSave({
       name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
@@ -5486,14 +5490,29 @@ function PlayerCastModal({ c, api, onClose }) {
         </div>
         {!pick ? (
           <>
-            <input className="sbook-search" autoFocus placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
-            {q.trim().length < 2
-              ? <div className="trait" style={{ fontSize: 12 }}>Type to search the compendium. {c.name} rolls their own dice — this just sets up the targets' saves, damage, and concentration.</div>
-              : matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{q.trim()}”.</div>
-              : <div className="mlist">{matches.map((k) => (
-                  <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
-                    {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
-                  </button>))}</div>}
+            <input className="sbook-search" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
+            {q.trim().length >= 2
+              ? (matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{q.trim()}”.</div>
+                : <div className="mlist">{matches.map((k) => (
+                    <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
+                      {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+                    </button>))}</div>)
+              : (c.spells || []).filter((k) => SPELL_REF[k]).length ? (
+                <>
+                  <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "8px 0 2px" }}>{c.name}'s spells</div>
+                  <div className="mlist">
+                    {(c.spells || []).filter((k) => SPELL_REF[k]).map((k) => (
+                      <span key={k} style={{ position: "relative", display: "block" }}>
+                        <button className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
+                          {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+                        </button>
+                        <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 6px" }} title="Remove from spellbook"
+                          onClick={(e) => { e.stopPropagation(); api.forgetSpell(c.uid, k); }}>×</button>
+                      </span>))}
+                  </div>
+                  <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 4 }}>Or search the full compendium above — anything cast is saved here.</div>
+                </>
+              ) : <div className="trait" style={{ fontSize: 12 }}>Search the compendium — spells {c.name} casts are saved to their spellbook for next time.</div>}
           </>
         ) : (
           <>
@@ -5503,8 +5522,8 @@ function PlayerCastModal({ c, api, onClose }) {
               {saveAb
                 ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                 : isAttack
-                ? <button className="btn primary" onClick={() => { commit(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
-                : <button className="btn primary" onClick={() => { commit(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
+                ? <button className="btn primary" onClick={() => { commit(); learn(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
+                : <button className="btn primary" onClick={() => { commit(); learn(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
             </div>
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
             {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
@@ -5513,6 +5532,51 @@ function PlayerCastModal({ c, api, onClose }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function SpellbookModal({ c, api, onClose }) {
+  const [q, setQ] = useState("");
+  const have = (c.spells || []).filter((k) => SPELL_REF[k]);
+  const matches = q.trim().length >= 2
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase()) && !have.includes(k)).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 30)
+    : [];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>📖 {c.name}'s spellbook</h3>
+        <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 8 }}>
+          Add spells here or just by casting them. Saved to {c.name}{c.memberId ? " across sessions" : " for this session (add them to a saved party to keep them)"}.
+        </div>
+        {have.length
+          ? <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px" }}>Known — {have.length}</div>
+          : <div className="trait" style={{ fontSize: 12 }}>No spells yet.</div>}
+        {have.length > 0 && (
+          <div className="mlist">
+            {have.map((k) => (
+              <span key={k} style={{ position: "relative", display: "block" }}>
+                <div className="btn" style={{ width: "100%", textAlign: "left", boxSizing: "border-box" }}>
+                  {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+                </div>
+                <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 6px" }} title="Remove"
+                  onClick={() => api.forgetSpell(c.uid, k)}>×</button>
+              </span>))}
+          </div>
+        )}
+        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 2px" }}>Add a spell</div>
+        <input className="sbook-search" placeholder="Search the compendium…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {q.trim().length >= 2 && (
+          matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No new matches for “{q.trim()}”.</div>
+          : <div className="mlist">{matches.map((k) => (
+              <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { api.learnSpell(c.uid, k); setQ(""); }}>
+                ＋ {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+              </button>))}</div>
+        )}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
       </div>
     </div>
   );
@@ -5785,6 +5849,13 @@ export default function App() {
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
   };
   const pickParty = (id) => { setActivePartyIdState(id); stSet("dm5e:activeParty", id); };
+  // Write a live player's caster data (spellbook, DC) back onto its saved party member so it survives across sessions.
+  const persistMember = (memberId, patch) => {
+    if (!memberId) return;
+    const cur = partiesRef.current; let changed = false;
+    const list = cur.map((p) => ({ ...p, members: p.members.map((m) => (m.id === memberId ? (changed = true, { ...m, ...patch }) : m)) }));
+    if (changed) savePartiesAll(list, activePartyId);
+  };
   // save from the setup card: targetId updates that party, null remembers a new one
   const savePartyRoster = (roster, targetId = null) => {
     const id = targetId ?? newUid();
@@ -5960,7 +6031,18 @@ export default function App() {
         pl = legacy && Array.isArray(legacy.members) && legacy.members.length ? [{ id: newUid(), ...legacy }] : [];
         if (pl.length) stSet("dm5e:parties", pl);
       }
-      setPartiesState(pl.filter((p) => p && p.id && Array.isArray(p.members) && p.members.length));
+      const clean = pl.filter((p) => p && p.id && Array.isArray(p.members) && p.members.length);
+      let migrated = false;
+      const withIds = clean.map((p) => ({
+        ...p,
+        members: p.members.map((m) => {
+          if (m.id && Array.isArray(m.spells)) return m;
+          migrated = true;
+          return { ...m, id: m.id || newUid(), spells: Array.isArray(m.spells) ? m.spells : [] };
+        }),
+      }));
+      setPartiesState(withIds);
+      if (migrated) stSet("dm5e:parties", withIds); // stabilize member ids so spellbooks stay linked across sessions
       const ap = await stGet("dm5e:activeParty");
       if (ap) setActivePartyIdState(ap);
       setPartyBoot(true);
@@ -6274,10 +6356,26 @@ export default function App() {
     resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
     openHeal: (uid) => setModal({ type: "damage", uid, mode: "heal" }),
     openCast: (uid) => setModal({ type: "player-cast", uid }),
-    setSpellDC: (uid, dc) => mutate((d) => {
-      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
-      c.spellDC = dc === "" || dc == null ? null : Number(dc);
-    }),
+    setSpellDC: (uid, dc) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
+      const val = dc === "" || dc == null ? null : Number(dc);
+      mutate((d) => { const cc = d.combatants.find((x) => x.uid === uid); if (cc) cc.spellDC = val; });
+      persistMember(c.memberId, { spellDC: val });
+    },
+    learnSpell: (uid, key) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
+      if ((c.spells || []).includes(key)) return;
+      const list = [...(c.spells || []), key];
+      mutate((d) => { const cc = d.combatants.find((x) => x.uid === uid); if (cc) cc.spells = list; });
+      persistMember(c.memberId, { spells: list });
+    },
+    forgetSpell: (uid, key) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
+      const list = (c.spells || []).filter((k) => k !== key);
+      mutate((d) => { const cc = d.combatants.find((x) => x.uid === uid); if (cc) cc.spells = list; });
+      persistMember(c.memberId, { spells: list });
+    },
+    openSpellbook: (uid) => setModal({ type: "spellbook", uid }),
     castUtility: (uid, name, conc) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
@@ -6803,7 +6901,7 @@ export default function App() {
     if (!members.length) return;
     mutate((d, L) => {
       members.forEach((m) => {
-        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, dex: m.dex });
+        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, dex: m.dex, spells: m.spells, memberId: m.id, spellDC: m.spellDC });
         d.combatants.push(p);
       });
       L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
@@ -7966,6 +8064,9 @@ export default function App() {
       )}
       {modal?.type === "player-cast" && modalC && (
         <PlayerCastModal c={modalC} api={api} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "spellbook" && modalC && (
+        <SpellbookModal c={modalC} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
