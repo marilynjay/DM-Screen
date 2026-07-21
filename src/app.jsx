@@ -1852,7 +1852,7 @@ const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
 const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
-const FX = { on: true }; // damage-type effects over the hit row; App assigns from the setting
+const FX = { on: true, all: true }; // damage-type effects over the hit row; App assigns from the settings
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -4991,6 +4991,8 @@ export default function App() {
   const setPlayersWinTies = (v) => { setPlayersWinTiesState(v); stSet("dm5e:playersWinTies", v ? 1 : 0); };
   const [dmgFx, setDmgFxState] = useState(true);
   const setDmgFx = (v) => { setDmgFxState(v); stSet("dm5e:dmgFx", v ? 1 : 0); };
+  const [dmgFxAll, setDmgFxAllState] = useState(true);
+  const setDmgFxAll = (v) => { setDmgFxAllState(v); stSet("dm5e:dmgFxAll", v ? 1 : 0); };
   const [showTouches, setShowTouchesState] = useState(false);
   const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
   const [expandedOn, setExpandedOnState] = useState(false);
@@ -5013,6 +5015,7 @@ export default function App() {
   MANUAL.on = manualDice;
   TIES.playersWin = playersWinTies;
   FX.on = dmgFx;
+  FX.all = dmgFxAll;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
@@ -5185,6 +5188,8 @@ export default function App() {
       if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
       const dfx = await stGet("dm5e:dmgFx");
       if (dfx != null) setDmgFxState(!!dfx); // damage-type effects default ON
+      const dfxa = await stGet("dm5e:dmgFxAll");
+      if (dfxa != null) setDmgFxAllState(!!dfxa); // mixed-type sequence default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       let pl = await stGet("dm5e:parties");
@@ -5277,17 +5282,28 @@ export default function App() {
       setHoldTick((k) => k + 1);
     }, revealAt);
     pushGhostRow(huid, revealAt);
-    if (dtype && FX.on && ANIM.on) {
-      const id = Math.random();
-      setTimeout(() => setRowFxs((m) => ({ ...m, [huid]: { dtype, id } })), Math.max(0, revealAt - 350));
+    const types = (Array.isArray(dtype) ? dtype : dtype ? [dtype] : []).filter(Boolean);
+    const play = FX.all ? types : types.slice(0, 1);
+    if (play.length && FX.on && ANIM.on) {
+      const id0 = Math.random();
+      play.forEach((ty, i) => {
+        setTimeout(() => setRowFxs((m) => ({ ...m, [huid]: { dtype: ty, id: id0 + i } })), Math.max(0, revealAt - 350) + i * 650);
+      });
+      const lastId = id0 + play.length - 1;
       setTimeout(() => setRowFxs((m) => {
-        if (m[huid]?.id !== id) return m;
+        if (m[huid]?.id !== lastId) return m;
         const n = { ...m }; delete n[huid]; return n;
-      }), revealAt + 1350);
+      }), revealAt + 1350 + (play.length - 1) * 650);
     }
   };
-  // the effect follows the biggest chunk of a mixed-type hit (dragon bite: slashing + acid)
-  const fxTypeOf = (parts) => (parts && parts.length ? parts.reduce((a, b) => (b.amt > a.amt ? b : a)).dtype || null : null);
+  // mixed-type hits (dragon bite: slashing + acid): types ordered by how much of the total they dealt
+  const fxTypesOf = (parts) => {
+    if (!parts || !parts.length) return null;
+    const sums = {};
+    parts.forEach((p) => { if (p.dtype) sums[p.dtype] = (sums[p.dtype] || 0) + p.amt; });
+    const list = Object.keys(sums).sort((a, b) => sums[b] - sums[a]);
+    return list.length ? list : null;
+  };
 
   const attackRollCore = (d, L, uid, ai, opts = {}) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
@@ -5373,7 +5389,7 @@ export default function App() {
             const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}`;
             setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
           }
-          holdGhost(t, snap, flashAt, fxTypeOf(parts));
+          holdGhost(t, snap, flashAt, fxTypesOf(parts));
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, k: "cond" });
         }
@@ -5738,7 +5754,7 @@ export default function App() {
           if (gain > 0) applyHeal(atkC, gain, L);
         }
         if (t.maxHp == null) setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}`, id: Math.random() }), 0);
-        holdGhost(t, snap, 600, fxTypeOf(parts));
+        holdGhost(t, snap, 600, fxTypesOf(parts));
       });
       setResults((r) => {
         const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ HIT — applied", k: "sgood" } : ch));
@@ -6616,6 +6632,11 @@ export default function App() {
               onClick={() => setDmgFx(!dmgFx)}>
               ⚡ Damage type effects{dmgFx ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgFx ? "inherit" : "var(--faint)" }}>Lightning, fire, slashes and more flare over the hit row just before the HP drops. (Also off when reveal speed is Off.)</span>
+            </button>
+            <button className={`btn ${dmgFxAll ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0", opacity: dmgFx ? 1 : 0.5 }}
+              disabled={!dmgFx} onClick={() => setDmgFxAll(!dmgFxAll)}>
+              🌈 Mixed damage plays every type{dmgFxAll ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: dmgFxAll ? "inherit" : "var(--faint)" }}>A slashing + acid bite plays both effects back-to-back. Off: only the biggest chunk's effect plays.</span>
             </button>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
             <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
