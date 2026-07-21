@@ -2292,10 +2292,8 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
   return (
     <div className="overlay" onClick={safeClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{attacker.name} — {action.n} <span style={{ color: "var(--faint)", fontSize: 12, fontWeight: 400 }}>{fmtMod(action.hit)} to hit</span></h3>
-        <div className="gs-target" style={{ cursor: "pointer" }} onClick={() => pick(null)}>
-          <span className="ad">No target — just roll</span>
-        </div>
+        <h3>Choose target</h3>
+        <div className="trait" style={{ marginBottom: 6 }}>{attacker.name} — {action.n} · {fmtMod(action.hit)} to hit</div>
         <div className="gs-targets" style={{ marginTop: 4 }}>
           {primary.map(row)}
           {others.length > 0 && !showOthers && (
@@ -2305,8 +2303,9 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
           )}
           {showOthers && others.map(row)}
         </div>
-        <div style={{ display: "flex", marginTop: 10 }}>
-          <span className="spacer" />
+        <div style={{ display: "flex", marginTop: 10, gap: 8, alignItems: "center" }}>
+          <button className="btn small ghost" onClick={() => pick(null)} title="Roll the attack with no target — resolve it at the table">No target — just roll</button>
+          <span style={{ flex: 1 }} />
           <button className="btn small" onClick={onClose}>Cancel</button>
         </div>
       </div>
