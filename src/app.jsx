@@ -1260,7 +1260,7 @@ function applyHeal(c, amt, logs) {
   if (c.type === "player" && c.hp == null) { logs.push(`${amt} healing → <b>${c.name}</b> — players track their own HP.`); return; }
   const before = c.hp;
   c.hp = Math.min(c.maxHp, c.hp + amt);
-  if (c.dead && c.hp > 0) { c.dead = false; c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> healed ${amt} — back up! HP ${before}→${c.hp}`); return; }
+  if (c.dead && c.hp > 0) { c.dead = false; c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> healed ${amt} — back up! HP ${before}→${c.hp}`); return; }
   if (c.unconscious && c.hp > 0) { c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> healed ${amt} — conscious again. HP ${before}→${c.hp}`); return; }
   logs.push(`${amt} healing → <b>${c.name}</b> · HP ${before}→${c.hp}`);
 }
@@ -3262,8 +3262,13 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
 }
 
 function DeathSavesModal({ c, onRecord, onClose }) {
+  // this modal auto-opens under the DM's Next tap — swallow tap echoes for the
+  // first beat so a bounced tap can't record a result (or dismiss) by accident
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const record = (kind) => { if (armed()) onRecord(kind); };
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Death saves — {c.name}</h3>
         <div className="statline" style={{ fontSize: 14 }}>
@@ -3276,12 +3281,12 @@ function DeathSavesModal({ c, onRecord, onClose }) {
           Player rolls a d20: 10+ is a success, 9 or less a failure. Nat 1 = two failures. Nat 20 = back up with 1 HP. Three successes = stable; three failures = death. Damage while down = one failure (two if it was a crit).
         </div>
         <div className="pick">
-          <button className="btn" onClick={() => onRecord("success")}>✓ Success</button>
-          <button className="btn" onClick={() => onRecord("fail")}>✗ Failure</button>
-          <button className="btn" onClick={() => onRecord("crit")}>✗✗ Nat 1</button>
-          <button className="btn primary" onClick={() => onRecord("nat20")}>Nat 20 — up at 1 HP!</button>
-          <button className="btn" onClick={() => onRecord("stabilize")}>Stabilized (magic/medicine)</button>
-          <button className="btn ghost" onClick={() => onRecord("reset")}>Reset</button>
+          <button className="btn" onClick={() => record("success")}>✓ Success</button>
+          <button className="btn" onClick={() => record("fail")}>✗ Failure</button>
+          <button className="btn" onClick={() => record("crit")}>✗✗ Nat 1</button>
+          <button className="btn primary" onClick={() => record("nat20")}>Nat 20 — up at 1 HP!</button>
+          <button className="btn" onClick={() => record("stabilize")}>Stabilized (magic/medicine)</button>
+          <button className="btn ghost" onClick={() => record("reset")}>Reset</button>
         </div>
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn small" onClick={onClose}>Done</button>
