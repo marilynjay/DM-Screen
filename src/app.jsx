@@ -391,6 +391,11 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .skullghost{position:absolute;left:50%;top:-4px;font-size:14px;pointer-events:none;animation:skullfloat 1.5s ease-out forwards;z-index:6}
 @keyframes badgepop{0%{transform:scale(.55);opacity:0}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
 .cond{animation:badgepop .35s ease}
+.condicons{display:inline-flex;gap:3px;align-items:center;margin-left:6px;vertical-align:middle}
+.condicon{font-size:13px;line-height:1;cursor:pointer}
+.condsvg{width:14px;height:14px;color:var(--dim);cursor:pointer;flex:none}
+.pgr-icon,.lvlchip .condicon,.lvlchip .condsvg{margin-right:3px;vertical-align:-2px}
+.lvlchip .condsvg{width:13px;height:13px}
 @keyframes badgefade{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(.65)}}
 .condghost{animation:badgefade .5s ease forwards;pointer-events:none}
 @keyframes critburst{0%{box-shadow:0 0 0 0 rgba(217,164,65,.7);transform:scale(.9)}45%{box-shadow:0 0 14px 4px rgba(217,164,65,.55);transform:scale(1.12)}100%{box-shadow:0 0 0 0 rgba(217,164,65,0);transform:scale(1)}}
@@ -610,6 +615,15 @@ const CONDITIONS = {
   "Total Cover": "Can't be targeted directly by an attack or spell.",
 };
 const COVER_AC = { "Half Cover": 2, "Three-Quarters Cover": 5 };
+// roster icons (DM-picked). "svg:*" values are drawn by CondIcon; the rest are emoji.
+const CONDITION_ICONS = {
+  Blinded: "svg:blind", Charmed: "💘", Deafened: "svg:deaf", Frightened: "😱",
+  Grappled: "🤼", Incapacitated: "🚫", Invisible: "🫥", Paralyzed: "⚡",
+  Petrified: "🗿", Poisoned: "🤢", Prone: "svg:prone", Restrained: "🪢",
+  Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥",
+  Suffocating: "🫁", Hiding: "🥷",
+  "Half Cover": "🌗", "Three-Quarters Cover": "🌘", "Total Cover": "🌑",
+};
 function coverBonus(c) {
   let b = 0;
   for (const cd of c.conditions || []) { const v = COVER_AC[cd.name]; if (v) b = Math.max(b, v); }
@@ -1859,6 +1873,33 @@ function Toasts({ toasts }) {
   );
 }
 
+/* Small condition icon shown after the name on the roster and in the picker.
+   Three are hand-drawn (eye/ear with a strike, a fallen figure); the rest are emoji. */
+function CondIcon({ name, onTap }) {
+  const v = CONDITION_ICONS[name];
+  if (!v) return null;
+  const svg = (paths) => (
+    <svg className="condsvg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      onClick={onTap} title={name}>{paths}</svg>
+  );
+  if (v === "svg:blind") return svg(<>
+    <path d="M2.5 10 C5 5.5 15 5.5 17.5 10 C15 14.5 5 14.5 2.5 10 Z" />
+    <circle cx="10" cy="10" r="1.9" fill="currentColor" stroke="none" />
+    <path d="M3.5 16.5 L16.5 3.5" strokeWidth="1.7" />
+  </>);
+  if (v === "svg:deaf") return svg(<>
+    <path d="M6.5 15.5 C4.8 12.5 5 5.5 10.5 5.2 C15 5 15.2 10 12 10.6 C10.2 11 10.6 13 11.6 13.6" />
+    <path d="M3.5 16.5 L16.5 3.5" strokeWidth="1.7" />
+  </>);
+  if (v === "svg:prone") return svg(<>
+    <circle cx="5" cy="13" r="2.3" fill="currentColor" stroke="none" />
+    <path d="M7.4 13.6 H16" />
+    <path d="M10.5 13.6 l2.2 3.2 M14 13.6 l2.2 3.2 M9 13.4 l2.4 -3" />
+    <path d="M4 8.5 v-2.2 M7.5 7.2 l1.2 -1.8" strokeWidth="1.2" opacity="0.7" />
+  </>);
+  return <span className="condicon" onClick={onTap} title={name}>{v}</span>;
+}
+
 function CondBadge({ cond, onTap }) {
   return (
     <span className="cond" title={`${CONDITIONS[cond.name] || "Custom effect"} (tap for details)`} onClick={onTap}>
@@ -2348,6 +2389,13 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
           </span>
         )}
       </span>
+      {!c.dead && c.conditions.some((cd) => CONDITION_ICONS[cd.name]) && (
+        <span className="condicons">
+          {c.conditions.filter((cd) => CONDITION_ICONS[cd.name]).map((cd, i) => (
+            <CondIcon key={i} name={cd.name} onTap={(e) => { e.stopPropagation(); api.openCondInfo(c.uid, cd.name); }} />
+          ))}
+        </span>
+      )}
 
       </div>
 
@@ -3583,7 +3631,7 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
         <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>Condition</div>
         <div className="pickgrid">
           {Object.keys(CONDITIONS).sort().map((k) => (
-            <span key={k} className={`lvlchip ${name === k ? "on" : ""}`} onClick={() => setName(k)}>{k}</span>
+            <span key={k} className={`lvlchip ${name === k ? "on" : ""}`} onClick={() => setName(k)}><CondIcon name={k} />{k}</span>
           ))}
           <span className={`lvlchip ${name === "__custom" ? "on" : ""}`} onClick={() => setName("__custom")}>Custom…</span>
         </div>
