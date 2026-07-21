@@ -127,7 +127,7 @@ input[type=number]{width:64px}
 @keyframes tpkrise{0%{transform:scale(.72);opacity:0}14%{transform:scale(1.05);opacity:1}20%{transform:scale(1)}80%{transform:scale(1);opacity:1}100%{transform:scale(1.1);opacity:0}}
 .ghostrail{position:fixed;top:calc(52px + env(safe-area-inset-top,0px));left:8px;right:8px;z-index:95;
   display:flex;flex-direction:column;gap:6px;pointer-events:none}
-.ghostrow{background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden;
+.ghostrow{background:var(--panel);border:1px solid var(--line2);border-radius:10px;
   box-shadow:0 8px 22px rgba(0,0,0,.55);animation:grin .3s ease}
 .ghostrow.out{animation:grout .35s ease forwards}
 .ghostrow .row{border-bottom:none}
@@ -293,7 +293,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 @keyframes hp-float{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-16px)}}
 .hpval.pd{animation:hp-punch .7s ease;color:#e0645a}
 .hpval.ph{animation:hp-punch .7s ease;color:#7fbf8e}
-.hpghost{position:absolute;left:50%;top:-4px;transform:translate(-50%,0);font-family:var(--mono);
+.hpghost{position:absolute;left:50%;top:-30px;transform:translate(-50%,0);font-family:var(--mono);
   font-size:11px;font-weight:700;pointer-events:none;animation:hp-float 1.5s ease-out forwards;z-index:5}
 .hpghost.d{color:#e0645a}
 .hpghost.h{color:#7fbf8e}
