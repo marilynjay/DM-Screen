@@ -3252,7 +3252,7 @@ function DamageModal({ state, presetUid, onApply, onClose }) {
         )}
         <div className="frow">
           <label>Amount</label>
-          <input type="number" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)} />
+          <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} />
         </div>
         {mode === "dmg" && (
           <div className="frow">
@@ -4790,7 +4790,7 @@ function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
           {c.hp != null && (
             <div className="frow">
               <label>Damage rolled</label>
-              <input type="number" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
+              <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && amt) { onApplyFire(parseInt(amt, 10)); setAmt(""); } }} />
               <button className="btn small primary" disabled={!amt} onClick={() => { onApplyFire(parseInt(amt, 10)); setAmt(""); }}>Apply as fire</button>
             </div>
