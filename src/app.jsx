@@ -1921,6 +1921,9 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
       return () => clearTimeout(t);
     }
     prevDead.current = c.dead;
+    // revived mid-animation: the cleanup above cancels the timer, which would
+    // strand the skull (and the row's dying styling) forever — clear it here
+    if (!c.dead) setSkull((s) => (s ? null : s));
   }, [c.dead]);
   const prevThp = useRef(c.thp || 0);
   const [shatter, setShatter] = useState(null);
