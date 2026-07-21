@@ -216,6 +216,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .sbook-lvls{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
 .lvlchip{cursor:pointer;font-size:11px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--dim);padding:2px 8px}
 .lvlchip.on{color:var(--gold);border-color:var(--gold)}
+.pickgrid{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
+.dchip{cursor:pointer;font-size:11px;border-radius:8px;padding:3px 9px;font-weight:600;text-transform:capitalize;
+  color:var(--dc);border:1px solid var(--dc);background:none;opacity:.68}
+.dchip.on{opacity:1;background:var(--dc);color:var(--ink);border-color:var(--dc)}
 .sbook-list{overflow-y:auto;flex:1;min-height:0}
 .sbook-row{border-bottom:1px solid var(--line);padding:2px 0}
 .sbook-name{cursor:pointer;display:flex;align-items:baseline;gap:6px;padding:6px 2px;flex-wrap:wrap}
@@ -1208,6 +1212,13 @@ function statblockFromCombatant(c) {
 
 /* ---------------- core combat logic (pure-ish helpers) ---------------- */
 const DTYPES = ["slashing","piercing","bludgeoning","fire","cold","lightning","thunder","acid","poison","necrotic","radiant","psychic","force"];
+// chip colors echo each type's hit-row effect
+const DTYPE_COLORS = {
+  slashing: "#d8d3c8", piercing: "#e9e2d6", bludgeoning: "#c8beb4",
+  fire: "#ff9a4d", cold: "#a8dcff", lightning: "#cfe8ff", thunder: "#f0eee8",
+  acid: "#a6e06b", poison: "#78dc64", necrotic: "#a06ad2", radiant: "#ffdc82",
+  psychic: "#e08cdc", force: "#b48ae0",
+};
 
 function conMod(c) { return c.saves?.con ?? c.mods?.con ?? 0; }
 function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.mods?.[k] ?? 0; }
@@ -3270,13 +3281,15 @@ function DamageModal({ state, presetUid, onApply, onClose }) {
           <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} />
         </div>
         {mode === "dmg" && (
-          <div className="frow">
-            <label>Damage type</label>
-            <select value={dtype} onChange={(e) => setDtype(e.target.value)}>
-              <option value="">(untyped / quick)</option>
-              {DTYPES.map((t) => (<option key={t} value={t}>{t}</option>))}
-            </select>
-          </div>
+          <>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }}>Damage type</div>
+            <div className="pickgrid">
+              <span className={`dchip ${dtype === "" ? "on" : ""}`} style={{ "--dc": "#8f8a99" }} onClick={() => setDtype("")}>untyped</span>
+              {DTYPES.map((t) => (
+                <span key={t} className={`dchip ${dtype === t ? "on" : ""}`} style={{ "--dc": DTYPE_COLORS[t] }} onClick={() => setDtype(t)}>{t}</span>
+              ))}
+            </div>
+          </>
         )}
         <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>
           {more ? <>Targets {mode === "dmg" ? "— check “½” for creatures that saved" : ""}</> : <>Target {mode === "dmg" ? "— “½” if they saved" : ""}</>}
@@ -3359,12 +3372,12 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Add condition</h3>
-        <div className="frow">
-          <label>Condition</label>
-          <select value={name} onChange={(e) => setName(e.target.value)}>
-            {Object.keys(CONDITIONS).sort().map((k) => (<option key={k}>{k}</option>))}
-            <option value="__custom">Custom…</option>
-          </select>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>Condition</div>
+        <div className="pickgrid">
+          {Object.keys(CONDITIONS).sort().map((k) => (
+            <span key={k} className={`lvlchip ${name === k ? "on" : ""}`} onClick={() => setName(k)}>{k}</span>
+          ))}
+          <span className={`lvlchip ${name === "__custom" ? "on" : ""}`} onClick={() => setName("__custom")}>Custom…</span>
         </div>
         {name === "__custom" && (
           <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus /></div>
