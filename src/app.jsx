@@ -4742,7 +4742,7 @@ export default function App() {
   useEffect(() => {
     if (state.mode !== "combat") { vicArmedRef.current = true; setVictory(null); return; }
     const foes = state.combatants.filter((c) => c.side === "enemy" && c.type !== "effect" && c.type !== "object");
-    const party = state.combatants.filter((c) => c.type === "player" && c.side === "ally");
+    const party = tpkParty(state);
     const wipedParty = party.length > 0 && party.every((c) => c.dead);
     const won = foes.length > 0 && foes.every((c) => c.dead) && !wipedParty;
     if (won && vicArmedRef.current) { vicArmedRef.current = false; setVictory({ id: Math.random() }); }
@@ -4756,13 +4756,19 @@ export default function App() {
     return () => clearTimeout(t);
   }, [victory]);
 
-  // TPK: when every ally player is dead (not just down), one big skull moment.
+  // The "party" for win/loss purposes: ally players — or, in a fight with no
+  // players at all (arena tests like All Goblins), the ally-side monsters.
+  const tpkParty = (st) => {
+    const players = st.combatants.filter((c) => c.type === "player" && c.side === "ally");
+    return players.length ? players : st.combatants.filter((c) => c.side === "ally" && c.type !== "effect" && c.type !== "object");
+  };
+  // TPK: when every party member is dead (not just down), one big skull moment.
   // Re-arms if anyone comes back (undo, revivify) so a later wipe still plays.
   const [tpk, setTpk] = useState(null);
   const tpkArmedRef = useRef(true);
   useEffect(() => {
     if (state.mode !== "combat") { tpkArmedRef.current = true; return undefined; }
-    const party = state.combatants.filter((c) => c.type === "player" && c.side === "ally");
+    const party = tpkParty(state);
     const wiped = party.length > 0 && party.every((c) => c.dead);
     if (wiped && tpkArmedRef.current) {
       tpkArmedRef.current = false;
