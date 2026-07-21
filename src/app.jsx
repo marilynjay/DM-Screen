@@ -133,6 +133,19 @@ input[type=number]{width:64px}
 /* generic hit: a soft neutral edge pulse — every landed attack registers */
 .sfx .hit-vig{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 60px 10px rgba(232,224,196,.42);animation:sfxhit .36s ease forwards}
 @keyframes sfxhit{32%{opacity:1}100%{opacity:0}}
+/* spell/breath — colored by damage type via --sc */
+.sfx .cone{position:absolute;left:-6%;top:50%;width:118%;height:150%;transform:translateY(-50%) scaleX(.08);transform-origin:left center;
+  opacity:0;filter:blur(2px);clip-path:polygon(0 47%,100% -6%,100% 106%,0 53%);
+  background:linear-gradient(90deg,var(--sc),transparent 82%);animation:sfxcone .62s ease-out forwards}
+@keyframes sfxcone{0%{opacity:0;transform:translateY(-50%) scaleX(.08)}22%{opacity:.92}68%{opacity:.85}100%{opacity:0;transform:translateY(-50%) scaleX(1)}}
+.sfx .sbolt{position:absolute;inset:0;opacity:0;filter:drop-shadow(0 0 14px var(--sc));animation:sfxsbolt .52s steps(1) forwards}
+@keyframes sfxsbolt{0%{opacity:1}20%{opacity:.3}34%{opacity:1}58%{opacity:.4}74%{opacity:.95}100%{opacity:0}}
+.sfx .burst{position:absolute;left:50%;top:50%;width:30px;height:30px;border-radius:50%;transform:translate(-50%,-50%) scale(.15);
+  background:radial-gradient(circle,var(--sc),transparent 66%);opacity:0;animation:sfxburst .55s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes sfxburst{0%{opacity:.98}18%{opacity:1}100%{transform:translate(-50%,-50%) scale(42);opacity:0}}
+.sfx .burst-ring{position:absolute;left:50%;top:50%;width:20px;height:20px;border-radius:50%;border:5px solid var(--sc);
+  transform:translate(-50%,-50%) scale(.2);animation:sfxburstring .55s cubic-bezier(.15,.7,.3,1) forwards}
+@keyframes sfxburstring{0%{opacity:1}100%{transform:translate(-50%,-50%) scale(36);opacity:0}}
 .demorow{position:relative;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);
   border-radius:8px;padding:8px 10px;overflow:hidden;margin:4px 0;font-size:13px}
 .row.fxshake{animation:fxshake .45s ease}
@@ -1908,6 +1921,7 @@ const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App
 const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
 const FX = { on: true, all: true }; // damage-type effects over the hit row; App assigns from the settings
 const SFX = { on: true }; // whole-screen attack effects (edge-framed) on a hit; App assigns from the setting
+const SPFX = { on: true }; // whole-screen spell/breath effects on AoE resolve; App assigns from the setting
 // attack-name → whole-screen archetype (keyword match; falls back to no screen effect)
 const ATTACK_FX = [
   { fx: "bite", re: /\b(bite|bites|beak|maw|jaws?|chomp|snap)\b/i },
@@ -1918,6 +1932,15 @@ const ATTACK_FX = [
   { fx: "slam", re: /\b(slam|fist|hooves?|hoof|ram|stomp|smash|punch|pound|club)\b/i },
 ];
 const attackArchetype = (name) => { for (const a of ATTACK_FX) if (a.re.test(name || "")) return a.fx; return null; };
+// spell/breath name → delivery shape (order matters: lightning breath is a bolt, not a cone)
+const SPELL_FX = [
+  { fx: "bolt", re: /\b(lightning|bolt|line|ray|beam|arc)\b/i },
+  { fx: "burst", re: /\b(fireball|blast|nova|explos|shatter|storm|burst|eruption|detonat|boulder|rock)\b/i },
+  { fx: "cone", re: /\b(breath|cone|burning hands|spray|exhal|gout|glare|roar|visage)\b/i },
+];
+const SPELL_KINDS = new Set(["cone", "bolt", "burst"]);
+const spellShape = (name) => { for (const s of SPELL_FX) if (s.re.test(name || "")) return s.fx; return "burst"; };
+const dtypeColor = (dtype) => DTYPE_COLORS[String(dtype || "").toLowerCase()] || "#cdd6e0";
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -2021,7 +2044,28 @@ function GhostRows({ rows, combatants, holds, fxs, api }) {
 /* Whole-screen attack effects: edge-framed flourishes that play where the DM is
    looking (the active card) the instant a hit lands — the first of the two beats,
    with the damage-type roster effect following at the HP drop. */
-function ScreenFx({ kind }) {
+function ScreenFx({ kind, color }) {
+  if (kind === "cone") {
+    return <span className="sfx" aria-hidden><i className="cone" style={{ "--sc": color || "#cdd6e0" }} /></span>;
+  }
+  if (kind === "bolt") {
+    const sc = color || "#cfe8ff";
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="sbolt" style={{ "--sc": sc }}>
+          <svg viewBox="0 0 100 60" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+            <polyline points="0,20 20,26 34,10 50,34 64,14 80,30 100,22" fill="none" stroke={sc} strokeWidth="2.2" />
+            <polyline points="34,10 30,2 38,6" fill="none" stroke={sc} strokeWidth="1" />
+            <polyline points="50,34 54,46 46,44" fill="none" stroke={sc} strokeWidth="1" />
+            <polyline points="80,30 86,40 92,36" fill="none" stroke={sc} strokeWidth="1" />
+          </svg>
+        </i>
+      </span>
+    );
+  }
+  if (kind === "burst") {
+    return <span className="sfx" aria-hidden><i className="burst" style={{ "--sc": color || "#ff9a4d" }} /><i className="burst-ring" style={{ "--sc": color || "#ff9a4d" }} /></span>;
+  }
   if (kind === "bite") {
     const tp = ["0,0", "100,0"]; // top jaw: straight top edge, sawtooth teeth below
     for (let x = 100; x >= -4; x -= 7) { tp.push(`${x},54`, `${(x - 3.5).toFixed(1)},100`); }
@@ -2869,7 +2913,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
           <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !dmg.trim())}
-            onClick={() => onResolve({ ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
+            onClick={() => onResolve({ name: preset?.name || null, ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
             {noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
           </button>
           <span className="spacer" />
@@ -5127,12 +5171,16 @@ export default function App() {
   const setDmgFxAll = (v) => { setDmgFxAllState(v); stSet("dm5e:dmgFxAll", v ? 1 : 0); };
   const [dmgSfx, setDmgSfxState] = useState(true);
   const setDmgSfx = (v) => { setDmgSfxState(v); stSet("dm5e:dmgSfx", v ? 1 : 0); };
+  const [spellSfx, setSpellSfxState] = useState(true);
+  const setSpellSfx = (v) => { setSpellSfxState(v); stSet("dm5e:spellSfx", v ? 1 : 0); };
   const [screenFx, setScreenFx] = useState(null);
   const [previewRowFx, setPreviewRowFx] = useState(null);
-  const fireScreenFx = (kind, delayMs = 0, force = false) => {
-    if (!kind || (!force && (!SFX.on || !ANIM.on))) return;
+  const fireScreenFx = (kind, delayMs = 0, force = false, color = null) => {
+    if (!kind) return;
+    const gate = SPELL_KINDS.has(kind) ? SPFX.on : SFX.on;
+    if (!force && (!gate || !ANIM.on)) return;
     const id = Math.random();
-    setTimeout(() => setScreenFx({ kind, id }), Math.max(0, delayMs));
+    setTimeout(() => setScreenFx({ kind, id, color }), Math.max(0, delayMs));
     setTimeout(() => setScreenFx((s) => (s && s.id === id ? null : s)), Math.max(0, delayMs) + 650);
   };
   const previewRow = (type) => { // settings preview — plays regardless of the toggles
@@ -5164,6 +5212,7 @@ export default function App() {
   FX.on = dmgFx;
   FX.all = dmgFxAll;
   SFX.on = dmgSfx;
+  SPFX.on = spellSfx;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
@@ -5340,6 +5389,8 @@ export default function App() {
       if (dfxa != null) setDmgFxAllState(!!dfxa); // mixed-type sequence default ON
       const dsx = await stGet("dm5e:dmgSfx");
       if (dsx != null) setDmgSfxState(!!dsx); // whole-screen attack effects default ON
+      const spx = await stGet("dm5e:spellSfx");
+      if (spx != null) setSpellSfxState(!!spx); // whole-screen spell/breath effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       let pl = await stGet("dm5e:parties");
@@ -6232,7 +6283,9 @@ export default function App() {
     }
   };
 
-  const resolveGroupSave = ({ ability, dc, dmg, dtype, halfOn, targets, noSave, cond, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
+  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, cond, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
+    // beat one: the breath/spell goes off — a whole-screen shape by delivery, colored by type
+    if (targets && targets.length) fireScreenFx(spellShape(name), 0, false, dtypeColor(dtype));
     mutate((d, L, T) => {
       if (effectUid) {
         const eff = d.combatants.find((x) => x.uid === effectUid);
@@ -6449,7 +6502,7 @@ export default function App() {
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} fxs={rowFxs} api={api} />
-      {screenFx && <ScreenFx key={screenFx.id} kind={screenFx.kind} />}
+      {screenFx && <ScreenFx key={screenFx.id} kind={screenFx.kind} color={screenFx.color} />}
       {victory && (
         <div className={`vic-overlay ${victory.out ? "out" : ""}`} key={victory.id} onClick={dismissVictory}>
           <div className="vic-inner">
@@ -6799,6 +6852,11 @@ export default function App() {
               🦷 Attack effects on screen{dmgSfx ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgSfx ? "inherit" : "var(--faint)" }}>Every landed hit flashes the screen edge — signature attacks (bite, claw, gore…) get their own flair, everything else a soft pulse. Nothing on a miss.</span>
             </button>
+            <button className={`btn ${spellSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              onClick={() => setSpellSfx(!spellSfx)}>
+              🐉 Spell &amp; breath effects{spellSfx ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: spellSfx ? "inherit" : "var(--faint)" }}>Breath weapons and AoE spells flash a full-screen shape — a cone, a bolt, or a burst — colored by damage type when they go off.</span>
+            </button>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Preview</div>
             <div className="trait" style={{ marginBottom: 4 }}>Tap to see an effect. Damage types &amp; heal play over the sample row; attack styles flash the screen.</div>
             <div className={`demorow ${previewRowFx && SHAKE_FX.has(previewRowFx.dtype) ? "fxshake" : ""}`}>
@@ -6816,6 +6874,11 @@ export default function App() {
             <div className="pickgrid">
               {[["bite", "🦷 Bite"], ["claw", "🐾 Claw"], ["slam", "💥 Slam"], ["gore", "🐗 Gore"], ["sting", "🦂 Sting"], ["ranged", "🏹 Ranged"], ["hit", "⚔ Any hit"]].map(([k, lbl]) => (
                 <span key={k} className="lvlchip" onClick={() => fireScreenFx(k, 0, true)}>{lbl}</span>
+              ))}
+            </div>
+            <div className="pickgrid">
+              {[["cone", "🔥 Cone", "fire"], ["bolt", "⚡ Bolt", "lightning"], ["burst", "💥 Burst", "fire"], ["cone", "❄ Cone", "cold"], ["burst", "☣ Burst", "acid"]].map(([k, lbl, ty], i) => (
+                <span key={i} className="lvlchip" onClick={() => fireScreenFx(k, 0, true, DTYPE_COLORS[ty])}>{lbl}</span>
               ))}
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
