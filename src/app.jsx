@@ -1143,7 +1143,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
-    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false,
+    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false, hidTurn: false,
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -1693,7 +1693,7 @@ function onTurnStart(c, state, logs, toasts) {
   c.reaction = true;
   c.acBoost = 0;
   c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0;
-  c.atkCount = 0; c.dodging = false; c.readied = false; // player-turn helpers: attack tally, Dodge, and an untriggered readied action all last until this creature acts again
+  c.atkCount = 0; c.dodging = false; c.readied = false; c.hidTurn = false; // player-turn helpers: attack tally, Dodge, readied action, and the once-per-turn Hide all reset when this creature acts again
   if (c.legendary) c.legendary.rem = c.legendary.max;
   // hazards fire before durations tick (players get a popup instead — handled in the UI)
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Burning")) {
@@ -3565,6 +3565,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
   );
 }
 
+const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
 function PlayerCard({ c, api, results }) {
   const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: CONDITIONS[cd.name] || null }));
   return (
@@ -3607,8 +3608,10 @@ function PlayerCard({ c, api, results }) {
         <div className="sect">
           <div className="lbl">Actions{c.atkCount > 0 ? ` — attacked ${c.atkCount}×` : ""}</div>
           <div className="pcactions">
-            <button className="btn primary" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount > 0 ? "Attack again" : "Attack"}</button>
-            <button className="btn" onClick={() => api.openHide(c.uid)}>🥷 Hide</button>
+            {c.atkCount < 10
+              ? <button className="btn primary" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount === 0 ? "Attack" : `${ATK_ORD[c.atkCount]} attack?`}</button>
+              : <button className="btn" disabled title="Ten attacks logged this turn — apply any further hits with Damage / heal">⚔ Apply further manually</button>}
+            <button className="btn" disabled={c.hidTurn} onClick={() => api.openHide(c.uid)}>🥷 {c.hidTurn ? "Hid" : "Hide"}</button>
             <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
             <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
             <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Readied" : "Ready"}</button>
@@ -6158,6 +6161,7 @@ export default function App() {
     openHide: (uid) => setModal({ type: "hide-check", uid }),
     hide: (uid, success) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      c.hidTurn = true; // Hide is an action — once per turn (attempting counts, hit or miss)
       if (success) {
         if (!c.conditions.some((cd) => cd.name === "Hiding")) c.conditions.push({ name: "Hiding", rounds: null });
         L.push(`<b>${c.name}</b> takes the <b>Hide</b> action and is now <b>Hiding</b> — attacks against them have DIS; their attacks have ADV.`);
