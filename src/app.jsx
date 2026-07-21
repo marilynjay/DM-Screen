@@ -523,6 +523,16 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rxchoices{display:flex;flex-direction:column;gap:7px;margin:4px 0 2px}
 .rxpick{text-align:left;font-size:13px;padding:10px 12px;border-color:var(--gold);background:var(--gold-soft);color:var(--text)}
 .rxpick:active{background:var(--gold)}
+.pcactions{display:flex;gap:8px;flex-wrap:wrap}
+.pcactions .btn{font-size:14px;padding:9px 14px}
+.atktarget{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--panel)}
+.atktarget b{font-size:15px;color:var(--text)}
+.atkac{font-family:var(--disp);font-size:20px;font-weight:700;color:var(--dim);letter-spacing:.5px}
+.atkac.good{color:#9fd3ab}
+.hitbtn{border-color:rgba(127,191,142,.6);background:rgba(127,191,142,.14);color:#bfe6c8;font-size:15px;font-weight:700;padding:12px 0}
+.hitbtn:active{background:rgba(127,191,142,.3)}
+.missbtn{border-color:rgba(224,100,90,.55);background:rgba(224,100,90,.12);color:#eba99f;font-size:15px;font-weight:700;padding:12px 0}
+.missbtn:active{background:rgba(224,100,90,.28)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -660,6 +670,7 @@ function condAdvVs(c) {
     if (v === "adv*") prone = { mode: "adv*", from: cd.name };
   }
   if (c.unconscious) return { mode: "adv", from: "Unconscious" };
+  if (c.dodging) return { mode: "dis", from: "Dodging" };
   return prone;
 }
 const isBloodied = (c) => c.hp != null && c.maxHp > 0 && !c.dead && c.hp <= Math.floor(c.maxHp / 2);
@@ -1127,7 +1138,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
-    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {},
+    conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false,
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -1643,6 +1654,7 @@ function onTurnStart(c, state, logs, toasts) {
   c.reaction = true;
   c.acBoost = 0;
   c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0;
+  c.atkCount = 0; c.dodging = false; // player-turn helpers: attack tally + Dodge both last until this creature acts again
   if (c.legendary) c.legendary.rem = c.legendary.max;
   // hazards fire before durations tick (players get a popup instead — handled in the UI)
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Burning")) {
@@ -2566,7 +2578,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         <button className="btn small ghost" onClick={() => setMenu(!menu)}>⋮</button>
         {menu && (
           <div className="menu" onClick={() => setMenu(false)}>
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
+            {c.type === "monster" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
             {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
             <button onClick={() => api.rename(c.uid)}>Rename…</button>
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
@@ -3535,6 +3547,9 @@ function PlayerCard({ c, api, results }) {
           {c.advMode === "adv" ? "⬆ Rolls at ADVANTAGE" : "⬇ Rolls at DISADVANTAGE"}
         </div>
       )}
+      {c.dodging && (
+        <div className="reminder" style={{ marginTop: 6 }}>🛡 Dodging — attacks against them have DISADVANTAGE until their next turn.</div>
+      )}
       {hints.length > 0 && (
         <div className="sect">
           <div className="lbl">Active conditions — roll reminders</div>
@@ -3542,9 +3557,19 @@ function PlayerCard({ c, api, results }) {
         </div>
       )}
       {hints.length === 0 && !c.unconscious && <div className="trait" style={{ marginTop: 6 }}>No conditions. The floor is theirs.</div>}
+      {!c.dead && !c.unconscious && (
+        <div className="sect">
+          <div className="lbl">Actions{c.atkCount > 0 ? ` — attacked ${c.atkCount}×` : ""}</div>
+          <div className="pcactions">
+            <button className="btn primary" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount > 0 ? "Attack again" : "Attack"}</button>
+            <button className="btn" onClick={() => api.openHide(c.uid)}>🥷 Hide</button>
+            <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
+            <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
+          </div>
+        </div>
+      )}
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {c.hp != null && <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
-        <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
         <button className="btn small" onClick={() => api.addCondition(c.uid)}>Add condition…</button>
         <button className="btn small" onClick={() => api.setConc(c.uid)}>Set concentration…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>Adv/dis on rolls</button>
@@ -5208,6 +5233,129 @@ function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
   );
 }
 
+function PlayerAttackModal({ c, state, api, onSave, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const isEnemy = c.side !== "ally";
+  const cands = targetCands(state, c);
+  const primary = cands.filter((x) => (isEnemy ? x.side === "ally" : x.side !== "ally"));
+  const others = cands.filter((x) => !primary.includes(x));
+  const [showOthers, setShowOthers] = useState(false);
+  const [tab, setTab] = useState("single");
+  const [picked, setPicked] = useState(null);
+  const [phase, setPhase] = useState("pick"); // pick → resolve → damage
+  const [amt, setAmt] = useState("");
+  const [dtype, setDtype] = useState("");
+  const t = picked ? state.combatants.find((x) => x.uid === picked) : null;
+  const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const targetRow = (x) => (
+    <div key={x.uid} className="gs-target" style={{ cursor: "pointer" }} onClick={() => { if (armed()) { setPicked(x.uid); setPhase("resolve"); } }}>
+      <b>{x.name}</b>
+      <span className="ad">
+        {x.ac != null ? `AC ${x.ac + (x.acBoost || 0) + coverBonus(x)}` : "AC ?"}
+        {x.maxHp != null ? ` · HP ${x.hp}/${x.maxHp}` : ""}
+        {vsState(x) === "dis" ? " · vs DIS" : vsState(x) === "adv" ? " · vs ADV" : ""}
+      </span>
+    </div>
+  );
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>⚔ {c.name} attacks</h3>
+        <div className="tabs" style={{ marginBottom: 8 }}>
+          {[["single", "🎯 One target"], ["aoe", "✦ AoE / save"]].map(([k, lbl]) => (
+            <button key={k} className="btn small" style={tab === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
+              onClick={() => setTab(k)}>{lbl}</button>
+          ))}
+        </div>
+        {tab === "aoe" && (
+          <div>
+            <div className="trait" style={{ fontSize: 12.5, color: "var(--faint)", marginBottom: 10 }}>
+              For a fireball, a breath-like effect, or anything the targets roll a saving throw against — set the DC, damage, and who's caught, and the app rolls each monster's save (players get marked ✓/✗).
+            </div>
+            <button className="btn primary" style={{ width: "100%" }} onClick={onSave}>Set up AoE / save →</button>
+          </div>
+        )}
+        {tab === "single" && phase === "pick" && (
+          <>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0 4px" }}>Choose target</div>
+            <div className="gs-targets">
+              {primary.map(targetRow)}
+              {others.length > 0 && !showOthers && (
+                <div className="gs-target" style={{ cursor: "pointer", opacity: 0.5, fontSize: 11, padding: "2px 0" }} onClick={() => setShowOthers(true)}>
+                  <span className="ad" style={{ fontSize: 11 }}>other targets ({others.length})…</span>
+                </div>
+              )}
+              {showOthers && others.map(targetRow)}
+              {cands.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No one to attack.</div>}
+            </div>
+          </>
+        )}
+        {tab === "single" && phase === "resolve" && t && (
+          <>
+            <div className="atkresolve">
+              <div className="atktarget"><b>{t.name}</b><span className="atkac">AC {effAc != null ? effAc : "?"}</span></div>
+              <div className="trait" style={{ fontSize: 12, color: "var(--faint)", margin: "2px 0 10px" }}>
+                {c.name} rolled their attack{effAc != null ? ` — did they reach AC ${effAc}?` : " — did it hit?"}
+              </div>
+              <div className="frow" style={{ gap: 8 }}>
+                <button className="btn hitbtn" style={{ flex: 1 }} onClick={() => setPhase("damage")}>✓ Hit</button>
+                <button className="btn missbtn" style={{ flex: 1 }} onClick={() => { api.playerMiss(c.uid, t.uid); onClose(); }}>✗ Miss</button>
+              </div>
+              <button className="btn small ghost" style={{ marginTop: 10 }} onClick={onSave}>…actually it needs a save →</button>
+            </div>
+            <div className="frow" style={{ justifyContent: "space-between", marginTop: 10 }}>
+              <button className="btn small ghost" onClick={() => { setPicked(null); setPhase("pick"); }}>← back</button>
+            </div>
+          </>
+        )}
+        {tab === "single" && phase === "damage" && t && (
+          <>
+            <div className="atktarget" style={{ marginBottom: 8 }}><b>{t.name}</b><span className="atkac good">✓ Hit</span></div>
+            <div className="frow">
+              <label>Damage</label>
+              <input type="number" inputMode="numeric" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
+                placeholder="the total they rolled" />
+            </div>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }}>Damage type (optional)</div>
+            <div className="pickgrid">
+              <span className={`dchip ${dtype === "" ? "on" : ""}`} style={{ "--dc": "#8f8a99" }} onClick={() => setDtype("")}>untyped</span>
+              {DTYPES.map((ty) => (
+                <span key={ty} className={`dchip ${dtype === ty ? "on" : ""}`} style={{ "--dc": DTYPE_COLORS[ty] }} onClick={() => setDtype(ty)}>{ty}</span>
+              ))}
+            </div>
+            <div className="frow" style={{ justifyContent: "space-between", marginTop: 12 }}>
+              <button className="btn small ghost" onClick={() => setPhase("resolve")}>← back</button>
+              <button className="btn primary" disabled={amt === "" || Number(amt) < 0} onClick={() => { api.playerHit(c.uid, t.uid, amt, dtype); onClose(); }}>
+                Apply {amt !== "" ? `${amt}${dtype ? ` ${dtype}` : ""}` : "damage"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HideCheckModal({ c, api, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🥷 {c.name} hides</h3>
+        <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>
+          Did their Dexterity (Stealth) check beat the passive Perception of anyone who could notice them?
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn" onClick={() => { if (armed()) { api.hide(c.uid, false); onClose(); } }}>✗ Spotted</button>
+          <button className="btn primary" onClick={() => { if (armed()) { api.hide(c.uid, true); onClose(); } }}>✓ Hidden</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ReactionsConfigModal({ c, onSave, onClose }) {
   const [rx, setRx] = useState(() => ({ ...(c.rx || {}) }));
   const set = (k, v) => setRx((r) => ({ ...r, [k]: v }));
@@ -5915,6 +6063,36 @@ export default function App() {
     openDamage: (uid) => setModal({ type: "damage", uid }),
     openSaveRoll: (uid) => setModal({ type: "save", uid }),
     openGroupSave: (preset) => setModal({ type: "group-save", preset }),
+    // ---- player turn helpers (players roll their own dice; the DM records the outcome) ----
+    playerAttack: (uid) => setModal({ type: "player-attack", uid }),
+    playerHit: (attackerUid, targetUid, amt, dtype) => mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === attackerUid);
+      const t = d.combatants.find((x) => x.uid === targetUid);
+      if (!c || !t) return;
+      c.atkCount = (c.atkCount || 0) + 1;
+      const n = Math.max(0, Math.round(Number(amt) || 0));
+      const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
+      if (n > 0 && t.maxHp != null) { applyDamage(t, n, dtype || null, L, T); holdGhost(t, snap, 600, dtype || null); }
+      else if (n > 0) { setTimeout(() => setRowFlash({ uid: t.uid, text: `HIT · ${n}${dtype ? ` ${dtype}` : ""} → ${t.name}`, id: Math.random() }), 0); }
+      L.push(`<b>${c.name}</b> hits <b>${t.name}</b>${n > 0 ? ` for ${n}${dtype ? ` ${dtype}` : " damage"}` : ""}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}.`);
+    }),
+    playerMiss: (attackerUid, targetUid) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === attackerUid);
+      const t = d.combatants.find((x) => x.uid === targetUid);
+      if (!c) return;
+      c.atkCount = (c.atkCount || 0) + 1;
+      L.push(`<b>${c.name}</b> misses${t ? ` <b>${t.name}</b>` : ""}.`);
+    }),
+    dodge: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.dodging = true; L.push(`<b>${c.name}</b> takes the <b>Dodge</b> action — attacks against them have DISADVANTAGE until their next turn.`); }),
+    dash: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) L.push(`<b>${c.name}</b> takes the <b>Dash</b> action.`); }),
+    openHide: (uid) => setModal({ type: "hide-check", uid }),
+    hide: (uid, success) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      if (success) {
+        if (!c.conditions.some((cd) => cd.name === "Hiding")) c.conditions.push({ name: "Hiding", rounds: null });
+        L.push(`<b>${c.name}</b> takes the <b>Hide</b> action and is now <b>Hiding</b> — attacks against them have DIS; their attacks have ADV.`);
+      } else L.push(`<b>${c.name}</b> tries to <b>Hide</b> but is spotted.`);
+    }),
     spendLAGroupSave: (uid, ref, label) => {
       const c = stateRef.current.combatants.find((x) => x.uid === uid);
       if (!c) return;
@@ -7559,6 +7737,13 @@ export default function App() {
       )}
       {modal?.type === "reaction" && modal.data && (
         <ReactionPromptModal data={modal.data} onChoose={(id) => api.resolveReaction(id)} />
+      )}
+      {modal?.type === "player-attack" && modalC && (
+        <PlayerAttackModal c={modalC} state={state} api={api} onClose={() => setModal(null)}
+          onSave={() => setModal({ type: "group-save" })} />
+      )}
+      {modal?.type === "hide-check" && modalC && (
+        <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
