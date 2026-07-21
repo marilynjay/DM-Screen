@@ -62,6 +62,8 @@ input[type=number]{width:64px}
 @keyframes fxbolt{0%{opacity:1}18%{opacity:.25}30%{opacity:1}55%{opacity:.4}70%{opacity:.9}100%{opacity:0}}
 .dmgfx .fxbub{bottom:-6px;width:7px;height:7px;border-radius:50%;opacity:0;animation:fxbub .7s ease-out forwards}
 @keyframes fxbub{10%{opacity:.9}100%{transform:translateY(-46px);opacity:0}}
+.dmgfx .fxspark{opacity:0;font-size:13px;line-height:1;color:#ffe9a8;text-shadow:0 0 8px rgba(255,230,150,.9);animation:fxspark .75s ease forwards}
+@keyframes fxspark{15%{opacity:1;transform:scale(1.3) rotate(20deg)}100%{opacity:0;transform:scale(.4) rotate(50deg)}}
 .row.fxshake{animation:fxshake .45s ease}
 @keyframes fxshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
 .vic-overlay{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;cursor:pointer;
@@ -1934,6 +1936,10 @@ function DmgFx({ type }) {
     radiant: [flash("rgba(255,215,120,.45)"), ring("rgba(255,220,130,.9)", 2)],
     necrotic: [flash("rgba(80,40,110,.35)"), sweep("linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)")],
     thunder: [flash("rgba(255,255,255,.25)"), ring("rgba(255,255,255,.95)", 4)],
+    heal: [flash("rgba(150,230,140,.16)"),
+      ...[[8, 18, 0], [30, 55, 0.1], [52, 12, 0.18], [70, 58, 0.08], [88, 28, 0.24]].map(([x, y, d], i) => (
+        <i key={`sp${i}`} className="fxspark" style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${d}s` }}>✦</i>
+      ))],
   }[t] || [flash("rgba(255,255,255,.2)")];
   return <span className={`dmgfx fx-${t || "plain"}`} aria-hidden>{inner}</span>;
 }
@@ -5290,7 +5296,7 @@ export default function App() {
   /* ---------- api passed to components ---------- */
   const api = {
     quickDamage: (uid, n) => mutate((d, L, T) => { const c = d.combatants.find((x) => x.uid === uid); if (c) applyDamage(c, n, null, L, T); }),
-    quickHeal: (uid, n) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) applyHeal(c, n, L); }),
+    quickHeal: (uid, n) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() }; applyHeal(c, n, L); holdGhost(c, snap, 600, "heal"); } }),
     openDamage: (uid) => setModal({ type: "damage", uid }),
     openSaveRoll: (uid) => setModal({ type: "save", uid }),
     openGroupSave: (preset) => setModal({ type: "group-save", preset }),
@@ -5509,7 +5515,9 @@ export default function App() {
       const it = lootObj((c.loot || [])[idx]); if (!it) return;
       if (it.heal) {
         const r = rollFormula(it.heal);
+        const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
         applyHeal(c, r.total, L);
+        holdGhost(c, snap, 600, "heal");
         c.loot = c.loot.filter((_, i) => i !== idx);
         L.push(`<b>${c.name}</b> uses <b>${it.n}</b> — ${r.total} [${r.text}] — consumed.`);
         T.push({ kind: "good", text: `${c.name}: ${it.n} → ${r.total} HP.` });
@@ -5904,7 +5912,7 @@ export default function App() {
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         const amt = half.includes(uid) ? Math.floor(amount / 2) : amount;
-        if (mode === "heal") applyHeal(c, amt, L);
+        if (mode === "heal") { const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() }; applyHeal(c, amt, L); holdGhost(c, snap, 600, "heal"); }
         else if (mode === "thp") grantTempHp(c, amt, L);
         else {
           const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
