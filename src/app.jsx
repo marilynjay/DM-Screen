@@ -4697,14 +4697,18 @@ function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
 }
 
 function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
+  // opens under the tap that chose the menu item — swallow the tap echo so it
+  // can't dismiss the confirmation (or worse, confirm it) unseen
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Are you sure?</h3>
         <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>{text}</div>
         <div className="frow" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn danger" onClick={onYes}>{confirmLabel}</button>
+          <button className="btn" onClick={() => { if (armed()) onClose(); }}>Cancel</button>
+          <button className="btn danger" onClick={() => { if (armed()) onYes(); }}>{confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -5808,7 +5812,7 @@ export default function App() {
   const prev = () => mutate((d, L, T) => { advanceTurn(d, L, T, -1); clearActiveResults(d); });
 
   const doReset = (keepMonsters) => {
-    setModal(null); setResults({}); setChat([]);
+    setModal(null); setResults({});
     mutate((d, L) => {
       if (keepMonsters) {
         d.combatants = d.combatants.filter((c) => c.type === "monster").map((c) => {
