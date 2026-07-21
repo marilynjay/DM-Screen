@@ -273,10 +273,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rail.collapsed{display:none}
 .railbar{display:flex;align-items:center;gap:8px;padding:4px 14px;background:var(--panel);
   border-bottom:1px solid var(--line);position:sticky;top:49px;z-index:31;font-size:12px;color:var(--dim)}
-.row{display:flex;flex-direction:column;align-items:stretch;gap:1px;padding:4px 10px 5px;border-bottom:1px solid var(--line);
+.row{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:3px 10px 4px;border-bottom:1px solid var(--line);
   min-height:38px}
 .rline{display:flex;align-items:center;gap:8px;min-width:0}
-.rline.r2{padding-left:45px;gap:6px 8px;flex-wrap:wrap}
+.rline.r2{padding-left:45px;gap:6px 8px;flex-wrap:wrap;margin-top:-6px}
 .row:last-child{border-bottom:none}
 .row.active{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
 .row.dead > *:not(.lootico){opacity:.42}
