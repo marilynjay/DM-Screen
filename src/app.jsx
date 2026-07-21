@@ -284,6 +284,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .row.dead .lootico{opacity:1;filter:drop-shadow(0 0 4px rgba(217,164,65,.7))}
 .initmark{font-family:var(--mono);font-size:13px;font-weight:600;width:30px;text-align:center;
   flex-shrink:0;position:relative}
+.initmark.turn{color:var(--gold)}
 .sidebar-dot{width:7px;height:7px;transform:rotate(45deg);flex-shrink:0}
 .side-enemy{background:var(--enemy)} .side-ally{background:var(--ally)} .side-effect{background:var(--fx)}
 .nm{font-weight:600;min-width:0;flex:1}
@@ -1150,6 +1151,7 @@ const sideRank = (c) => (c.side === "ally" ? 0 : c.side === "effect" ? 1 : 2);
 const tieRank = (c) => (TIES.playersWin && c.type === "player" ? 0 : 1);
 function sortOrder(list) {
   return [...list].sort((a, b) =>
+    ((a.dead ? 1 : 0) - (b.dead ? 1 : 0)) ||             // the fallen sink to the bottom of the rail
     ((b.init ?? -999) - (a.init ?? -999)) ||
     ((a.tb ?? 0) - (b.tb ?? 0)) ||                       // explicit tie order chosen by the DM
     (tieRank(a) - tieRank(b)) ||                          // players act first on ties (setting, default on)
@@ -2108,7 +2110,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
       {!c.dead && c.concentration && <span className="concring" />}
       {fx && <DmgFx key={fx.id} type={fx.dtype} />}
       <div className="rline r1">
-      <span className="initmark" title={c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{c.init ?? "—"}</span>
+      <span className={`initmark ${active ? "turn" : ""}`} title={active ? `${c.name}'s turn (initiative ${c.init})` : c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{active ? "▶" : (c.init ?? "—")}</span>
       <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
       <span className="nm" style={c.type === "monster" || c.type === "player" ? { cursor: "pointer" } : undefined}
         title={c.type === "monster" || c.type === "player" ? "Tap to peek at this creature's card" : undefined}
@@ -2155,15 +2157,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         </span>
       )}
 
-      {c.type === "player" && c.pp != null && (
-        <span className="acbox" title="Passive Perception">👁 {c.pp}</span>
-      )}
-
-      {(c.loot || []).length > 0 && (
-        <span className="lootico" style={{ cursor: "pointer" }} title={`Carrying: ${c.loot.map(lootName).join(", ")} — tap to view/edit`}
-          onClick={() => api.openLoot(c.uid)}>💰</span>
-      )}
-
       {effAc != null && (
         <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
           AC {effAc}{(c.acBoost || cov) ? "*" : ""}
@@ -2175,6 +2168,15 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             >🛡</span>
           )}
         </span>
+      )}
+
+      {c.type === "player" && c.pp != null && (
+        <span className="acbox" title="Passive Perception">👁 {c.pp}</span>
+      )}
+
+      {(c.loot || []).length > 0 && (
+        <span className="lootico" style={{ cursor: "pointer" }} title={`Carrying: ${c.loot.map(lootName).join(", ")} — tap to view/edit`}
+          onClick={() => api.openLoot(c.uid)}>💰</span>
       )}
 
       <span className="badges">
@@ -2214,8 +2216,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
       ))}
 
       {c.type !== "effect" && c.type !== "object" && !c.dead && (
-        <button className={`rtog ${c.reaction ? "on" : ""}`} title="Reaction available (click to toggle)" onClick={() => api.toggleReaction(c.uid)}>
-          R{c.reaction ? "1" : "0"}
+        <button className={`rtog ${c.reaction ? "on" : ""}`} title={`Reaction ${c.reaction ? "available" : "spent"} — tap to toggle`} onClick={() => api.toggleReaction(c.uid)}>
+          React
         </button>
       )}
 
