@@ -64,13 +64,15 @@ input[type=number]{width:64px}
 @keyframes fxbub{10%{opacity:.9}100%{transform:translateY(-46px);opacity:0}}
 .dmgfx .fxflame{bottom:0;height:100%;border-radius:50% 50% 0 0;filter:blur(1px);transform:translateY(105%);
   background:linear-gradient(0deg,rgba(255,110,30,.65),rgba(255,190,70,.35) 55%,transparent);animation:fxflame .9s ease-in-out forwards}
-@keyframes fxflame{0%{transform:translateY(105%)}30%{transform:translateY(22%)}50%{transform:translateY(48%)}75%{transform:translateY(8%)}100%{transform:translateY(-8%);opacity:0}}
-.dmgfx .fxfrost{top:0;bottom:0;width:52%;transform:scaleX(0);animation:fxfrost .75s ease forwards}
-.dmgfx .fxfrost.l{left:0;transform-origin:left center;background:linear-gradient(90deg,rgba(170,220,255,.55),rgba(200,235,255,.25),transparent)}
-.dmgfx .fxfrost.r{right:0;transform-origin:right center;background:linear-gradient(270deg,rgba(170,220,255,.55),rgba(200,235,255,.25),transparent)}
-@keyframes fxfrost{0%{opacity:.95}55%{transform:scaleX(1);opacity:.95}80%{transform:scaleX(1);opacity:.85}100%{transform:scaleX(1);opacity:0}}
-.dmgfx .fxdot{width:9px;height:9px;border-radius:50%;opacity:0;box-shadow:0 0 6px rgba(140,220,90,.7);animation:fxdot .65s ease forwards}
-@keyframes fxdot{20%{opacity:1;transform:scale(1.3)}100%{opacity:0;transform:scale(.5)}}
+@keyframes fxflame{0%{transform:translateY(105%)}30%{transform:translateY(22%)}55%{transform:translateY(44%)}80%{transform:translateY(0)}100%{transform:translateY(0);opacity:0}}
+.dmgfx .fxfireall{inset:0;opacity:0;background:linear-gradient(0deg,rgba(255,85,20,.8),rgba(255,165,50,.6));animation:fxfireall .95s ease forwards}
+@keyframes fxfireall{0%{opacity:0}50%{opacity:.12}78%{opacity:.92}88%{opacity:.85}100%{opacity:0}}
+.dmgfx .fxfrost{top:0;bottom:0;width:62%;transform:scaleX(0);animation:fxfrost .8s ease-in forwards}
+.dmgfx .fxfrost.l{left:0;transform-origin:left center;background:linear-gradient(90deg,rgba(165,218,255,.62) 65%,rgba(165,218,255,.2))}
+.dmgfx .fxfrost.r{right:0;transform-origin:right center;background:linear-gradient(270deg,rgba(165,218,255,.62) 65%,rgba(165,218,255,.2))}
+@keyframes fxfrost{0%{opacity:.95}68%{transform:scaleX(1);opacity:.95}86%{transform:scaleX(1);opacity:.95}100%{transform:scaleX(1);opacity:0}}
+.dmgfx .fxdot{opacity:0;filter:blur(.5px);box-shadow:0 0 10px rgba(140,220,90,.6);animation:fxdot .7s ease forwards}
+@keyframes fxdot{20%{opacity:.95;transform:scale(1.15) rotate(8deg)}100%{opacity:0;transform:scale(.7) rotate(-6deg)}}
 .dmgfx .fxskull{opacity:0;font-size:12px;line-height:1;filter:drop-shadow(0 0 5px rgba(150,90,220,.95));animation:fxskullk .8s ease forwards}
 @keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
 .dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);
@@ -1951,8 +1953,8 @@ function DmgFx({ type }) {
         <polyline points="57,18 61,23" fill="none" stroke={BOLT} strokeWidth="0.7" />
         <polyline points="71,8 75,3 80,6" fill="none" stroke={BOLT} strokeWidth="0.8" />
       </svg>],
-    // dancing flames rising from the bottom, each tongue on its own rhythm
-    fire: [flash("rgba(255,140,50,.2)"),
+    // dancing flames rising from the bottom, engulfing the row in a flash fire
+    fire: [flash("rgba(255,140,50,.2)"), <i key="fa" className="fxfireall" />,
       ...[[1, 26, 0, 0.9], [19, 22, 0.12, 1.0], [37, 30, 0.05, 0.82], [56, 24, 0.18, 1.05], [73, 28, 0.1, 0.9], [88, 20, 0.22, 0.98]].map(([x, w, d, dur], i) => (
         <i key={`fl${i}`} className="fxflame" style={{ left: `${x}%`, width: `${w}%`, animationDelay: `${d}s`, animationDuration: `${dur}s` }} />
       ))],
@@ -1962,15 +1964,17 @@ function DmgFx({ type }) {
     piercing: [flash("rgba(255,255,255,.2)"), ring("#fff", 2)],
     // one hard white flash; the row shake does the rest
     bludgeoning: [flash("rgba(255,255,255,.55)")],
-    // scattered green droplets popping
+    // big irregular splotches of acid splattering across the row
     acid: [flash("rgba(140,220,90,.2)"),
-      ...[[12, 25, 0], [28, 60, 0.08], [45, 20, 0.14], [60, 65, 0.05], [75, 30, 0.2], [88, 55, 0.12], [37, 45, 0.24]].map(([x, y, d], i) => (
-        <i key={`ad${i}`} className="fxdot" style={{ left: `${x}%`, top: `${y}%`, background: ["#a6e06b", "#7fbf5a", "#5a9e46", "#c4ef8a"][i % 4], animationDelay: `${d}s` }} />
+      ...[[6, 10, 0, 44, "58% 42% 63% 37% / 45% 62% 38% 55%"], [26, 45, 0.08, 36, "38% 62% 45% 55% / 60% 40% 58% 42%"],
+         [44, 5, 0.14, 40, "52% 48% 35% 65% / 42% 55% 45% 58%"], [60, 40, 0.05, 48, "63% 37% 55% 45% / 38% 58% 42% 62%"],
+         [78, 15, 0.2, 34, "45% 55% 60% 40% / 55% 42% 58% 45%"], [88, 50, 0.12, 42, "40% 60% 48% 52% / 62% 38% 55% 45%"]].map(([x, y, d, sz, br], i) => (
+        <i key={`ad${i}`} className="fxdot" style={{ left: `${x}%`, top: `${y}%`, width: sz, height: sz, borderRadius: br, background: ["#a6e06b", "#7fbf5a", "#5a9e46", "#c4ef8a"][i % 4], animationDelay: `${d}s` }} />
       ))],
-    // a bubbling cauldron of rising bubbles
+    // a properly bubbling cauldron — 40 bubbles, deterministic scatter
     poison: [flash("rgba(120,210,90,.2)"),
-      ...[[7, 7, 0], [19, 5, 0.12], [31, 8, 0.05], [43, 6, 0.2], [55, 7, 0.09], [67, 5, 0.16], [79, 8, 0.02], [91, 6, 0.22]].map(([x, sz, d], i) => (
-        <i key={`b${i}`} className="fxbub" style={{ left: `${x}%`, width: sz, height: sz, background: "rgba(130,220,100,.75)", animationDelay: `${d}s` }} />
+      ...Array.from({ length: 40 }, (_, i) => (
+        <i key={`b${i}`} className="fxbub" style={{ left: `${(i * 37 + 3) % 100}%`, width: 3 + ((i * 13) % 7), height: 3 + ((i * 13) % 7), background: `rgba(130,220,100,${0.55 + ((i * 11) % 4) / 10})`, animationDelay: `${((i * 7) % 12) / 22}s` }} />
       ))],
     // like the slash, but a violet line rising bottom → top
     force: [flash("rgba(180,140,255,.25)"), <i key="fr" className="fxriser" />],
