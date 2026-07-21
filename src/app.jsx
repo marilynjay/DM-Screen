@@ -536,7 +536,7 @@ const PLAYTEST_ENCOUNTERS = [
   { key: "spiders", name: "Spider Hollow", blurb: "A giant spider and her wolf-spider brood — webs, poison, restrained checks. Moderate for two players.", list: [["Giant Spider", 1], ["Giant Wolf Spider", 3]] },
   { key: "troll", name: "Bridge Troll", blurb: "One regenerating troll with scout archers on the banks. Hard.", list: [["Troll", 1], ["Scout", 2]] },
   { key: "dragon", name: "Young White Dragon", blurb: "Solo boss — cold breath, flight, and a bad attitude. Hard, expect blood.", list: [["Young White Dragon", 1]] },
-  { key: "allgoblins", name: "All Goblins", blurb: "Goblin civil war — four warriors, two on each side, no players. Great for testing ally-side monsters.", noPlayers: true, list: [["Goblin Warrior", 2], ["Goblin Warrior", 2, "ally"]] },
+  { key: "allgoblins", name: "All Goblins", blurb: "Goblin civil war — four warriors, two on each side, no players. Great for testing ally-side monsters.", noPlayers: true, list: [["Goblin Warrior", 2, null, "Enemy Goblin"], ["Goblin Warrior", 2, "ally", "Ally Goblin"]] },
 ];
 const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? BESTIARY.concat(EXPANDED.list) : BESTIARY);
 
@@ -4861,16 +4861,34 @@ export default function App() {
   const partiesRef = useRef(parties); partiesRef.current = parties;
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
+  const redoRef = useRef([]);
+  const [redoN, setRedoN] = useState(0);
   const pushUndo = (snap) => {
     if (undoRef.current[undoRef.current.length - 1] === snap) return;
     undoRef.current.push(snap);
     if (undoRef.current.length > 20) undoRef.current.shift();
     setUndoN(undoRef.current.length);
+    redoRef.current = []; setRedoN(0); // a fresh change branches history — the redo path is gone
   };
   const undo = () => {
     const s = undoRef.current.pop();
     setUndoN(undoRef.current.length);
-    if (s) { setState(s); setResults({}); }
+    if (s) {
+      redoRef.current.push(stateRef.current);
+      if (redoRef.current.length > 20) redoRef.current.shift();
+      setRedoN(redoRef.current.length);
+      setState(s); setResults({});
+    }
+  };
+  const redo = () => {
+    const s = redoRef.current.pop();
+    setRedoN(redoRef.current.length);
+    if (s) {
+      undoRef.current.push(stateRef.current); // straight back — not via pushUndo, which would clear redo
+      if (undoRef.current.length > 20) undoRef.current.shift();
+      setUndoN(undoRef.current.length);
+      setState(s); setResults({});
+    }
   };
 
   const saveMyBestiary = (list) => { setMyBestiary(list); stSet("dm5e:bestiary", list); };
@@ -5608,10 +5626,10 @@ export default function App() {
         d.combatants.push(p);
         L.push(`Added <b>${p.name}</b> (initiative ${pp.init}, AC ${pp.ac}, ${pp.hp} HP tracked)`);
       });
-      enc.list.forEach(([nm, n, side]) => {
+      enc.list.forEach(([nm, n, side, label]) => {
         const sb = BESTIARY.find((b) => b.name === nm); if (!sb) return;
-        for (let i = 0; i < n; i++) d.combatants.push(makeMonster(sb, d, side ? { side } : {}));
-        L.push(`Added <b>${n}× ${nm}</b>${side === "ally" ? " (allies)" : ""}`);
+        for (let i = 0; i < n; i++) d.combatants.push(makeMonster(sb, d, { ...(side ? { side } : {}), ...(label ? { name: n > 1 ? `${label} ${i + 1}` : label } : {}) }));
+        L.push(`Added <b>${n}× ${label || nm}</b>${side === "ally" ? " (allies)" : ""}`);
       });
     });
     pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]);
@@ -6077,6 +6095,7 @@ export default function App() {
         )}
         <span className="spacer" />
         <button className="btn small ghost" title="Undo last change" disabled={undoN === 0} onClick={undo}>↩</button>
+        {redoN > 0 && <button className="btn small ghost" title="Redo — reapply what you just undid" onClick={redo}>↪</button>}
         <span className="menu-anchor">
           <button className="btn small" onClick={() => { setAddMenu(!addMenu); setClearMenu(false); setMoreMenu(false); }}>+ Add</button>
           {addMenu && (
@@ -6091,7 +6110,8 @@ export default function App() {
             </div>
           )}
         </span>
-        <button className="btn small ghost" title="Spell compendium" onClick={() => setSpellBook(true)}>📖</button>
+        {/* the 📖 shortcut lends redo its header slot (390px has no spare room); the compendium stays in the ⋯ menu */}
+        {redoN === 0 && <button className="btn small ghost" title="Spell compendium" onClick={() => setSpellBook(true)}>📖</button>}
         <button className="btn small ghost" title="Group save / AoE" onClick={() => setModal({ type: "group-save" })}>⭗</button>
         <span className="hdr-wide">
           <button className="btn small ghost" onClick={toggleLog}>Log</button>
