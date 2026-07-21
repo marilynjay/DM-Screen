@@ -536,6 +536,11 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rxchoices{display:flex;flex-direction:column;gap:7px;margin:4px 0 2px}
 .rxpick{text-align:left;font-size:13px;padding:10px 12px;border-color:var(--gold);background:var(--gold-soft);color:var(--text)}
 .rxpick:active{background:var(--gold)}
+.spellchips{display:flex;flex-wrap:wrap;gap:5px;max-height:168px;overflow-y:auto;padding:2px 1px}
+.spellchip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;padding:3px 6px 3px 10px;border:1px solid var(--line2);border-radius:13px;background:var(--panel);color:var(--text);cursor:pointer;white-space:nowrap}
+.spellchip:hover{border-color:var(--gold)}
+.spellchip .x{color:var(--faint);font-size:14px;line-height:1;cursor:pointer}
+.spellchip .x:hover{color:var(--danger)}
 .pcactions{display:flex;gap:8px;flex-wrap:wrap}
 .pcactions .btn{font-size:14px;padding:9px 14px}
 .atktarget{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border:1px solid var(--line2);border-radius:10px;background:var(--panel)}
@@ -5459,6 +5464,7 @@ function PlayerCastModal({ c, api, onClose }) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(null);
   const [dc, setDc] = useState(c.spellDC ?? "");
+  const [noLearn, setNoLearn] = useState(false);
   const commit = () => api.setSpellDC(c.uid, dc);
   const matches = q.trim().length >= 2
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 40)
@@ -5468,7 +5474,7 @@ function PlayerCastModal({ c, api, onClose }) {
   const isAttack = s ? /spell attack/i.test(s.d) : false;
   const conc = s ? /Concentration/i.test(s.du || "") : false;
   const sd = s ? spellSaveDmg(s.d, 1) : null;
-  const learn = () => api.learnSpell(c.uid, pick);
+  const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn();
     api.openGroupSave({
@@ -5499,15 +5505,12 @@ function PlayerCastModal({ c, api, onClose }) {
                     </button>))}</div>)
               : (c.spells || []).filter((k) => SPELL_REF[k]).length ? (
                 <>
-                  <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "8px 0 2px" }}>{c.name}'s spells</div>
-                  <div className="mlist">
-                    {(c.spells || []).filter((k) => SPELL_REF[k]).map((k) => (
-                      <span key={k} style={{ position: "relative", display: "block" }}>
-                        <button className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
-                          {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
-                        </button>
-                        <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 6px" }} title="Remove from spellbook"
-                          onClick={(e) => { e.stopPropagation(); api.forgetSpell(c.uid, k); }}>×</button>
+                  <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "8px 0 3px" }}>{c.name}'s spells — tap to cast</div>
+                  <div className="spellchips">
+                    {(c.spells || []).filter((k) => SPELL_REF[k]).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).map((k) => (
+                      <span key={k} className="spellchip" title={SPELL_REF[k].m} onClick={() => { if (armed()) setPick(k); }}>
+                        {SPELL_REF[k].n}
+                        <span className="x" title="Remove from spellbook" onClick={(e) => { e.stopPropagation(); api.forgetSpell(c.uid, k); }}>×</span>
                       </span>))}
                   </div>
                   <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 4 }}>Or search the full compendium above — anything cast is saved here.</div>
@@ -5527,6 +5530,10 @@ function PlayerCastModal({ c, api, onClose }) {
             </div>
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
             {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--faint)", marginTop: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={noLearn} onChange={(e) => setNoLearn(e.target.checked)} style={{ width: 15, height: 15 }} />
+              Don't save to spellbook (scroll / one-off)
+            </label>
             <div className="frow" style={{ justifyContent: "flex-start", marginTop: 8 }}>
               <button className="btn small ghost" onClick={() => setPick(null)}>← back to search</button>
             </div>
@@ -5554,14 +5561,11 @@ function SpellbookModal({ c, api, onClose }) {
           ? <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px" }}>Known — {have.length}</div>
           : <div className="trait" style={{ fontSize: 12 }}>No spells yet.</div>}
         {have.length > 0 && (
-          <div className="mlist">
-            {have.map((k) => (
-              <span key={k} style={{ position: "relative", display: "block" }}>
-                <div className="btn" style={{ width: "100%", textAlign: "left", boxSizing: "border-box" }}>
-                  {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
-                </div>
-                <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 6px" }} title="Remove"
-                  onClick={() => api.forgetSpell(c.uid, k)}>×</button>
+          <div className="spellchips">
+            {have.slice().sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).map((k) => (
+              <span key={k} className="spellchip" title={SPELL_REF[k].m}>
+                {SPELL_REF[k].n}
+                <span className="x" title="Remove" onClick={() => api.forgetSpell(c.uid, k)}>×</span>
               </span>))}
           </div>
         )}
