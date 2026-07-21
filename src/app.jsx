@@ -335,6 +335,13 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rtog{font-family:var(--mono);font-size:11px;border:1px solid var(--line2);border-radius:5px;
   padding:1px 6px;color:var(--faint);flex-shrink:0}
 .rtog.on{border-color:var(--ok);color:var(--ok)}
+.advchip{font-family:var(--mono);font-size:11px;border-radius:5px;padding:1px 6px;flex-shrink:0;background:none;
+  border:1px dashed var(--line);color:var(--faint);opacity:.75;display:inline-flex;gap:5px;align-items:center;cursor:pointer}
+.advchip.on{opacity:1;border-style:solid;border-color:var(--line2);color:var(--text)}
+.advchip b{font-weight:600}
+.advchip b.adv{color:var(--ok)}
+.advchip b.dis{color:var(--danger)}
+.advchip b.mix{color:var(--gold)}
 .advtag{font-family:var(--mono);font-size:11px;border-radius:5px;padding:1px 6px;flex-shrink:0;
   border:1px solid var(--line2);color:var(--faint)}
 .roundabbr{display:none}
@@ -2087,10 +2094,10 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
   const manual = c.advVs || "none";
   const shown = manual !== "none" ? manual : derived ? derived.mode : "none";
   const vsTitle =
-    shown === "none" ? "Attacks against this creature — click to cycle ADV / DIS"
-    : shown === "adv*" ? "Prone: melee attacks within 5 ft have ADVANTAGE; ranged attacks have DISADVANTAGE (click to override)"
+    shown === "none" ? "Advantage — tap to set this creature's own rolls and attacks against it"
+    : shown === "adv*" ? "Prone: melee attacks within 5 ft have ADVANTAGE; ranged attacks have DISADVANTAGE — tap to adjust"
     : `Attacks against ${c.name} have ${shown === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}` +
-      (manual !== "none" ? " (manual — click to cycle)" : ` (from ${derived.from} — click to override)`);
+      (manual !== "none" ? " (manual)" : ` (from ${derived.from})`) + " — tap to adjust";
   const bloody = isBloodied(c);
 
   return (
@@ -2182,9 +2189,12 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
       </span>
 
       {c.type !== "effect" && c.type !== "object" && !c.dead && (
-        <button className={`vschip ${shown === "adv" ? "adv" : shown === "dis" ? "dis" : shown === "adv*" ? "mix" : ""}`}
-          title={vsTitle} onClick={() => api.cycleAdvVs(c.uid)}>
-          ⊕{shown === "none" ? "vs" : shown === "adv" ? "ADV" : shown === "dis" ? "DIS" : "ADV/DIS"}
+        <button className={`advchip ${(c.advMode !== "none" || shown !== "none") ? "on" : ""}`}
+          title={vsTitle} onClick={() => api.openAdv(c.uid)}>
+          {c.advMode === "none" && shown === "none" ? "A/D" : (<>
+            {c.advMode !== "none" && <b className={c.advMode}>{c.advMode.toUpperCase()}</b>}
+            {shown !== "none" && <b className={shown === "adv*" ? "mix" : shown}>⊕{shown === "adv*" ? "A/D" : shown.toUpperCase()}</b>}
+          </>)}
         </button>
       )}
 
@@ -2195,14 +2205,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
           cur={c.uses[k].rem} max={c.uses[k].max}
           onSpend={() => api.confirmUse(c.uid, "use", k)} onReset={() => api.confirmUse(c.uid, "use", k)} />
       ))}
-
-      {c.type !== "effect" && c.type !== "object" && !c.dead && (
-        <span className={`advtag selfadv ${c.advMode}`} style={{ cursor: "pointer" }}
-          title={`${c.name}'s own rolls: ${c.advMode === "none" ? "normal" : c.advMode.toUpperCase()} — tap to cycle`}
-          onClick={() => api.cycleAdv(c.uid)}>
-          {c.advMode === "adv" ? "ADV" : c.advMode === "dis" ? "DIS" : "A/D"}
-        </span>
-      )}
 
       {c.type !== "effect" && c.type !== "object" && !c.dead && (
         <button className={`rtog ${c.reaction ? "on" : ""}`} title="Reaction available (click to toggle)" onClick={() => api.toggleReaction(c.uid)}>
@@ -2220,7 +2222,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
             {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
             {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>Give loot…</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.cycleAdv(c.uid)}>Adv/dis on rolls (cycle)</button>}
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
@@ -4815,6 +4817,43 @@ function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
   );
 }
 
+/* One dialog for both directions of advantage: the creature's own rolls and
+   attacks made against it. Segmented pickers instead of blind three-state
+   cycling; shows what conditions already derive. */
+function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const derived = condAdvVs(c);
+  const seg = (cur, onPick) => (
+    <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      {[["none", "Normal"], ["adv", "ADV"], ["dis", "DIS"]].map(([v, lb]) => (
+        <button key={v} className={`btn small ${cur === v ? (v === "adv" ? "hitv" : v === "dis" ? "missv" : "primary") : ""}`}
+          style={{ flex: 1 }} onClick={() => { if (armed()) onPick(v); }}>{lb}{cur === v ? " ✓" : ""}</button>
+      ))}
+    </div>
+  );
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Advantage — {c.name}</h3>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "6px 0 4px" }}>{c.name}'s own rolls (attacks & saves)</div>
+        {seg(c.advMode || "none", onSetOwn)}
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "6px 0 4px" }}>Attacks against {c.name}</div>
+        {seg(c.advVs || "none", onSetVs)}
+        {derived && (
+          <div className="trait" style={{ marginBottom: 8 }}>
+            Conditions already grant attackers {derived.mode === "adv*" ? "ADV in melee (within 5 ft) and DIS at range" : derived.mode.toUpperCase()} (from {derived.from}).{" "}
+            {(c.advVs || "none") === "none" ? "That applies while the setting above is Normal." : "Your manual setting above overrides it."}
+          </div>
+        )}
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn primary" onClick={() => { if (armed()) onClose(); }}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
   // opens under the tap that chose the menu item — swallow the tap echo so it
   // can't dismiss the confirmation (or worse, confirm it) unseen
@@ -5620,12 +5659,25 @@ export default function App() {
       c.advMode = c.advMode === "none" ? "adv" : c.advMode === "adv" ? "dis" : "none";
       L.push(`<b>${c.name}</b> now rolls at ${c.advMode === "none" ? "normal" : c.advMode === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}`);
     }),
-    cycleAdvVs: (uid) => mutate((d, L) => {
-      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
-      const cur = c.advVs || "none";
-      c.advVs = cur === "none" ? "adv" : cur === "adv" ? "dis" : "none";
-      L.push(`Attacks against <b>${c.name}</b>: ${c.advVs === "adv" ? "ADVANTAGE" : c.advVs === "dis" ? "DISADVANTAGE" : "normal (manual flag cleared)"}`);
-    }),
+    openAdv: (uid) => setModal({ type: "adv-set", uid }),
+    setAdvMode: (uid, v) => {
+      const cc = stateRef.current.combatants.find((x) => x.uid === uid);
+      if (!cc || cc.advMode === v) return; // no-op taps shouldn't burn an undo slot
+      mutate((d, L) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+        c.advMode = v;
+        L.push(`<b>${c.name}</b> now rolls at ${v === "none" ? "normal" : v === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}`);
+      });
+    },
+    setAdvVs: (uid, v) => {
+      const cc = stateRef.current.combatants.find((x) => x.uid === uid);
+      if (!cc || (cc.advVs || "none") === v) return;
+      mutate((d, L) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+        c.advVs = v;
+        L.push(`Attacks against <b>${c.name}</b>: ${v === "adv" ? "ADVANTAGE" : v === "dis" ? "DISADVANTAGE" : "normal (manual flag cleared)"}`);
+      });
+    },
     saveToBestiary: (uid) => {
       const c = stateRef.current.combatants.find((x) => x.uid === uid);
       if (!c || c.type !== "monster") return;
@@ -6678,6 +6730,9 @@ export default function App() {
         <PromptModal title={`Initiative — ${modalC.name}`} fields={[{ key: "v", label: "Initiative", type: "number", value: modalC.init }]} submitLabel="Set"
           onSubmit={({ v }) => { mutate((d, L) => { const cc = d.combatants.find((x) => x.uid === modal.uid); cc.init = parseInt(v, 10) || 0; L.push(`<b>${cc.name}</b> initiative set to ${cc.init}`); }); setModal(null); }}
           onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "adv-set" && modalC && (
+        <AdvSetModal c={modalC} onSetOwn={(v) => api.setAdvMode(modal.uid, v)} onSetVs={(v) => api.setAdvVs(modal.uid, v)} onClose={() => setModal(null)} />
       )}
       {modal?.type === "dex-prompt" && modalC && (
         <PromptModal title={`DEX tiebreaker — ${modalC.name}`} fields={[{ key: "v", label: "DEX modifier (blank to clear)", type: "number", value: modalC.mods?.dex }]} submitLabel="Set"
