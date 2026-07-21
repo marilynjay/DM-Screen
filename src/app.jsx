@@ -5245,7 +5245,7 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
   const [picked, setPicked] = useState(null);
   const [phase, setPhase] = useState("pick"); // pick → resolve → damage
   const [amt, setAmt] = useState("");
-  const [dtype, setDtype] = useState("");
+  const [dtype, setDtype] = useState(c.lastDtype || ""); // default to this player's last weapon type
   const t = picked ? state.combatants.find((x) => x.uid === picked) : null;
   const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
   const targetRow = (x) => (
@@ -6070,6 +6070,7 @@ export default function App() {
       const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c || !t) return;
       c.atkCount = (c.atkCount || 0) + 1;
+      c.lastDtype = dtype || ""; // remember this player's weapon type — the picker defaults to it next attack
       const n = Math.max(0, Math.round(Number(amt) || 0));
       const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
       if (n > 0 && t.maxHp != null) { applyDamage(t, n, dtype || null, L, T); holdGhost(t, snap, 600, dtype || null); }
