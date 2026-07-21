@@ -93,7 +93,19 @@ input[type=number]{width:64px}
 @keyframes fxriser{100%{bottom:108%}}
 .dmgfx .fxspark{opacity:0;font-size:13px;line-height:1;color:#ffe9a8;text-shadow:0 0 8px rgba(255,230,150,.9);animation:fxspark .75s ease forwards}
 @keyframes fxspark{15%{opacity:1;transform:scale(1.3) rotate(20deg)}100%{opacity:0;transform:scale(.4) rotate(50deg)}}
+.sfx{position:fixed;inset:0;z-index:185;pointer-events:none;overflow:hidden}
+.sfx .sfx-vig{position:absolute;inset:0;opacity:0;box-shadow:inset 0 0 100px 25px rgba(170,25,25,.5);animation:sfxvig .55s ease forwards}
+@keyframes sfxvig{38%{opacity:1}68%{opacity:.5}100%{opacity:0}}
+.sfx .jaw{position:absolute;left:-3%;right:-3%;height:34%;filter:drop-shadow(0 0 10px rgba(255,70,70,.45))}
+.sfx .jaw svg{width:100%;height:100%;display:block}
+.sfx .jaw.t{top:0;animation:sfxjaw-t .55s cubic-bezier(.45,0,.35,1) forwards}
+.sfx .jaw.b{bottom:0;animation:sfxjaw-b .55s cubic-bezier(.45,0,.35,1) forwards}
+@keyframes sfxjaw-t{0%{transform:translateY(-101%)}44%{transform:translateY(28%)}60%{transform:translateY(28%)}100%{transform:translateY(-101%)}}
+@keyframes sfxjaw-b{0%{transform:translateY(101%)}44%{transform:translateY(-28%)}60%{transform:translateY(-28%)}100%{transform:translateY(101%)}}
+.demorow{position:relative;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:8px;padding:8px 10px;overflow:hidden;margin:4px 0;font-size:13px}
 .row.fxshake{animation:fxshake .45s ease}
+.demorow.fxshake{animation:fxshake .45s ease}
 @keyframes fxshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
 .vic-overlay{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;cursor:pointer;
   background:radial-gradient(ellipse at center, rgba(64,48,10,.5), rgba(10,8,4,.8));animation:vicfade .5s ease}
@@ -1864,6 +1876,12 @@ const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
 const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
 const FX = { on: true, all: true }; // damage-type effects over the hit row; App assigns from the settings
+const SFX = { on: true }; // whole-screen attack effects (edge-framed) on a hit; App assigns from the setting
+// attack-name → whole-screen archetype (keyword match; falls back to no screen effect)
+const ATTACK_FX = [
+  { fx: "bite", re: /\b(bite|bites|beak|maw|jaws?|chomp|snap)\b/i },
+];
+const attackArchetype = (name) => { for (const a of ATTACK_FX) if (a.re.test(name || "")) return a.fx; return null; };
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -1962,6 +1980,27 @@ function GhostRows({ rows, combatants, holds, fxs, api }) {
       })}
     </div>
   );
+}
+
+/* Whole-screen attack effects: edge-framed flourishes that play where the DM is
+   looking (the active card) the instant a hit lands — the first of the two beats,
+   with the damage-type roster effect following at the HP drop. */
+function ScreenFx({ kind }) {
+  if (kind === "bite") {
+    const tp = ["0,0", "100,0"]; // top jaw: straight top edge, sawtooth teeth below
+    for (let x = 100; x >= -4; x -= 7) { tp.push(`${x},54`, `${(x - 3.5).toFixed(1)},100`); }
+    const bt = ["0,100", "100,100"]; // bottom jaw: straight bottom, teeth above
+    for (let x = 100; x >= -4; x -= 7) { bt.push(`${x},46`, `${(x - 3.5).toFixed(1)},0`); }
+    const fill = "rgba(233,228,218,.94)";
+    return (
+      <span className="sfx" aria-hidden>
+        <i className="sfx-vig" />
+        <span className="jaw t"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points={tp.join(" ")} fill={fill} /></svg></span>
+        <span className="jaw b"><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polygon points={bt.join(" ")} fill={fill} /></svg></span>
+      </span>
+    );
+  }
+  return null;
 }
 
 /* Damage-type effects: pure CSS/SVG flourishes that play over the hit row —
@@ -2987,7 +3026,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
             <span className="ad">{o.d}</span>
             {atks.map((ar) => results && results[`${c.uid}:${ar.ai}`] ? (
               <span className="results" key={"r" + ar.ai}>
-                <ResultChips chips={results[`${c.uid}:${ar.ai}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
+                <ResultChips chips={results[`${c.uid}:${ar.ai}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts, chip.arch)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
               </span>
             ) : null)}
             {atks.map((ar) => openInfo === `${i}:a:${ar.ai}` ? (
@@ -3095,7 +3134,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
             </span>
             {results[`${c.uid}:${i}`] && (
               <span className="results">
-                <ResultChips chips={results[`${c.uid}:${i}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
+                <ResultChips chips={results[`${c.uid}:${i}`]} onApply={(chip) => api.applyChipParts(chip.resKey, chip.id, chip.applyTo, chip.parts, chip.arch)} onMiss={(chip) => api.markAttackMiss(chip.resKey, chip.id, chip.tName)} />
               </span>
             )}
             <UsePips c={c} k={"a" + i} api={api} />
@@ -5006,6 +5045,21 @@ export default function App() {
   const setDmgFx = (v) => { setDmgFxState(v); stSet("dm5e:dmgFx", v ? 1 : 0); };
   const [dmgFxAll, setDmgFxAllState] = useState(true);
   const setDmgFxAll = (v) => { setDmgFxAllState(v); stSet("dm5e:dmgFxAll", v ? 1 : 0); };
+  const [dmgSfx, setDmgSfxState] = useState(true);
+  const setDmgSfx = (v) => { setDmgSfxState(v); stSet("dm5e:dmgSfx", v ? 1 : 0); };
+  const [screenFx, setScreenFx] = useState(null);
+  const [previewRowFx, setPreviewRowFx] = useState(null);
+  const fireScreenFx = (kind, delayMs = 0, force = false) => {
+    if (!kind || (!force && (!SFX.on || !ANIM.on))) return;
+    const id = Math.random();
+    setTimeout(() => setScreenFx({ kind, id }), Math.max(0, delayMs));
+    setTimeout(() => setScreenFx((s) => (s && s.id === id ? null : s)), Math.max(0, delayMs) + 650);
+  };
+  const previewRow = (type) => { // settings preview — plays regardless of the toggles
+    const id = Math.random();
+    setPreviewRowFx({ dtype: type, id });
+    setTimeout(() => setPreviewRowFx((f) => (f && f.id === id ? null : f)), 1600);
+  };
   const [showTouches, setShowTouchesState] = useState(false);
   const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
   const [expandedOn, setExpandedOnState] = useState(false);
@@ -5029,6 +5083,7 @@ export default function App() {
   TIES.playersWin = playersWinTies;
   FX.on = dmgFx;
   FX.all = dmgFxAll;
+  SFX.on = dmgSfx;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
@@ -5203,6 +5258,8 @@ export default function App() {
       if (dfx != null) setDmgFxState(!!dfx); // damage-type effects default ON
       const dfxa = await stGet("dm5e:dmgFxAll");
       if (dfxa != null) setDmgFxAllState(!!dfxa); // mixed-type sequence default ON
+      const dsx = await stGet("dm5e:dmgSfx");
+      if (dsx != null) setDmgSfxState(!!dsx); // whole-screen attack effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       let pl = await stGet("dm5e:parties");
@@ -5403,8 +5460,11 @@ export default function App() {
             setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
           }
           holdGhost(t, snap, flashAt, fxTypesOf(parts));
+          // beat one: whole-screen attack effect the instant the HIT chip reveals (during the damage roll)
+          const hitIdx = chips.findIndex((ch) => ch.k === "sgood" && /^HIT/.test(ch.t || ""));
+          fireScreenFx(attackArchetype(a.n), hitIdx >= 0 ? Math.round(chipDelays(chips)[hitIdx] * 1000) : 0);
         } else if (isHit == null && t.maxHp != null) {
-          chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, k: "cond" });
+          chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, arch: attackArchetype(a.n), k: "cond" });
         }
       }
       setTimeout(() => setResults((r) => ({ ...r, [`${uid}:${ai}`]: chips })), 0);
@@ -5750,7 +5810,8 @@ export default function App() {
       setModal(null);
       maybeManualAttack(p);
     },
-    applyChipParts: (resKey, chipId, targetUid, parts) => {
+    applyChipParts: (resKey, chipId, targetUid, parts, arch) => {
+      fireScreenFx(arch, 0); // beat one: hit confirmed by the DM (unknown-AC path)
       mutate((d, L, T) => {
         const t = d.combatants.find((x) => x.uid === targetUid); if (!t || t.dead) return;
         const hpBefore = t.hp;
@@ -6307,6 +6368,7 @@ export default function App() {
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} fxs={rowFxs} api={api} />
+      {screenFx && <ScreenFx key={screenFx.id} kind={screenFx.kind} />}
       {victory && (
         <div className={`vic-overlay ${victory.out ? "out" : ""}`} key={victory.id} onClick={dismissVictory}>
           <div className="vic-inner">
@@ -6651,6 +6713,28 @@ export default function App() {
               🌈 Mixed damage plays every type{dmgFxAll ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgFxAll ? "inherit" : "var(--faint)" }}>A slashing + acid bite plays both effects back-to-back. Off: only the biggest chunk's effect plays.</span>
             </button>
+            <button className={`btn ${dmgSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              onClick={() => setDmgSfx(!dmgSfx)}>
+              🦷 Attack effects on screen{dmgSfx ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: dmgSfx ? "inherit" : "var(--faint)" }}>Signature attacks (a bite, for now) flash an edge-framed effect across the screen the moment the hit lands.</span>
+            </button>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Preview</div>
+            <div className="trait" style={{ marginBottom: 4 }}>Tap to see an effect. Damage types &amp; heal play over the sample row; attack styles flash the screen.</div>
+            <div className={`demorow ${previewRowFx && SHAKE_FX.has(previewRowFx.dtype) ? "fxshake" : ""}`}>
+              {previewRowFx && <DmgFx key={previewRowFx.id} type={previewRowFx.dtype} />}
+              <span className="sidebar-dot side-enemy" style={{ position: "relative", zIndex: 4 }} />
+              <b style={{ position: "relative", zIndex: 4 }}>Sample</b>
+              <span className="ad" style={{ position: "relative", zIndex: 4 }}>28/40 · AC 15</span>
+            </div>
+            <div className="pickgrid">
+              {DTYPES.map((t) => (
+                <span key={t} className="dchip" style={{ "--dc": DTYPE_COLORS[t] }} onClick={() => previewRow(t)}>{t}</span>
+              ))}
+              <span className="dchip" style={{ "--dc": "#8fd6a0" }} onClick={() => previewRow("heal")}>heal ✦</span>
+            </div>
+            <div className="pickgrid">
+              <span className="lvlchip" onClick={() => fireScreenFx("bite", 0, true)}>🦷 Bite (screen)</span>
+            </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
             <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setShowTouches(!showTouches)}>
