@@ -293,8 +293,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 @keyframes hp-float{0%{opacity:1;transform:translate(-50%,0)}100%{opacity:0;transform:translate(-50%,-16px)}}
 .hpval.pd{animation:hp-punch .7s ease;color:#e0645a}
 .hpval.ph{animation:hp-punch .7s ease;color:#7fbf8e}
-.hpghost{position:absolute;left:50%;top:-30px;transform:translate(-50%,0);font-family:var(--mono);
-  font-size:11px;font-weight:700;pointer-events:none;animation:hp-float 1.5s ease-out forwards;z-index:5}
+.hpghost{position:absolute;left:50%;top:-6px;transform:translate(-50%,0);font-family:var(--mono);
+  font-size:11px;font-weight:700;pointer-events:none;animation:hp-float 1.5s ease-out forwards;z-index:7;
+  background:rgba(18,14,26,.92);padding:0 5px;border-radius:7px}
 .hpghost.d{color:#e0645a}
 .hpghost.h{color:#7fbf8e}
 .hpheart{width:14px;height:13px;flex-shrink:0;display:block}
