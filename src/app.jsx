@@ -1153,7 +1153,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex }) {
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false, hidTurn: false,
-    spellDC: null, spellAtk: null, // optional — set once, auto-fills the save box when this player casts
+    spellDC: null, // optional — set once, auto-fills the save box when this player casts (players roll their own attacks, so no attack bonus needed)
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: dexN != null ? { dex: dexN } : {}, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
@@ -5456,8 +5456,7 @@ function PlayerCastModal({ c, api, onClose }) {
   const [q, setQ] = useState("");
   const [pick, setPick] = useState(null);
   const [dc, setDc] = useState(c.spellDC ?? "");
-  const [atk, setAtk] = useState(c.spellAtk ?? "");
-  const commit = () => api.setSpellStats(c.uid, dc, atk);
+  const commit = () => api.setSpellDC(c.uid, dc);
   const matches = q.trim().length >= 2
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 40)
     : [];
@@ -5481,11 +5480,9 @@ function PlayerCastModal({ c, api, onClose }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>✨ {c.name} casts a spell</h3>
         <div className="frow" style={{ gap: 6, fontSize: 12 }}>
-          <label style={{ minWidth: 0 }}>Save DC</label>
+          <label style={{ minWidth: 0 }}>Spell save DC</label>
           <input type="number" inputMode="numeric" style={{ width: 56 }} value={dc} placeholder="—" onChange={(e) => setDc(e.target.value)} onBlur={commit} />
-          <label style={{ minWidth: 0 }}>Spell atk</label>
-          <input type="number" inputMode="numeric" style={{ width: 56 }} value={atk} placeholder="—" onChange={(e) => setAtk(e.target.value)} onBlur={commit} />
-          <span style={{ fontSize: 11, color: "var(--faint)" }}>optional — saved on {c.name}</span>
+          <span style={{ fontSize: 11, color: "var(--faint)" }}>optional — saved on {c.name}, auto-fills saves</span>
         </div>
         {!pick ? (
           <>
@@ -6277,10 +6274,9 @@ export default function App() {
     resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
     openHeal: (uid) => setModal({ type: "damage", uid, mode: "heal" }),
     openCast: (uid) => setModal({ type: "player-cast", uid }),
-    setSpellStats: (uid, dc, atk) => mutate((d) => {
+    setSpellDC: (uid, dc) => mutate((d) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       c.spellDC = dc === "" || dc == null ? null : Number(dc);
-      c.spellAtk = atk === "" || atk == null ? null : Number(atk);
     }),
     castUtility: (uid, name, conc) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
