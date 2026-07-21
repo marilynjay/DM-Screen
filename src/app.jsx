@@ -47,6 +47,23 @@ input[type=number]{width:64px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .pgr input[type="checkbox"]{width:17px;height:17px;accent-color:var(--gold);margin:0 auto}
+/* damage-type effects: quick contained flourishes over the hit row, a beat before the HP drops */
+.dmgfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:2px;z-index:3}
+.dmgfx i,.dmgfx svg{position:absolute}
+.dmgfx .fxflash{inset:0;opacity:0;animation:fxflash .5s ease forwards}
+@keyframes fxflash{12%{opacity:.8}100%{opacity:0}}
+.dmgfx .fxsweep{inset:0;transform:translateX(-105%);animation:fxsweep .55s ease-in forwards}
+@keyframes fxsweep{100%{transform:translateX(105%)}}
+.dmgfx .fxring{left:50%;top:50%;width:12px;height:12px;border-radius:50%;transform:translate(-50%,-50%) scale(.15);animation:fxring .55s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes fxring{0%{opacity:1}100%{transform:translate(-50%,-50%) scale(16);opacity:0}}
+.dmgfx .fxslash{top:46%;left:-45%;width:70%;height:3px;border-radius:2px;background:linear-gradient(90deg,transparent,#fff 45%,#fff 55%,transparent);box-shadow:0 0 8px rgba(255,255,255,.8);transform:rotate(-16deg);animation:fxslash .34s ease-in forwards}
+@keyframes fxslash{100%{left:110%}}
+.dmgfx .fxbolt{inset:0;width:100%;height:100%;filter:drop-shadow(0 0 6px rgba(140,200,255,.9));animation:fxbolt .5s steps(1) forwards;opacity:0}
+@keyframes fxbolt{0%{opacity:1}18%{opacity:.25}30%{opacity:1}55%{opacity:.4}70%{opacity:.9}100%{opacity:0}}
+.dmgfx .fxbub{bottom:-6px;width:7px;height:7px;border-radius:50%;opacity:0;animation:fxbub .7s ease-out forwards}
+@keyframes fxbub{10%{opacity:.9}100%{transform:translateY(-46px);opacity:0}}
+.row.fxshake{animation:fxshake .45s ease}
+@keyframes fxshake{0%,100%{transform:translateX(0)}20%{transform:translateX(-3px)}40%{transform:translateX(3px)}60%{transform:translateX(-2px)}80%{transform:translateX(2px)}}
 .vic-overlay{position:fixed;inset:0;z-index:190;display:flex;align-items:center;justify-content:center;cursor:pointer;
   background:radial-gradient(ellipse at center, rgba(64,48,10,.5), rgba(10,8,4,.8));animation:vicfade .5s ease}
 .vic-overlay.out{animation:vicout .32s ease forwards}
@@ -1792,6 +1809,7 @@ const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
 const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
+const FX = { on: true }; // damage-type effects over the hit row; App assigns from the setting
 function diceTextStages(chip) {
   if (!chip.t) return 0;
   const s = String(chip.t);
@@ -1875,7 +1893,7 @@ function VicPopper({ flip }) {
    into view (a display-only clone — pointer-events off), the hit plays out in
    it live — HP bar, −N pulse, skull, THP shatter — then it slides back up.
    Skipped for combatants whose HP isn't tracked. */
-function GhostRows({ rows, combatants, holds, api }) {
+function GhostRows({ rows, combatants, holds, fxs, api }) {
   if (!rows.length) return null;
   return (
     <div className="ghostrail">
@@ -1884,7 +1902,7 @@ function GhostRows({ rows, combatants, holds, api }) {
         if (!c) return null;
         return (
           <div key={g.id} className={`ghostrow ${g.out ? "out" : ""}`}>
-            <Row c={c} api={api} hold={holds[g.uid]} />
+            <Row c={c} api={api} hold={holds[g.uid]} fx={fxs[g.uid]} />
           </div>
         );
       })}
@@ -1892,7 +1910,35 @@ function GhostRows({ rows, combatants, holds, api }) {
   );
 }
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
+/* Damage-type effects: pure CSS/SVG flourishes that play over the hit row —
+   real roster row and ghost clone alike — a beat before the HP drops. */
+const SHAKE_FX = new Set(["bludgeoning", "thunder"]);
+function DmgFx({ type }) {
+  const t = String(type || "").toLowerCase();
+  const flash = (c) => <i key="f" className="fxflash" style={{ background: c }} />;
+  const ring = (c, w = 2, delay = 0) => <i key={`r${delay}`} className="fxring" style={{ border: `${w}px solid ${c}`, animationDelay: delay ? `${delay}s` : undefined }} />;
+  const sweep = (g) => <i key="s" className="fxsweep" style={{ background: g }} />;
+  const bubs = (c) => [16, 44, 72].map((x, i) => <i key={`b${i}`} className="fxbub" style={{ left: `${x}%`, background: c, animationDelay: `${i * 0.09}s` }} />);
+  const inner = {
+    lightning: [flash("rgba(170,215,255,.35)"),
+      <svg key="bolt" className="fxbolt" viewBox="0 0 100 24" preserveAspectRatio="none"><polyline points="0,12 16,7 28,16 44,4 57,18 71,8 84,14 100,10" fill="none" stroke="#cfe8ff" strokeWidth="2.4" /></svg>],
+    fire: [flash("rgba(255,140,50,.28)"), sweep("linear-gradient(90deg,transparent,rgba(255,120,40,.55),rgba(255,205,80,.4),transparent)")],
+    cold: [flash("rgba(170,215,255,.3)"), sweep("linear-gradient(90deg,transparent,rgba(150,210,255,.5),rgba(230,245,255,.35),transparent)")],
+    slashing: [flash("rgba(255,255,255,.14)"), <i key="sl" className="fxslash" />],
+    piercing: [flash("rgba(255,255,255,.2)"), ring("#fff", 2)],
+    bludgeoning: [flash("rgba(200,190,180,.25)"), ring("rgba(200,190,180,.8)", 3)],
+    acid: [flash("rgba(140,220,90,.25)"), ring("rgba(150,230,90,.9)", 3)],
+    poison: [flash("rgba(120,210,90,.2)"), ...bubs("rgba(130,220,100,.75)")],
+    force: [flash("rgba(180,140,255,.3)"), ring("rgba(190,150,255,.9)", 2)],
+    psychic: [ring("rgba(255,140,220,.9)", 2), ring("rgba(255,140,220,.6)", 2, 0.12)],
+    radiant: [flash("rgba(255,215,120,.45)"), ring("rgba(255,220,130,.9)", 2)],
+    necrotic: [flash("rgba(80,40,110,.35)"), sweep("linear-gradient(90deg,transparent,rgba(70,30,100,.65),rgba(20,10,30,.5),transparent)")],
+    thunder: [flash("rgba(255,255,255,.25)"), ring("rgba(255,255,255,.95)", 4)],
+  }[t] || [flash("rgba(255,255,255,.2)")];
+  return <span className={`dmgfx fx-${t || "plain"}`} aria-hidden>{inner}</span>;
+}
+
+function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
   if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
@@ -1978,8 +2024,9 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold }) {
   const bloody = isBloodied(c);
 
   return (
-    <div data-uid={c.uid} className={`row ${active ? "active" : ""} ${spot ? "spot" : ""} ${c.dead ? "dead" : ""} ${skull ? "dying" : ""} ${bloody ? "bloody" : ""} ${!c.dead && c.type !== "effect" && shown === "adv" ? "vs-adv" : ""} ${!c.dead && c.type !== "effect" && shown === "dis" ? "vs-dis" : ""} ${!c.dead && c.type !== "effect" && shown === "adv*" ? "vs-mix" : ""}`}>
+    <div data-uid={c.uid} className={`row ${active ? "active" : ""} ${spot ? "spot" : ""} ${c.dead ? "dead" : ""} ${skull ? "dying" : ""} ${bloody ? "bloody" : ""} ${fx && SHAKE_FX.has(String(fx.dtype || "").toLowerCase()) ? "fxshake" : ""} ${!c.dead && c.type !== "effect" && shown === "adv" ? "vs-adv" : ""} ${!c.dead && c.type !== "effect" && shown === "dis" ? "vs-dis" : ""} ${!c.dead && c.type !== "effect" && shown === "adv*" ? "vs-mix" : ""}`}>
       {!c.dead && c.concentration && <span className="concring" />}
+      {fx && <DmgFx key={fx.id} type={fx.dtype} />}
       <span className="initmark" title={c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{c.init ?? "—"}</span>
       <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
       <span className="nm" style={c.type === "monster" || c.type === "player" ? { cursor: "pointer" } : undefined}
@@ -4822,6 +4869,8 @@ export default function App() {
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   const [playersWinTies, setPlayersWinTiesState] = useState(true);
   const setPlayersWinTies = (v) => { setPlayersWinTiesState(v); stSet("dm5e:playersWinTies", v ? 1 : 0); };
+  const [dmgFx, setDmgFxState] = useState(true);
+  const setDmgFx = (v) => { setDmgFxState(v); stSet("dm5e:dmgFx", v ? 1 : 0); };
   const [showTouches, setShowTouchesState] = useState(false);
   const setShowTouches = (v) => { setShowTouchesState(v); stSet("dm5e:showTouches", v ? 1 : 0); };
   const [expandedOn, setExpandedOnState] = useState(false);
@@ -4843,6 +4892,7 @@ export default function App() {
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
   TIES.playersWin = playersWinTies;
+  FX.on = dmgFx;
   EXPANDED.on = expandedOn;
   const [party, setParty] = useState({ size: 4, level: 3, difficulty: "moderate", elites: 1 });
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
@@ -5013,6 +5063,8 @@ export default function App() {
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
       const pwt = await stGet("dm5e:playersWinTies");
       if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
+      const dfx = await stGet("dm5e:dmgFx");
+      if (dfx != null) setDmgFxState(!!dfx); // damage-type effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
       let pl = await stGet("dm5e:parties");
@@ -5090,7 +5142,10 @@ export default function App() {
   // Call inside a mutate updater right after damage applies; snap must be taken
   // BEFORE the damage. Masks roster + ghost at pre-hit values until revealAt,
   // then both drop together (one −N pulse each, skull/shatter if it comes to that).
-  const holdGhost = (t, snap, revealAt = 0) => {
+  // dtype (optional): plays that damage type's effect over the row ~350ms before
+  // the drop, so it reads as cause → effect.
+  const [rowFxs, setRowFxs] = useState({});
+  const holdGhost = (t, snap, revealAt = 0, dtype = null) => {
     if (t.maxHp == null || snap.hp == null) return; // HP untracked — nothing to show
     if (snap.hp === t.hp && (snap.thp || 0) === (t.thp || 0) && !!snap.dead === !!t.dead) return; // fully resisted — no visible change
     const huid = t.uid;
@@ -5102,7 +5157,17 @@ export default function App() {
       setHoldTick((k) => k + 1);
     }, revealAt);
     pushGhostRow(huid, revealAt);
+    if (dtype && FX.on && ANIM.on) {
+      const id = Math.random();
+      setTimeout(() => setRowFxs((m) => ({ ...m, [huid]: { dtype, id } })), Math.max(0, revealAt - 350));
+      setTimeout(() => setRowFxs((m) => {
+        if (m[huid]?.id !== id) return m;
+        const n = { ...m }; delete n[huid]; return n;
+      }), revealAt + 900);
+    }
   };
+  // the effect follows the biggest chunk of a mixed-type hit (dragon bite: slashing + acid)
+  const fxTypeOf = (parts) => (parts && parts.length ? parts.reduce((a, b) => (b.amt > a.amt ? b : a)).dtype || null : null);
 
   const attackRollCore = (d, L, uid, ai, opts = {}) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
@@ -5188,7 +5253,7 @@ export default function App() {
             const ftxt = `${atk.total} to hit — HIT · ${dmgStr} → ${t.name}`;
             setTimeout(() => setRowFlash({ uid: t.uid, text: ftxt, id: Math.random() }), flashAt);
           }
-          holdGhost(t, snap, flashAt);
+          holdGhost(t, snap, flashAt, fxTypeOf(parts));
         } else if (isHit == null && t.maxHp != null) {
           chips.push({ id: Math.random(), verdict: true, applyTo: t.uid, parts, resKey: `${uid}:${ai}`, atkTotal: atk.total, total: parts.reduce((s, p) => s + p.amt, 0), tName: t.name, k: "cond" });
         }
@@ -5323,7 +5388,7 @@ export default function App() {
           if (amt > 0 && c.maxHp != null) {
             const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
             applyDamage(c, amt, ctx.dtype || null, L, T);
-            holdGhost(c, snap, 600);
+            holdGhost(c, snap, 600, ctx.dtype || null);
             if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
           } else if (amt > 0) note = "(HP untracked — apply at table)";
         }
@@ -5538,7 +5603,7 @@ export default function App() {
           if (gain > 0) applyHeal(atkC, gain, L);
         }
         if (t.maxHp == null) setTimeout(() => setRowFlash({ uid: targetUid, text: `${dmgStr} → ${t.name}`, id: Math.random() }), 0);
-        holdGhost(t, snap, 600);
+        holdGhost(t, snap, 600, fxTypeOf(parts));
       });
       setResults((r) => {
         const arr = (r[resKey] || []).map((ch) => (ch.id === chipId ? { t: "✓ HIT — applied", k: "sgood" } : ch));
@@ -5913,7 +5978,7 @@ export default function App() {
         const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
         if (noSave) {
           let amt = dmgRoll ? dmgRoll.total : 0;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600, dtype || null); }
           L.push(`<b>${c.name}</b> takes ${amt}${dtype ? ` ${dtype}` : ""} (no save)${c.dead ? " ☠" : c.unconscious ? " (down)" : ""}`);
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: amt, note: c.dead ? "☠" : c.unconscious ? "(down)" : "" });
           return;
@@ -5925,7 +5990,7 @@ export default function App() {
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
-          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600); }
+          if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600, dtype || null); }
           if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
         }
         if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
@@ -6073,7 +6138,7 @@ export default function App() {
     <div className="dm-app" style={{ paddingBottom: botPad }}>
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
-      <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} api={api} />
+      <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} fxs={rowFxs} api={api} />
       {victory && (
         <div className={`vic-overlay ${victory.out ? "out" : ""}`} key={victory.id} onClick={dismissVictory}>
           <div className="vic-inner">
@@ -6213,7 +6278,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`}>
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
             ))}
           </div>
         </>
@@ -6407,6 +6472,12 @@ export default function App() {
                 {label}{manualDice === v ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: manualDice === v ? "inherit" : "var(--faint)" }}>{hint}</span>
               </button>
             ))}
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Damage effects</div>
+            <button className={`btn ${dmgFx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              onClick={() => setDmgFx(!dmgFx)}>
+              ⚡ Damage type effects{dmgFx ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: dmgFx ? "inherit" : "var(--faint)" }}>Lightning, fire, slashes and more flare over the hit row just before the HP drops. (Also off when reveal speed is Off.)</span>
+            </button>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
             <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setShowTouches(!showTouches)}>
