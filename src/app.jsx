@@ -77,10 +77,10 @@ input[type=number]{width:64px}
 @keyframes fxskullk{20%{opacity:1;transform:translateY(-2px) scale(1.15)}100%{opacity:0;transform:translateY(-11px) scale(.8)}}
 .dmgfx .fxrays{top:-40%;bottom:-40%;left:-20%;right:-20%;opacity:0;transform:translateX(-18%);filter:blur(1px);animation:fxrays .85s ease forwards}
 .dmgfx .fxspokes{left:50%;top:50%;width:240%;aspect-ratio:1/1;opacity:0;filter:blur(1px) brightness(1);
-  transform:translate(-50%,-50%) rotate(0deg);animation:fxspokes 1.6s ease-in-out forwards}
+  transform:translate(-50%,-50%) rotate(0deg);animation:fxspokes 1.45s ease-in-out forwards}
 @keyframes fxspokes{10%{opacity:.9}65%{opacity:1;filter:blur(1px) brightness(1.6)}88%{opacity:1;filter:blur(2.5px) brightness(2.8)}100%{transform:translate(-50%,-50%) rotate(90deg);opacity:0;filter:blur(3px) brightness(3)}}
-.dmgfx .fxblowout{inset:0;opacity:0;background:radial-gradient(circle, rgba(255,250,230,.98), rgba(255,235,170,.92));animation:fxblowout 1.6s ease forwards}
-@keyframes fxblowout{50%{opacity:0}78%{opacity:.85}83%{opacity:1}93%{opacity:1}100%{opacity:0}}
+.dmgfx .fxblowout{inset:0;opacity:0;background:radial-gradient(circle, rgba(255,250,230,.98), rgba(255,235,170,.92));animation:fxblowout 1.45s ease forwards}
+@keyframes fxblowout{50%{opacity:0}77%{opacity:.85}82%{opacity:1}90%{opacity:1}96%{opacity:0}100%{opacity:0}}
 @keyframes fxrays{18%{opacity:.95}80%{opacity:.55}100%{opacity:0;transform:translateX(18%)}}
 .dmgfx .fxringsm{width:10px;height:10px;border-radius:50%;transform:scale(.2);animation:fxringsm .6s cubic-bezier(.2,.7,.3,1) forwards}
 @keyframes fxringsm{0%{opacity:1}100%{transform:scale(5);opacity:0}}
