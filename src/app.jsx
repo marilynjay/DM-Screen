@@ -617,7 +617,7 @@ const CONDITIONS = {
 const COVER_AC = { "Half Cover": 2, "Three-Quarters Cover": 5 };
 // roster icons (DM-picked). "svg:*" values are drawn by CondIcon; the rest are emoji.
 const CONDITION_ICONS = {
-  Blinded: "svg:blind", Charmed: "💘", Deafened: "svg:deaf", Frightened: "😱",
+  Blinded: "svg:blind", Charmed: "💘", Deafened: "🔕", Frightened: "😱",
   Grappled: "🤼", Incapacitated: "🚫", Invisible: "🫥", Paralyzed: "⚡",
   Petrified: "🗿", Poisoned: "🤢", Prone: "svg:prone", Restrained: "🪢",
   Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥",
@@ -1885,10 +1885,6 @@ function CondIcon({ name, onTap }) {
   if (v === "svg:blind") return svg(<>
     <path d="M2.5 10 C5 5.5 15 5.5 17.5 10 C15 14.5 5 14.5 2.5 10 Z" />
     <circle cx="10" cy="10" r="1.9" fill="currentColor" stroke="none" />
-    <path d="M3.5 16.5 L16.5 3.5" strokeWidth="1.7" />
-  </>);
-  if (v === "svg:deaf") return svg(<>
-    <path d="M6.5 15.5 C4.8 12.5 5 5.5 10.5 5.2 C15 5 15.2 10 12 10.6 C10.2 11 10.6 13 11.6 13.6" />
     <path d="M3.5 16.5 L16.5 3.5" strokeWidth="1.7" />
   </>);
   if (v === "svg:prone") return svg(<>
