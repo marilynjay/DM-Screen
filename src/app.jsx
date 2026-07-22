@@ -6754,7 +6754,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"]];
-const HALL_ORIENT = [["h", "— Horizontal"], ["v", "❘ Vertical"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
+const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
@@ -6771,9 +6771,10 @@ function RoomShape({ room, cx, cy }) {
     const side = s * 1.18;
     return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={col} stroke={stroke} strokeWidth="1.5" />;
   }
-  if (shape === "hall") { // a tube that spans the hex, touching its edges/vertices — sharp ends
-    const th = s * 0.42; // pointy-top hex: width sqrt(3)·s (side edges), height 2·s (top/bottom points)
-    const conf = { h: { len: Math.sqrt(3) * s, rot: 0 }, v: { len: 2 * s, rot: 90 }, d1: { len: 2 * s, rot: -30 }, d2: { len: 2 * s, rot: 30 } }[room.orient || "h"];
+  if (shape === "hall") { // a horizontal tube (spans the hex's side edges), optionally rotated 45°/135°
+    const th = s * 0.42, L = Math.sqrt(3) * s;
+    const MAP = { h: { len: L, rot: 0 }, d1: { len: L, rot: 135 }, d2: { len: L, rot: 45 } };
+    const conf = MAP[room.orient] || MAP.h;
     return <rect x={cx - conf.len / 2} y={cy - th / 2} width={conf.len} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${conf.rot} ${cx} ${cy})`} />;
   }
   // hex (default) — the whole cell, filled
