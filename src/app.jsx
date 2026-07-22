@@ -1188,15 +1188,16 @@ function makeMonster(sb, state, opts = {}) {
   return m;
 }
 
-function makePlayer({ name, init, ac, side, hp, pp, dex, spells, memberId, spellDC, mods }) {
+function makePlayer({ name, init, ac, side, hp, pp, pi, dex, spells, memberId, spellDC, mods }) {
   const hpN = hp != null && hp !== "" ? Number(hp) : null;
   const initN = init == null || init === "" || isNaN(Number(init)) ? null : Number(init);
   const ppN = pp != null && pp !== "" ? Number(pp) : null;
+  const piN = pi != null && pi !== "" && !isNaN(Number(pi)) ? Number(pi) : null;
   const dexN = dex == null || dex === "" || isNaN(Number(dex)) ? null : Number(dex);
   const modObj = mods && Object.keys(mods).length ? { ...mods } : (dexN != null ? { dex: dexN } : {}); // players never auto-roll saves; mods are reference (dex still breaks init ties)
   return {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
-    ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
+    ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN, pi: piN,
     hp: hpN, maxHp: hpN, init: initN, initText: null,
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {}, atkCount: 0, dodging: false, readied: false, hidTurn: false,
     spellDC: spellDC == null || spellDC === "" ? null : Number(spellDC), // optional — auto-fills the save box when this player casts (players roll their own attacks, so no attack bonus needed)
@@ -1465,6 +1466,10 @@ const DTYPE_COLORS = {
 
 function conMod(c) { return c.saves?.con ?? c.mods?.con ?? 0; }
 function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.mods?.[k] ?? 0; }
+// ability-check modifier (no save-proficiency) — used for group checks
+function checkMod(c, ab) { return c.mods?.[ab.toLowerCase()] ?? 0; }
+// passive Insight: explicit c.pi if set, else 10 + WIS mod when we know it, else null (nothing to show)
+function passiveInsight(c) { return c.pi != null ? c.pi : (c.mods?.wis != null ? 10 + c.mods.wis : null); }
 
 // true when an active condition on c makes it immune to gaining condition `name` (RAW)
 function condGivesImmunity(c, name) {
@@ -2699,9 +2704,18 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
         <span className="acbox" title="Passive Perception (shown outside battle)">👁 {c.pp}</span>
       )}
 
+      {c.type === "player" && !inCombat && passiveInsight(c) != null && (
+        <span className="acbox" title={`Passive Insight${c.pi == null ? " (10 + WIS)" : ""} — shown outside battle`}>🧠 {passiveInsight(c)}</span>
+      )}
+
       {c.type !== "player" && (c.loot || []).length > 0 && (
         <span className="lootico" style={{ cursor: "pointer" }} title={`Carrying: ${c.loot.map(lootName).join(", ")} — tap to view/edit`}
           onClick={() => api.openLoot(c.uid)}>💰</span>
+      )}
+
+      {c.type === "player" && (c.loot || []).length > 0 && (
+        <span className="lootico" style={{ cursor: "pointer" }} title={`${c.name}'s bag: ${c.loot.map(lootName).join(", ")} — tap to view/edit`}
+          onClick={() => api.openLoot(c.uid)}>🎒</span>
       )}
 
       <span className="badges">
@@ -3148,22 +3162,29 @@ function RepeatSaveModal({ c, done, api, onContinue, onClose, warnConds, title, 
   );
 }
 
+const CHECK_SKILLS = [
+  ["Perception", "wis"], ["Insight", "wis"], ["Investigation", "int"],
+  ["Stealth", "dex"], ["Athletics", "str"], ["Persuasion", "cha"],
+];
 function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerResult, onCommandWord }) {
-  const [ab, setAb] = useState(preset?.ability?.toLowerCase() || "dex");
+  const check = !!preset?.check;
+  const [ab, setAb] = useState(preset?.ability?.toLowerCase() || (check ? "wis" : "dex"));
   const [dc, setDc] = useState(preset?.dc != null ? String(preset.dc) : "");
   const [dmg, setDmg] = useState(preset?.dmg || "");
   const [dtype, setDtype] = useState((preset?.dtype || "").toLowerCase());
   const [halfOn, setHalfOn] = useState(preset?.half !== false);
+  const [dmRoll, setDmRoll] = useState(false);
+  const [skill, setSkill] = useState(null);
   const noSave = !!preset?.noSave;
   const single = !!preset?.single;
-  const noDmg = !!preset?.noDmg;
+  const noDmg = !!preset?.noDmg || check;
   const caster = preset?.casterUid ? list.find((x) => x.uid === preset.casterUid) : null;
   const base = caster ? list.filter((x) => x.uid !== caster.uid) : list;
   const primary = caster ? base.filter((x) => (caster.side === "ally" ? x.side !== "ally" : x.side === "ally")) : base;
   const others = caster ? base.filter((x) => !primary.includes(x)) : [];
   const casterCharmed = caster ? (caster.conditions || []).some((cd) => /Charm/i.test(cd.name)) : false;
   const [showOthers, setShowOthers] = useState(casterCharmed);
-  const [sel, setSel] = useState(() => new Set(preset?.targets || []));
+  const [sel, setSel] = useState(() => new Set(preset?.targets || (check ? list.filter((x) => x.side === "ally" && !x.dead).map((x) => x.uid) : [])));
   const togg = (uid) => setSel((s) => { if (single) return s.has(uid) ? new Set() : new Set([uid]); const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
   const pick = (fn) => setSel(new Set(base.filter(fn).map((c) => c.uid)));
   if (resolved) {
@@ -3182,7 +3203,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
               <b>{p.name}</b>
               <span className="ad">reports their roll…</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                <button className="btn small cond" onClick={() => onPlayerResult(p.uid, true)}>✓ saved</button>
+                <button className="btn small cond" onClick={() => onPlayerResult(p.uid, true)}>✓ {resolved.ctx?.check ? "passed" : "saved"}</button>
                 <button className="btn small" onClick={() => onPlayerResult(p.uid, false)}>✗ failed</button>
               </span>
             </div>
@@ -3213,15 +3234,23 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{single ? "Saving throw" : noSave ? (noDmg ? "Apply effect" : "Apply damage") : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
+        <h3>{check ? "Group check" : single ? "Saving throw" : noSave ? (noDmg ? "Apply effect" : "Apply damage") : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
+        {check && <div className="ad" style={{ marginBottom: 6 }}>Players roll their own dice and report — tap <b>✓</b>/<b>✗</b> as they call it out. Uses the ability modifier (add skill proficiency at the table).</div>}
         {preset?.cond && <div className="ad" style={{ marginBottom: 4 }}>{noSave ? "Applies" : "On a failed save:"} <b>{[preset.cond, preset.cond2].filter(Boolean).join(" & ")}</b>{preset.condR ? ` (${preset.condR} rd)` : preset.concCast ? " (until concentration ends)" : ""}</div>}
+        {check && (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 6px" }}>
+            {CHECK_SKILLS.map(([nm, sab]) => (
+              <button key={nm} className={`lvlchip ${skill === nm ? "on" : ""}`} onClick={() => { setSkill(nm); setAb(sab); }}>{nm}</button>
+            ))}
+          </div>
+        )}
         <div style={{ display: noSave ? "none" : "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 6px" }}>
           {["str","dex","con","int","wis","cha"].map((x) => (
-            <button key={x} className={`lvlchip ${ab === x ? "on" : ""}`} onClick={() => setAb(x)}>{x.toUpperCase()}</button>
+            <button key={x} className={`lvlchip ${ab === x ? "on" : ""}`} onClick={() => { setAb(x); setSkill(null); }}>{x.toUpperCase()}</button>
           ))}
         </div>
         <div style={{ display: noSave ? "none" : "flex", gap: 8, alignItems: "center", margin: "0 0 8px" }}>
-          <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>Save DC</span>
+          <span style={{ fontSize: 13, color: "var(--dim)", fontWeight: 600 }}>{check ? "Target DC" : "Save DC"}</span>
           <input className="sbook-search" style={{ width: 76, margin: 0, fontSize: 16, textAlign: "center", color: "var(--text)", WebkitTextFillColor: "var(--text)", background: "var(--panel)", caretColor: "var(--gold)" }} placeholder="15" inputMode="numeric" value={dc} onChange={(e) => setDc(e.target.value)} />
         </div>
         <div style={{ display: noDmg ? "none" : "flex", gap: 6, flexWrap: "wrap", margin: "0 0 8px" }}>
@@ -3266,10 +3295,15 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
             </label>
           ))}
         </div>
+        {check && (
+          <label className="ad" style={{ display: "block", margin: "2px 0 2px" }}>
+            <input type="checkbox" checked={dmRoll} onChange={(e) => setDmRoll(e.target.checked)} /> I'll roll for the players too (they normally roll their own)
+          </label>
+        )}
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
           <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !noDmg && !dmg.trim())}
-            onClick={() => onResolve({ name: preset?.name || null, ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, cond2: preset?.cond2 || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
-            {noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
+            onClick={() => onResolve({ name: preset?.name || (check && skill ? skill : null), ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: check ? "" : dmg.trim(), dtype: check ? "" : dtype.trim(), halfOn, targets: [...sel], noSave, check, dmRoll, cond: preset?.cond || null, cond2: preset?.cond2 || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
+            {check ? `Call ${sel.size} check${sel.size === 1 ? "" : "s"}` : noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
           </button>
           <span className="spacer" />
           <button className="btn small" onClick={onClose}>Cancel</button>
@@ -3739,10 +3773,31 @@ function PlayerCard({ c, api, results, inCombat }) {
       <div className="statline">
         {c.hp != null && <><b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · </>}
         {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0)} · </>}
-        {c.pp != null && !inCombat && <><b>PP</b> {c.pp} · </>}
         <b>Initiative</b> {c.init ?? "—"}
         {c.concentration && <> · <b>Concentrating:</b> {c.concentration}</>}
       </div>
+      {!inCombat && (
+        <div className="sect">
+          <div className="lbl">Quick reference</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "2px 0 5px" }}>
+            {["str", "dex", "con", "int", "wis", "cha"].map((k) => (
+              <span key={k} title={`${k.toUpperCase()} modifier`} style={{ fontSize: 12, padding: "2px 7px", borderRadius: 7, background: "var(--panel)", border: "1px solid var(--line2)" }}>
+                <b style={{ color: "var(--gold)" }}>{k.toUpperCase()}</b> {c.mods?.[k] != null ? fmtMod(c.mods[k]) : "—"}
+              </span>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: "var(--dim)" }}>
+            {c.pp != null && <span title="Passive Perception">👁 PP {c.pp}</span>}
+            {passiveInsight(c) != null && <span title={`Passive Insight${c.pi == null ? " (10 + WIS)" : ""}`}>🧠 PI {passiveInsight(c)}</span>}
+            {c.spellDC != null && <span title="Spell save DC">✨ Save DC {c.spellDC}</span>}
+          </div>
+          {(c.loot || []).length > 0 && (
+            <div className="trait" style={{ marginTop: 6 }}>🎒 <b>Bag:</b> {c.loot.map(lootName).join(", ")}
+              <button className="btn small" style={{ marginLeft: 8 }} onClick={() => api.openLoot(c.uid)}>Open…</button>
+            </div>
+          )}
+        </div>
+      )}
       {c.unconscious && !c.dead && (
         <div className="reminder" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ flex: 1 }}>💀 {c.stable ? "Unconscious but stable." : `Unconscious — death saves! ${c.ds?.s ?? 0}✓ ${c.ds?.f ?? 0}✗`}</span>
@@ -4790,7 +4845,7 @@ function InitTieModal({ groups, onConfirm }) {
    file backups) so every later session is one tap. Only names are required;
    the optional level prefills the encounter balancer, the optional team name
    labels the card (for DMs juggling multiple tables). */
-const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", spellDC: "", pp: "", str: "", dex: "", con: "", int: "", wis: "", cha: "", here: true };
+const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", spellDC: "", pp: "", pi: "", str: "", dex: "", con: "", int: "", wis: "", cha: "", here: true };
 const PARTY_MODS = ["str", "dex", "con", "int", "wis", "cha"];
 const memberMods = (m) => { const o = {}; for (const k of PARTY_MODS) { const v = m[k]; if (v != null && v !== "" && !isNaN(Number(v))) o[k] = Number(v); } return o; };
 const partyRowsFrom = (saved) =>
@@ -4823,7 +4878,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
       <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setMoreOpen(!moreOpen)}>{moreOpen ? "▾ Hide extra stats" : "▸ Track more stats (optional)"}</button>
       {moreOpen && (
         <div className="morestats">
-          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 6px" }}>Reference only — the app never rolls a player's saves for them. PP shows on the roster outside battle; DEX breaks initiative ties.</div>
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 6px" }}>Reference only — the app never rolls a player's saves for them. PP &amp; PI (passive Perception/Insight) show on the roster outside battle; ability mods drive group checks; DEX breaks initiative ties.</div>
           {named.length === 0
             ? <div className="trait" style={{ fontSize: 12 }}>Name a player above first.</div>
             : named.map(({ r, i }) => (
@@ -4831,6 +4886,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
                   <div className="mstat-name">{r.name.trim()}</div>
                   <div className="mstat-fields">
                     <label>PP<input type="number" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} /></label>
+                    <label title="Passive Insight (defaults to 10 + WIS if left blank)">PI<input type="number" value={r.pi} onChange={(e) => set(i, "pi", e.target.value)} /></label>
                     {PARTY_MODS.map((k) => <label key={k}>{k}<input type="number" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
                   </div>
                 </div>))}
@@ -6056,7 +6112,7 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
 }
 
 function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
-  const [d, setD] = useState(() => ({ spellDC: c.spellDC ?? "", pp: c.pp ?? "", ...Object.fromEntries(PARTY_MODS.map((k) => [k, c.mods?.[k] ?? ""])) }));
+  const [d, setD] = useState(() => ({ spellDC: c.spellDC ?? "", pp: c.pp ?? "", pi: c.pi ?? "", ...Object.fromEntries(PARTY_MODS.map((k) => [k, c.mods?.[k] ?? ""])) }));
   const commit = (key) => api.setCharStat(c.uid, key, d[key]);
   const stat = (label, key) => (
     <label className="chstat">{label}<input type="number" inputMode="numeric" value={d[key]} onChange={(e) => setD({ ...d, [key]: e.target.value })} onBlur={() => commit(key)} /></label>
@@ -6075,11 +6131,13 @@ function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0 2px" }}>Spellcasting</div>
         <div className="chgrid">{stat("Spell DC", "spellDC")}</div>
         <button className="btn small" style={{ marginTop: 6 }} onClick={onSpellbook}>📖 Spellbook ({(c.spells || []).length})</button>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px" }}>Perception & ability mods</div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px" }}>Passives & ability mods</div>
         <div className="chgrid">
           {stat("PP", "pp")}
+          {stat("PI", "pi")}
           {PARTY_MODS.map((k) => stat(k.toUpperCase(), k))}
         </div>
+        <div className="trait" style={{ fontSize: 10, color: "var(--faint)", marginTop: 2 }}>PI = passive Insight (blank ⇒ 10 + WIS).</div>
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 12 }}>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
@@ -6904,6 +6962,7 @@ export default function App() {
     openDamage: (uid) => setModal({ type: "damage", uid }),
     openSaveRoll: (uid) => setModal({ type: "save", uid }),
     openGroupSave: (preset) => setModal({ type: "group-save", preset }),
+    openGroupCheck: () => setModal({ type: "group-save", preset: { check: true } }),
     // ---- player turn helpers (players roll their own dice; the DM records the outcome) ----
     playerAttack: (uid) => setModal({ type: "player-attack", uid }),
     playerHit: (attackerUid, targetUid, amt, dtype, spellAtk) => mutate((d, L, T) => {
@@ -6962,6 +7021,7 @@ export default function App() {
       mutate((d) => {
         const cc = d.combatants.find((x) => x.uid === uid); if (!cc) return;
         if (key === "pp") cc.pp = num;
+        else if (key === "pi") cc.pi = num;
         else if (key === "spellDC") cc.spellDC = num;
         else { cc.mods = { ...(cc.mods || {}) }; if (num == null) delete cc.mods[key]; else cc.mods[key] = num; }
       });
@@ -7156,7 +7216,7 @@ export default function App() {
           c.conditions.push({ name: ctx.cond, rounds: ctx.condR ?? null, src: ctx.concSrc || null, spell: ctx.concCast || null, rpt: ctx.rpt ? { ab: ctx.ability, dc: ctx.dc, note: ctx.rptNote || null } : null });
           note = (note ? note + " " : "") + `+${ctx.cond}`;
         }
-        L.push(`<b>${c.name}</b> reports ${ctx.ability.toUpperCase()} save vs DC ${ctx.dc} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}${note ? ` ${note}` : ""}`);
+        L.push(`<b>${c.name}</b> reports ${ctx.ability.toUpperCase()} ${ctx.check ? "check" : "save"} vs DC ${ctx.dc} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}${note ? ` ${note}` : ""}`);
         rowOut = { uid: c.uid, name: c.name, total: null, ok, dmg: amt, note };
         setTimeout(() => setResults((res) => ({ ...res, [`${uid}:save`]: [{
           id: Math.random(), t: ` ${ctx.ability.toUpperCase()} save vs DC ${ctx.dc} — ${ok ? "SUCCESS" : "FAIL"} (reported)${amt != null ? ` · takes ${amt}` : ""}`,
@@ -7569,7 +7629,7 @@ export default function App() {
     if (!members.length) return;
     mutate((d, L) => {
       members.forEach((m) => {
-        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m) });
+        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, pi: m.pi !== "" && m.pi != null ? m.pi : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m) });
         d.combatants.push(p);
       });
       L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
@@ -7758,9 +7818,9 @@ export default function App() {
     }
   };
 
-  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, cond, cond2, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
-    // beat one: the breath/spell goes off — a whole-screen shape by delivery, colored by type
-    if (targets && targets.length) fireScreenFx(spellShape(name), 0, false, dtypeColor(dtype));
+  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, check, dmRoll, cond, cond2, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
+    // beat one: the breath/spell goes off — a whole-screen shape by delivery, colored by type (not for plain ability checks)
+    if (!check && targets && targets.length) fireScreenFx(spellShape(name), 0, false, dtypeColor(dtype));
     mutate((d, L, T) => {
       if (effectUid) {
         const eff = d.combatants.find((x) => x.uid === effectUid);
@@ -7801,7 +7861,9 @@ export default function App() {
       if (dmg) {
         dmgRoll = rollFormula(dmg) || (parseInt(dmg, 10) ? { total: parseInt(dmg, 10), text: dmg, dice: null, mod: 0 } : null);
       }
-      L.push(noSave
+      L.push(check
+        ? `<b>Group check</b>: DC ${dc} ${name ? `${name} (${ability.toUpperCase()})` : ability.toUpperCase()} — ${targets.length} ${targets.length === 1 ? "creature" : "creatures"}${dmRoll ? " (DM rolling for players)" : ""}.`
+        : noSave
         ? `<b>Area damage</b>: ${dmgRoll ? `${dmgRoll.total} [${dmgRoll.text}]${dtype ? ` ${dtype}` : ""}` : ""} — ${targets.length} target${targets.length === 1 ? "" : "s"}, no save.`
         : `<b>Group save</b>: DC ${dc} ${ability.toUpperCase()}${dmgRoll ? `, damage ${dmgRoll.total} [${dmgRoll.text}]${dtype ? ` ${dtype}` : ""}${halfOn ? ", half on success" : ""}` : ""}${cond ? `, ${cond} on fail` : ""} — ${targets.length} target${targets.length === 1 ? "" : "s"}.`);
       const rows = [];
@@ -7809,7 +7871,7 @@ export default function App() {
       const pending = [];
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c || c.dead) return;
-        if (!noSave && c.type === "player") {
+        if (!noSave && c.type === "player" && !dmRoll) {
           pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null });
           return;
         }
@@ -7830,10 +7892,10 @@ export default function App() {
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: dmgRoll ? amt : null, note });
           return;
         }
-        const cov = ability === "dex" ? coverBonus(c) : 0;
-        const mod = saveMod(c, ability) + cov - exhaustPen(c); // Exhaustion −2/level
-        const forced = saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves
-        const r = d20(mod, saveAdv(c, ability)); // Restrained → DIS on DEX saves
+        const cov = !check && ability === "dex" ? coverBonus(c) : 0;
+        const mod = (check ? checkMod(c, ability) : saveMod(c, ability)) + cov - exhaustPen(c); // Exhaustion −2/level
+        const forced = !check && saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves (saves only)
+        const r = d20(mod, check ? "none" : saveAdv(c, ability)); // Restrained → DIS on DEX saves
         const ok = forced ? false : r.total >= dc;
         let amt = null, note = "";
         if (dmgRoll) {
@@ -7846,7 +7908,7 @@ export default function App() {
           note = (note ? note + " " : "") + `+${cond}`;
           L.push(`<b>${c.name}</b> gains <b>${cond}</b>${condR ? ` (${condR} rd)` : ""} from the failed save.`);
         }
-        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} save ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
+        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} ${check ? "check" : "save"} ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
         const both = r.adv !== "none";
         const dice = both
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
@@ -7854,7 +7916,7 @@ export default function App() {
           : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
         chipUpdates[`${uid}:save`] = [{
           id: Math.random(), dice, dieSize: 30,
-          t: ` ${ability.toUpperCase()} save ${fmtMod(mod)} = ${r.total} vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}${amt != null ? ` · takes ${amt}` : ""}`,
+          t: ` ${ability.toUpperCase()} ${check ? "check" : "save"} ${fmtMod(mod)} = ${r.total} vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}${amt != null ? ` · takes ${amt}` : ""}`,
           k: ok ? "sgood" : "sbad", mod, dc,
         }];
         const rowDice = (r.adv !== "none")
@@ -7865,8 +7927,10 @@ export default function App() {
       });
       const resolved = {
         pending,
-        ctx: { ability, dc, dtype, halfOn, cond, condR, dmgTotal: dmgRoll ? dmgRoll.total : null, cmdPick, concSrc, concCast, rpt, rptNote },
-        title: noSave ? (dmgRoll ? `Area damage — ${rows.length} hit` : `${[cond, cond2].filter(Boolean).join(" & ") || "Effect"} — ${rows.length} affected`) : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
+        ctx: { ability, dc, dtype, halfOn, cond, condR, check, dmgTotal: dmgRoll ? dmgRoll.total : null, cmdPick, concSrc, concCast, rpt, rptNote },
+        title: check
+          ? `DC ${dc} ${name ? `${name} ` : ""}${ability.toUpperCase()} check${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} passed`}`
+          : noSave ? (dmgRoll ? `Area damage — ${rows.length} hit` : `${[cond, cond2].filter(Boolean).join(" & ") || "Effect"} — ${rows.length} affected`) : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
         dmgChip: dmgRoll ? { dice: dmgRoll.dice && dmgRoll.dice.length <= 8 ? dmgRoll.dice.map((x) => ({ ...x, cls: "dmgd" })) : null, t: `${dmgRoll.total}${dtype ? ` ${dtype}` : ""} damage [${dmgRoll.text}]${halfOn ? ` · half ${Math.floor(dmgRoll.total / 2)}` : ""}` } : null,
         rows,
       };
@@ -8083,6 +8147,9 @@ export default function App() {
               <button onClick={() => setSpellBook(true)}>📖 Spell compendium…</button>
               <button onClick={() => setModal({ type: "item-compendium" })}>📦 Item compendium…</button>
               <button onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>
+              {state.combatants.some((c) => c.side === "ally" && !c.dead) && (
+                <button onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
+              )}
               <button onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>
               {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
