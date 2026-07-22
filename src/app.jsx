@@ -1707,6 +1707,10 @@ function suggestEncounter({ biome, level, size, difficulty, template, balanced, 
 // which already encodes "V, S, M …" for every spell. Used to snap a hidden caster
 // out of Hiding (a verbal spell gives you away), and available for Silence later.
 const spellHasVerbal = (s) => /\bV\b/.test(s?.cp || "");
+// Spells that blanket an area with a condition and no saving throw — cast them by marking
+// who's inside (keyed by SPELL_REF key → condition name). Concentration-linked, so the
+// condition clears when the caster drops concentration.
+const ZONE_COND_SPELLS = { silence: "Silenced" };
 function spellSaveDmg(text, ratio) {
   const TYPES = ["acid","bludgeoning","cold","fire","force","lightning","necrotic","piercing","poison","psychic","radiant","slashing","thunder"];
   let dice = null, dtype = "";
@@ -3174,8 +3178,8 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{single ? "Saving throw" : noSave ? "Apply damage" : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
-        {preset?.cond && !noSave && <div className="ad" style={{ marginBottom: 4 }}>On a failed save: <b>{preset.cond}</b>{preset.condR ? ` (${preset.condR} rd)` : ""}</div>}
+        <h3>{single ? "Saving throw" : noSave ? (noDmg ? "Apply effect" : "Apply damage") : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
+        {preset?.cond && <div className="ad" style={{ marginBottom: 4 }}>{noSave ? "Applies" : "On a failed save:"} <b>{preset.cond}</b>{preset.condR ? ` (${preset.condR} rd)` : preset.concCast ? " (until concentration ends)" : ""}</div>}
         <div style={{ display: noSave ? "none" : "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 6px" }}>
           {["str","dex","con","int","wis","cha"].map((x) => (
             <button key={x} className={`lvlchip ${ab === x ? "on" : ""}`} onClick={() => setAb(x)}>{x.toUpperCase()}</button>
@@ -3228,7 +3232,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
           ))}
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
-          <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !dmg.trim())}
+          <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !noDmg && !dmg.trim())}
             onClick={() => onResolve({ name: preset?.name || null, ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
             {noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
           </button>
@@ -5671,6 +5675,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const sd = s ? spellSaveDmg(s.d, 1) : null;
   const verbal = s ? spellHasVerbal(s) : false; // a verbal spell reveals a hidden caster
   const blocked = silenced && verbal && !castAnyway; // Silenced casters can't use spells with a Verbal component
+  const zoneCond = pick ? ZONE_COND_SPELLS[pick] : null; // e.g. Silence → mark who's inside
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn(); consumeScroll();
@@ -5739,7 +5744,9 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
               </div>
             ) : (
               <div className="pcactions" style={{ marginTop: 10 }}>
-                {saveAb
+                {zoneCond
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
+                  : saveAb
                   ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                   : isAttack
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : "", verbal); }}>⚔ Spell attack — you roll to hit</button>
@@ -7608,8 +7615,14 @@ export default function App() {
         if (noSave) {
           let amt = dmgRoll ? dmgRoll.total : 0;
           if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600, dtype || null); }
-          L.push(`<b>${c.name}</b> takes ${amt}${dtype ? ` ${dtype}` : ""} (no save)${c.dead ? " ☠" : c.unconscious ? " (down)" : ""}`);
-          rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: amt, note: c.dead ? "☠" : c.unconscious ? "(down)" : "" });
+          let note = c.dead ? "☠" : c.unconscious ? "(down)" : "";
+          // no-save area effects (e.g. Silence) can also impose a condition on everyone caught
+          if (cond && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
+            c.conditions.push({ name: cond, rounds: condR ?? null, src: concSrc || null, spell: concCast || null, rpt: rpt ? { ab: ability, dc, note: rptNote || null } : null });
+            note = (note ? note + " " : "") + `+${cond}`;
+          }
+          if (amt > 0 || cond) L.push(`<b>${c.name}</b>${amt > 0 ? ` takes ${amt}${dtype ? ` ${dtype}` : ""}` : ""}${cond ? `${amt > 0 ? " and is" : " is"} <b>${cond}</b>` : ""} (no save)${c.dead ? " ☠" : ""}`);
+          rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: dmgRoll ? amt : null, note });
           return;
         }
         const cov = ability === "dex" ? coverBonus(c) : 0;
@@ -7647,7 +7660,7 @@ export default function App() {
       const resolved = {
         pending,
         ctx: { ability, dc, dtype, halfOn, cond, condR, dmgTotal: dmgRoll ? dmgRoll.total : null, cmdPick, concSrc, concCast, rpt, rptNote },
-        title: noSave ? `Area damage — ${rows.length} hit` : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
+        title: noSave ? (dmgRoll ? `Area damage — ${rows.length} hit` : `${cond || "Effect"} — ${rows.length} affected`) : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
         dmgChip: dmgRoll ? { dice: dmgRoll.dice && dmgRoll.dice.length <= 8 ? dmgRoll.dice.map((x) => ({ ...x, cls: "dmgd" })) : null, t: `${dmgRoll.total}${dtype ? ` ${dtype}` : ""} damage [${dmgRoll.text}]${halfOn ? ` · half ${Math.floor(dmgRoll.total / 2)}` : ""}` } : null,
         rows,
       };
