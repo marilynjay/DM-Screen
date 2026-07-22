@@ -1795,7 +1795,7 @@ function suggestEncounter({ biome, level, size, difficulty, template, balanced, 
     ? { weak: (c) => c.cr <= Math.max(0.5, L / 3), mid: (c) => c.cr > L / 4 && c.cr <= L, strong: (c) => c.cr > L / 3 && c.cr <= L * 1.6 + 2, solo: (c) => c.cr >= L * 0.8 && c.cr <= L * 2 + 4 }
     : null;
   const budget = (XP_BUDGET_PER_CHAR[L] || 225) * size * ({ low: 0.5, moderate: 1, high: 1.5 }[difficulty] || 1);
-  const strict = { weak: [0.02, 0.16], mid: [0.14, 0.4], strong: [0.3, 0.75], solo: [0.6, 1.15] };
+  const strict = { weak: [0.02, 0.20], mid: [0.14, 0.4], strong: [0.3, 0.75], solo: [0.6, 1.15] };
   const picks = []; let spent = 0; let note = "";
   const slots = ENC_TEMPLATES[template] || ENC_TEMPLATES["Skirmish"];
   for (const [band, count] of slots) {
@@ -1814,10 +1814,39 @@ function suggestEncounter({ biome, level, size, difficulty, template, balanced, 
       }
       if (!cands.length) continue;
       const prev = picks.length && band === "weak" ? picks.find((p) => p.band === "weak") : null;
-      const c = prev && cands.some((x) => x.name === prev.name) && R() < 0.7
-        ? cands.find((x) => x.name === prev.name)
-        : cands[Math.floor(R() * cands.length)];
+      let c;
+      if (prev && cands.some((x) => x.name === prev.name) && R() < 0.7) {
+        c = cands.find((x) => x.name === prev.name); // repeat the same grunt for a cohesive group
+      } else if (!balanced) {
+        // Strict-XP mode: bias toward the high-XP end of the slot's window. Uniform-random landed
+        // mid-window, which left weak-heavy templates spending ~44% of budget → fights felt too soft.
+        // A solo boss is a single creature that under-threatens on paper, so seat it at the very top.
+        const sorted = [...cands].sort((a, b) => b.xp - a.xp);
+        c = band === "solo" ? sorted[Math.floor(R() * Math.min(2, sorted.length))]
+                            : sorted[Math.floor(R() * R() * sorted.length)];
+      } else {
+        c = cands[Math.floor(R() * cands.length)]; // balanced mode keeps its CR-band uniform pick
+      }
       picks.push({ name: c.name, cr: c.cr, xp: c.xp, band });
+      spent += c.xp;
+    }
+  }
+  // Fill pass: fixed slot counts alone leave weak-heavy templates half-funded (a Skirmish of three
+  // weak + one mid averaged ~44% of budget). Top up with extra grunt-tier bodies until we're near
+  // budget — a bigger horde, not stronger monsters. Solo bosses are meant to be a single creature.
+  const grunt = slots.map(([b]) => b).pop(); // last band listed = the most numerous / cheapest tier
+  if (grunt && grunt !== "solo" && picks.length) {
+    const ghi = (strict[grunt] || [0.02, 0.2])[1];
+    let guard = 0;
+    while (spent < budget * 0.85 && picks.length < 10 && guard++ < 24) {
+      const remaining = budget - spent;
+      const cands = pool.filter((c) => spent + c.xp <= budget * 1.15 &&
+        (balanced ? bands[grunt](c) : (c.xp >= budget * 0.02 && c.xp <= budget * ghi)));
+      if (!cands.length) break;
+      // prefer bodies that close the remaining gap; keep some variety among the closest few
+      cands.sort((a, b) => Math.abs(a.xp - remaining) - Math.abs(b.xp - remaining));
+      const c = cands[Math.floor(R() * Math.min(3, cands.length))];
+      picks.push({ name: c.name, cr: c.cr, xp: c.xp, band: grunt });
       spent += c.xp;
     }
   }
