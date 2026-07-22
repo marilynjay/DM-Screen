@@ -658,7 +658,7 @@ const CONDITIONS = {
   Incapacitated: "No actions, bonus actions, or reactions.",
   Invisible: "Its attacks: ADV. Attacks vs it: DIS.",
   Paralyzed: "Incapacitated; auto-fail STR/DEX saves. Attacks vs it: ADV; hits within 5 ft crit.",
-  Petrified: "Incapacitated; resist all damage; auto-fail STR/DEX saves.",
+  Petrified: "Incapacitated; immune to all damage; auto-fail STR/DEX saves.",
   Poisoned: "DIS on attack rolls and ability checks.",
   Prone: "Its attacks: DIS. Melee attacks vs it (5 ft): ADV; ranged vs it: DIS.",
   Restrained: "Speed 0. Its attacks: DIS; DEX saves: DIS. Attacks vs it: ADV.",
@@ -1468,14 +1468,14 @@ function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.m
 
 // returns {finalDmg, tag} applying resist/immune/vuln; tag describes the adjustment
 function adjustDamage(c, amt, dtype) {
+  // Petrified — immune to all damage (house rule; RAW is Resistance)
+  if ((c.conditions || []).some((cd) => cd.name === "Petrified")) return { finalDmg: 0, tag: "petrified — immune" };
   const t = dtype ? dtype.toLowerCase() : null;
   if (t && (c.immune || []).some((x) => x.toLowerCase() === t)) return { finalDmg: 0, tag: "immune" };
-  // Petrified grants Resistance to ALL damage (typed or not)
-  const petrified = (c.conditions || []).some((cd) => cd.name === "Petrified");
-  const resisted = petrified || (t && (c.resist || []).some((x) => x.toLowerCase() === t));
+  const resisted = t && (c.resist || []).some((x) => x.toLowerCase() === t);
   const vulnerable = t && (c.vuln || []).some((x) => x.toLowerCase() === t);
   if (resisted && vulnerable) return { finalDmg: amt, tag: null }; // resistance & vulnerability cancel → normal
-  if (resisted) return { finalDmg: Math.floor(amt / 2), tag: petrified ? "petrified, ½" : "resist, ½" };
+  if (resisted) return { finalDmg: Math.floor(amt / 2), tag: "resist, ½" };
   if (vulnerable) return { finalDmg: amt * 2, tag: "vulnerable, ×2" };
   return { finalDmg: amt, tag: null };
 }
