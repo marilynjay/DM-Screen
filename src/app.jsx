@@ -5083,7 +5083,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
                   <div className="mstat-fields">
                     <label>PP<input type="number" placeholder="13" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} /></label>
                     <label title="Passive Insight (defaults to 10 + WIS if left blank)">PI<input type="number" placeholder="11" value={r.pi} onChange={(e) => set(i, "pi", e.target.value)} /></label>
-                    {PARTY_MODS.map((k) => <label key={k} title={`${k.toUpperCase()} modifier (e.g. +2), not the score`}>{k}<input type="number" placeholder="+2" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
+                    {PARTY_MODS.map((k) => <label key={k} title={`${k.toUpperCase()} modifier (e.g. +2), not the score`}>{k}<input type="number" placeholder="–" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
                   </div>
                   {PARTY_MODS.some((k) => r[k] !== "" && r[k] != null && Math.abs(Number(r[k])) >= 8) && (
                     <div className="trait" style={{ color: "var(--danger)", fontSize: 10, marginTop: 2 }}>⚠ A value ≥ 8 looks like an ability score — enter the modifier instead (e.g. +1 for a 13).</div>
@@ -6424,7 +6424,7 @@ function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
         <div className="chgrid">
           {stat("PP", "pp", "13")}
           {stat("PI", "pi", "11")}
-          {PARTY_MODS.map((k) => stat(k.toUpperCase(), k, "+2", `${k.toUpperCase()} modifier (e.g. +2), not the score`))}
+          {PARTY_MODS.map((k) => stat(k.toUpperCase(), k, "–", `${k.toUpperCase()} modifier (e.g. +2), not the score`))}
         </div>
         <div className="trait" style={{ fontSize: 10, color: scoreLike ? "var(--danger)" : "var(--faint)", marginTop: 2 }}>
           {scoreLike ? "⚠ A value ≥ 8 looks like an ability score — enter the modifier (e.g. +1 for a 13)." : "STR–CHA are modifiers (e.g. +2 for a 14), not scores. PI = passive Insight (blank ⇒ 10 + WIS)."}
