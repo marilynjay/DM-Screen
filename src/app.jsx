@@ -5022,17 +5022,20 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
       <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setMoreOpen(!moreOpen)}>{moreOpen ? "▾ Hide extra stats" : "▸ Track more stats (optional)"}</button>
       {moreOpen && (
         <div className="morestats">
-          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 6px" }}>Reference only — the app never rolls a player's saves for them. PP &amp; PI (passive Perception/Insight) show on the roster outside battle; ability mods drive group checks; DEX breaks initiative ties.</div>
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 6px" }}>Reference only — the app never rolls a player's saves for them. <b>STR–CHA are ability modifiers</b> (e.g. <b>+1</b> for a 13, <b>+3</b> for a 16), not the scores. PP &amp; PI are the passive Perception/Insight numbers off the sheet. Mods drive group checks; DEX breaks initiative ties.</div>
           {named.length === 0
             ? <div className="trait" style={{ fontSize: 12 }}>Name a player above first.</div>
             : named.map(({ r, i }) => (
                 <div className="mstat-row" key={i}>
                   <div className="mstat-name">{r.name.trim()}</div>
                   <div className="mstat-fields">
-                    <label>PP<input type="number" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} /></label>
-                    <label title="Passive Insight (defaults to 10 + WIS if left blank)">PI<input type="number" value={r.pi} onChange={(e) => set(i, "pi", e.target.value)} /></label>
-                    {PARTY_MODS.map((k) => <label key={k}>{k}<input type="number" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
+                    <label>PP<input type="number" placeholder="13" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} /></label>
+                    <label title="Passive Insight (defaults to 10 + WIS if left blank)">PI<input type="number" placeholder="11" value={r.pi} onChange={(e) => set(i, "pi", e.target.value)} /></label>
+                    {PARTY_MODS.map((k) => <label key={k} title={`${k.toUpperCase()} modifier (e.g. +2), not the score`}>{k}<input type="number" placeholder="+2" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
                   </div>
+                  {PARTY_MODS.some((k) => r[k] !== "" && r[k] != null && Math.abs(Number(r[k])) >= 8) && (
+                    <div className="trait" style={{ color: "var(--danger)", fontSize: 10, marginTop: 2 }}>⚠ A value ≥ 8 looks like an ability score — enter the modifier instead (e.g. +1 for a 13).</div>
+                  )}
                 </div>))}
         </div>
       )}
@@ -6265,9 +6268,10 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
 function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
   const [d, setD] = useState(() => ({ spellDC: c.spellDC ?? "", pp: c.pp ?? "", pi: c.pi ?? "", ...Object.fromEntries(PARTY_MODS.map((k) => [k, c.mods?.[k] ?? ""])) }));
   const commit = (key) => api.setCharStat(c.uid, key, d[key]);
-  const stat = (label, key) => (
-    <label className="chstat">{label}<input type="number" inputMode="numeric" value={d[key]} onChange={(e) => setD({ ...d, [key]: e.target.value })} onBlur={() => commit(key)} /></label>
+  const stat = (label, key, ph, title) => (
+    <label className="chstat" title={title}>{label}<input type="number" inputMode="numeric" placeholder={ph} value={d[key]} onChange={(e) => setD({ ...d, [key]: e.target.value })} onBlur={() => commit(key)} /></label>
   );
+  const scoreLike = PARTY_MODS.some((k) => d[k] !== "" && d[k] != null && Math.abs(Number(d[k])) >= 8);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -6282,13 +6286,15 @@ function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0 2px" }}>Spellcasting</div>
         <div className="chgrid">{stat("Spell DC", "spellDC")}</div>
         <button className="btn small" style={{ marginTop: 6 }} onClick={onSpellbook}>📖 Spellbook ({(c.spells || []).length})</button>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px" }}>Passives & ability mods</div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px" }}>Passives & ability modifiers</div>
         <div className="chgrid">
-          {stat("PP", "pp")}
-          {stat("PI", "pi")}
-          {PARTY_MODS.map((k) => stat(k.toUpperCase(), k))}
+          {stat("PP", "pp", "13")}
+          {stat("PI", "pi", "11")}
+          {PARTY_MODS.map((k) => stat(k.toUpperCase(), k, "+2", `${k.toUpperCase()} modifier (e.g. +2), not the score`))}
         </div>
-        <div className="trait" style={{ fontSize: 10, color: "var(--faint)", marginTop: 2 }}>PI = passive Insight (blank ⇒ 10 + WIS).</div>
+        <div className="trait" style={{ fontSize: 10, color: scoreLike ? "var(--danger)" : "var(--faint)", marginTop: 2 }}>
+          {scoreLike ? "⚠ A value ≥ 8 looks like an ability score — enter the modifier (e.g. +1 for a 13)." : "STR–CHA are modifiers (e.g. +2 for a 14), not scores. PI = passive Insight (blank ⇒ 10 + WIS)."}
+        </div>
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 12 }}>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
