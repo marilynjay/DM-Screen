@@ -1710,7 +1710,7 @@ const spellHasVerbal = (s) => /\bV\b/.test(s?.cp || "");
 // Spells that blanket an area with a condition and no saving throw — cast them by marking
 // who's inside (keyed by SPELL_REF key → condition name). Concentration-linked, so the
 // condition clears when the caster drops concentration.
-const ZONE_COND_SPELLS = { silence: "Silenced" };
+const ZONE_COND_SPELLS = { silence: { cond: "Silenced", also: "Deafened" } };
 // No-save spells that grant a condition to a chosen creature (or self) — cast them via the
 // buff target picker so the condition is actually applied (and linked to concentration).
 const BUFF_COND_SPELLS = { invisibility: "Invisible", "greater invisibility": "Invisible", mislead: "Invisible", sequester: "Invisible" };
@@ -3182,7 +3182,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{single ? "Saving throw" : noSave ? (noDmg ? "Apply effect" : "Apply damage") : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
-        {preset?.cond && <div className="ad" style={{ marginBottom: 4 }}>{noSave ? "Applies" : "On a failed save:"} <b>{preset.cond}</b>{preset.condR ? ` (${preset.condR} rd)` : preset.concCast ? " (until concentration ends)" : ""}</div>}
+        {preset?.cond && <div className="ad" style={{ marginBottom: 4 }}>{noSave ? "Applies" : "On a failed save:"} <b>{[preset.cond, preset.cond2].filter(Boolean).join(" & ")}</b>{preset.condR ? ` (${preset.condR} rd)` : preset.concCast ? " (until concentration ends)" : ""}</div>}
         <div style={{ display: noSave ? "none" : "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 6px" }}>
           {["str","dex","con","int","wis","cha"].map((x) => (
             <button key={x} className={`lvlchip ${ab === x ? "on" : ""}`} onClick={() => setAb(x)}>{x.toUpperCase()}</button>
@@ -3236,7 +3236,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
           <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !noDmg && !dmg.trim())}
-            onClick={() => onResolve({ name: preset?.name || null, ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
+            onClick={() => onResolve({ name: preset?.name || null, ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: dmg.trim(), dtype: dtype.trim(), halfOn, targets: [...sel], noSave, cond: preset?.cond || null, cond2: preset?.cond2 || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
             {noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
           </button>
           <span className="spacer" />
@@ -5749,7 +5749,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
             ) : (
               <div className="pcactions" style={{ marginTop: 10 }}>
                 {zoneCond
-                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond.cond, cond2: zoneCond.also || null, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
                   : buffCond
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openBuffCast({ k: pick, casterUid: c.uid, cond: buffCond, condR: conc && /hour/i.test(s.du) ? null : (spellCondFrom(s.d, s.du)?.condR ?? null), conc: conc ? s.n : null }); }}>✨ Cast — apply {buffCond} to a creature →</button>
                   : saveAb
@@ -7562,7 +7562,7 @@ export default function App() {
     }
   };
 
-  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, cond, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
+  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, cond, cond2, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
     // beat one: the breath/spell goes off — a whole-screen shape by delivery, colored by type
     if (targets && targets.length) fireScreenFx(spellShape(name), 0, false, dtypeColor(dtype));
     mutate((d, L, T) => {
@@ -7622,12 +7622,15 @@ export default function App() {
           let amt = dmgRoll ? dmgRoll.total : 0;
           if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600, dtype || null); }
           let note = c.dead ? "☠" : c.unconscious ? "(down)" : "";
-          // no-save area effects (e.g. Silence) can also impose a condition on everyone caught
-          if (cond && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
-            c.conditions.push({ name: cond, rounds: condR ?? null, src: concSrc || null, spell: concCast || null, rpt: rpt ? { ab: ability, dc, note: rptNote || null } : null });
-            note = (note ? note + " " : "") + `+${cond}`;
-          }
-          if (amt > 0 || cond) L.push(`<b>${c.name}</b>${amt > 0 ? ` takes ${amt}${dtype ? ` ${dtype}` : ""}` : ""}${cond ? `${amt > 0 ? " and is" : " is"} <b>${cond}</b>` : ""} (no save)${c.dead ? " ☠" : ""}`);
+          // no-save area effects (e.g. Silence) can also impose one or two conditions on everyone caught
+          [cond, cond2].forEach((cn) => {
+            if (cn && !c.dead && !c.conditions.some((cd) => cd.name === cn)) {
+              c.conditions.push({ name: cn, rounds: condR ?? null, src: concSrc || null, spell: concCast || null, rpt: rpt ? { ab: ability, dc, note: rptNote || null } : null });
+              note = (note ? note + " " : "") + `+${cn}`;
+            }
+          });
+          const condLbl = [cond, cond2].filter(Boolean).join(" & ");
+          if (amt > 0 || condLbl) L.push(`<b>${c.name}</b>${amt > 0 ? ` takes ${amt}${dtype ? ` ${dtype}` : ""}` : ""}${condLbl ? `${amt > 0 ? " and is" : " is"} <b>${condLbl}</b>` : ""} (no save)${c.dead ? " ☠" : ""}`);
           rows.push({ uid: c.uid, name: c.name, total: null, ok: null, dmg: dmgRoll ? amt : null, note });
           return;
         }
@@ -7666,7 +7669,7 @@ export default function App() {
       const resolved = {
         pending,
         ctx: { ability, dc, dtype, halfOn, cond, condR, dmgTotal: dmgRoll ? dmgRoll.total : null, cmdPick, concSrc, concCast, rpt, rptNote },
-        title: noSave ? (dmgRoll ? `Area damage — ${rows.length} hit` : `${cond || "Effect"} — ${rows.length} affected`) : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
+        title: noSave ? (dmgRoll ? `Area damage — ${rows.length} hit` : `${[cond, cond2].filter(Boolean).join(" & ") || "Effect"} — ${rows.length} affected`) : `DC ${dc} ${ability.toUpperCase()}${pending.length ? ` — players roll now!` : ` — ${rows.filter((x) => x.ok).length}/${rows.length} saved`}`,
         dmgChip: dmgRoll ? { dice: dmgRoll.dice && dmgRoll.dice.length <= 8 ? dmgRoll.dice.map((x) => ({ ...x, cls: "dmgd" })) : null, t: `${dmgRoll.total}${dtype ? ` ${dtype}` : ""} damage [${dmgRoll.text}]${halfOn ? ` · half ${Math.floor(dmgRoll.total / 2)}` : ""}` } : null,
         rows,
       };
