@@ -3928,7 +3928,10 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
                     {it.eq ? "Unequip" : "Equip"}
                   </button>
                 )}
-                {usable && (
+                {it.scroll && SPELL_REF[it.scroll] ? (
+                  <button className="btn small primary" title={`Cast ${SPELL_REF[it.scroll].n} from this scroll (consumes it)`}
+                    onClick={() => api.openScrollCast(c.uid, it.scroll)}>📜 Cast</button>
+                ) : usable && (
                   <button className="btn small" disabled={it.ch === 0}
                     onClick={() => api.useItem(c.uid, i)}>
                     {it.heal ? "Drink" : it.ch != null ? "Use charge" : it.c ? "Consume" : "Use"}
@@ -5560,6 +5563,10 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
   const [browse, setBrowse] = useState(!!compendium); // the compendium is a browse-first view
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
+  const [scrollQ, setScrollQ] = useState(null); // non-null = spell-scroll builder open; holds the search text
+  const scrollMatches = scrollQ && scrollQ.trim().length >= 2
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(scrollQ.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 30) : [];
+  const addScroll = (k) => { const s = SPELL_REF[k]; setItems([...items, { n: `Scroll of ${s.n}`, scroll: k, c: 1, rarity: "U", d: `Cast ${s.n} (${s.m}) — one use.` }]); setScrollQ(null); };
   const [form, setForm] = useState(null); // null = builder closed
   const filtered = ITEMS.filter((i) =>
     (tab === "all" || (tab === "W" ? i.rarity === "G" && i.wpn : tab === "A" ? i.rarity === "G" && !i.wpn : i.rarity === tab))
@@ -5611,7 +5618,24 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
           <button className="btn small ghost" onClick={() => setForm(form ? null : { ...BLANK_ITEM_FORM })}>
             {form && !form.origN ? "Close builder ▲" : "＋ New custom item…"}
           </button>
+          {!compendium && (
+            <button className="btn small ghost" onClick={() => setScrollQ(scrollQ == null ? "" : null)}>
+              {scrollQ != null ? "Close scroll ▲" : "📜 Spell scroll…"}
+            </button>
+          )}
         </div>
+        {scrollQ != null && (
+          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>Spell scroll — pick a spell; it becomes a one-use item {c?.name ? `for ${c.name}` : ""} that casts it.</div>
+            <input className="sbook-search" placeholder="Search spells…" autoFocus value={scrollQ} onChange={(e) => setScrollQ(e.target.value)} />
+            {scrollQ.trim().length < 2 ? <div className="trait" style={{ fontSize: 12 }}>Type at least 2 letters…</div>
+              : scrollMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{scrollQ.trim()}”.</div>
+              : <div className="mlist" style={{ marginTop: 4 }}>{scrollMatches.map((k) => (
+                  <button key={k} className="btn" style={{ width: "100%" }} onClick={() => addScroll(k)}>
+                    Scroll of {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
+                  </button>))}</div>}
+          </div>
+        )}
         {form && (
           <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>
@@ -6137,12 +6161,12 @@ function ReadiedOverlay({ c, api, results, onClose }) {
   );
 }
 
-function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
+function PlayerCastModal({ c, api, fromItem, initialPick, lockPick, onBack, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const [q, setQ] = useState("");
   const [letter, setLetter] = useState(null); // A–Z browse (keyboard-free)
-  const [pick, setPick] = useState(null);
+  const [pick, setPick] = useState(initialPick && SPELL_REF[initialPick] ? initialPick : null); // scroll casts open pre-loaded with their spell
   const [dc, setDc] = useState(c.spellDC ?? "");
   const [noLearn, setNoLearn] = useState(!!fromItem); // scroll/wand casts never join the spellbook
   const [castAnyway, setCastAnyway] = useState(false); // Subtle Spell / DM override for a Silenced caster
@@ -6264,9 +6288,11 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
                   <input type="checkbox" checked={noLearn} onChange={(e) => setNoLearn(e.target.checked)} style={{ width: 15, height: 15 }} />
                   Don't save to spellbook (scroll / one-off)
                 </label>}
-            <div className="frow" style={{ justifyContent: "flex-start", marginTop: 8 }}>
-              <button className="btn small ghost" onClick={() => setPick(null)}>← back to search</button>
-            </div>
+            {!lockPick && (
+              <div className="frow" style={{ justifyContent: "flex-start", marginTop: 8 }}>
+                <button className="btn small ghost" onClick={() => setPick(null)}>← back to search</button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -7428,6 +7454,7 @@ export default function App() {
     resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
     openHeal: (uid) => setModal({ type: "damage", uid, mode: "heal" }),
     openCast: (uid) => setModal({ type: "player-cast", uid }),
+    openScrollCast: (uid, spellKey) => setModal({ type: "player-cast", uid, fromItem: "scroll", pick: spellKey, lock: true }),
     setSpellDC: (uid, dc) => {
       const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
       const val = dc === "" || dc == null ? null : Number(dc);
@@ -9504,8 +9531,8 @@ export default function App() {
         <MagicMissileModal c={modalC} state={state} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player-cast" && modalC && (
-        <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem}
-          onBack={modal.fromItem ? () => setModal({ type: "use-item", uid: modal.uid }) : null}
+        <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem} initialPick={modal.pick} lockPick={modal.lock}
+          onBack={modal.fromItem && !modal.lock ? () => setModal({ type: "use-item", uid: modal.uid }) : null}
           onClose={() => setModal(null)} />
       )}
       {modal?.type === "spellbook" && modalC && (
