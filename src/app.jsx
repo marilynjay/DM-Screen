@@ -5307,21 +5307,23 @@ function BalanceModal({ state, party, onSaveParty, onApply, onClose }) {
 
 function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
   const [amt, setAmt] = useState("");
+  const [fireDone, setFireDone] = useState(false); // once applied this turn, hide the Burning block so it can't be re-applied
+  const applyFire = (n) => { onApplyFire(n); setFireDone(true); };
   const burning = c.conditions.some((cd) => cd.name === "Burning");
   const suff = c.conditions.some((cd) => cd.name === "Suffocating");
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Start of {c.name}'s turn</h3>
-        {burning && (<>
+        {burning && !fireDone && (<>
           <div className="reminder" style={{ marginBottom: 8 }}>🔥 <b>{c.name} is Burning</b> — apply <b>1d4 fire damage</b> now (their roll, or tap 🎲 to roll it). Dousing takes an action.</div>
           {c.hp != null && (
             <div className="frow" style={{ gap: 6 }}>
               <label style={{ minWidth: 0 }}>Damage rolled</label>
               <input type="number" style={{ width: 60 }} value={amt} onChange={(e) => setAmt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && amt) onApplyFire(parseInt(amt, 10)); }} />
+                onKeyDown={(e) => { if (e.key === "Enter" && amt) applyFire(parseInt(amt, 10)); }} />
               <button className="btn small ghost" onClick={() => setAmt(String(ri(4)))}>🎲 roll</button>
-              <button className="btn small primary" disabled={!amt} onClick={() => onApplyFire(parseInt(amt, 10))}>Apply as fire</button>
+              <button className="btn small primary" disabled={!amt} onClick={() => applyFire(parseInt(amt, 10))}>Apply as fire</button>
             </div>
           )}
           <div className="frow">
