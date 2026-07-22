@@ -6753,7 +6753,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["curve", "◠ Curved"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
@@ -6776,6 +6776,21 @@ function RoomShape({ room, cx, cy }) {
     const MAP = { h: { len: L, rot: 0 }, d1: { len: L, rot: 135 }, d2: { len: L, rot: 45 } };
     const conf = MAP[room.orient] || MAP.h;
     return <rect x={cx - conf.len / 2} y={cy - th / 2} width={conf.len} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${conf.rot} ${cx} ${cy})`} />;
+  }
+  if (shape === "curve") { // a curved corridor: a wide arc between two edges 2 apart, bulging through the hex
+    const th = s * 0.42;
+    // endpoints: upper-right edge midpoint (300°) and lower-right edge midpoint (60°)
+    const Pa = { x: cx + s * 0.433, y: cy - s * 0.75 };
+    const Pb = { x: cx + s * 0.433, y: cy + s * 0.75 };
+    const C = { x: cx + s * 0.60, y: cy }; // arc centre to the right → the corridor bulges left, into the hex
+    const r = Math.hypot(Pa.x - C.x, Pa.y - C.y);
+    const ro = r + th / 2, ri = r - th / 2;
+    const ang = (p) => Math.atan2(p.y - C.y, p.x - C.x);
+    const aA = ang(Pa), aB = ang(Pb);
+    const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
+    const d = `M ${pt(ro, aA)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${pt(ro, aB)} L ${pt(ri, aB)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${pt(ri, aA)} Z`;
+    const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per edge pair
+    return <path d={d} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${rot} ${cx} ${cy})`} />;
   }
   // hex (default) — the whole cell, filled
   return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
@@ -6853,6 +6868,12 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         {room.shape === "hall" && (
           <div className="pickgrid" style={{ marginTop: 4 }}>
             {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
+          </div>
+        )}
+        {room.shape === "curve" && (
+          <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
+            <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
+            <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
           </div>
         )}
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Background colour</div>
