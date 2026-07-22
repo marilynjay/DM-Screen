@@ -1802,6 +1802,17 @@ function spellCondFrom(text, du) {
 
 const singleTargetText = (t) => /\b(?:one|a|an) (?:willing )?(?:creature|target|humanoid|beast|person|giant)\b|creature (?:that )?(?:you|it) (?:can see|touch)/i.test(t || "") && !/each creature/i.test(t || "");
 
+// Distinct ability saves a spell actually FORCES (a creature is made to roll). Excludes flavor
+// like "a −2 penalty to Dexterity saving throws" or "Disadvantage on Wisdom saving throws".
+// >1 means the spell resolves different effects with different saves (Prismatic Spray, Symbol, …),
+// so we hint the DM to switch the save-ability chip and re-run for each group.
+function spellSaveAbilities(text) {
+  const re = /\b(?:makes?|make|making|succeeds? on|must succeed on|must make|fails?|failed|repeats?)\s+(?:a |an |its )?(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/gi;
+  const set = new Set();
+  for (const m of (text || "").matchAll(re)) set.add(m[1].slice(0, 3).toLowerCase());
+  return [...set];
+}
+
 function legSaveRef(o) {
   if (!o.d) return null;
   const m = o.d.match(/(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) Saving Throw:\s*DC (\d+)/);
@@ -3260,6 +3271,9 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{check ? "Group check" : single ? "Saving throw" : noSave ? (noDmg ? "Apply effect" : "Apply damage") : "Group save"}{preset?.name ? ` — ${preset.name}` : ""}</h3>
         {check && <div className="ad" style={{ marginBottom: 6 }}>Players roll their own dice and report — tap <b>✓</b>/<b>✗</b> as they call it out. Uses the ability modifier (add skill proficiency at the table).</div>}
+        {preset?.multiSave?.length > 1 && (
+          <div className="ad" style={{ marginBottom: 6, color: "var(--gold)" }}>⚠ Multiple saves ({preset.multiSave.map((a) => a.toUpperCase()).join(", ")}) — pick the ability for this group of targets below, resolve, then re-open and run the next.</div>
+        )}
         {preset?.cond && <div className="ad" style={{ marginBottom: 4 }}>{noSave ? "Applies" : "On a failed save:"} <b>{[preset.cond, preset.cond2].filter(Boolean).join(" & ")}</b>{preset.condR ? ` (${preset.condR} rd)` : preset.concCast ? " (until concentration ends)" : ""}</div>}
         {check && (
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0 6px" }}>
@@ -3501,7 +3515,7 @@ function SpellInfo({ k, c, api, laUid, laLocked, turnKey }) {
             <button className="btn small primary" style={{ marginLeft: 8 }}
               disabled={laUid ? (laLocked || c.legendary?.rem <= 0) : !!econBlock}
               title={laUid && laLocked ? "Legendary action already used this turn" : laUid ? "Resolving spends a legendary action" : econBlock ? `${econBlock} — Undo or tap +1 to override` : ownTurn ? (c.spellStyle === "replace" ? "Casting replaces one attack" : "Casting uses this creature's action") : undefined}
-              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), ...(k === "command" ? {} : (spellCondFrom(s.d, s.du) || {})), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
+              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), ...(k === "command" ? {} : (spellCondFrom(s.d, s.du) || {})), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(spellSaveAbilities(s.d).length > 1 ? { multiSave: spellSaveAbilities(s.d) } : {}), ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
               ⭗ Roll this save{laUid ? " (spends LA)" : ""}
             </button>
           )}
@@ -5827,6 +5841,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const isAttack = s ? /spell attack/i.test(s.d) : false;
   const conc = s ? /Concentration/i.test(s.du || "") : false;
   const sd = s ? spellSaveDmg(s.d, 1) : null;
+  const multiSave = s ? spellSaveAbilities(s.d) : []; // >1 = spell forces different saves for different effects
   const verbal = s ? spellHasVerbal(s) : false; // a verbal spell reveals a hidden caster
   const blocked = silenced && verbal && !castAnyway; // Silenced casters can't use spells with a Verbal component
   const zoneCond = pick ? ZONE_COND_SPELLS[pick] : null; // e.g. Silence → mark who's inside
@@ -5841,6 +5856,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
       dc: dc === "" ? null : Number(dc), single: singleTargetText(s.d), casterUid: c.uid,
       noDmg: !/damage/i.test(s.d), ...(spellCondFrom(s.d, s.du) || {}),
+      ...(multiSave.length > 1 ? { multiSave } : {}),
       ...(conc ? { concSrc: c.uid, concCast: s.n } : {}),
     });
   };
@@ -5893,6 +5909,11 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
           <>
             <div className="statline" style={{ fontSize: 14, marginTop: 4 }}><b>{s.n}</b> — {s.m}{verbal ? " · V" : ""}</div>
             <div className="spellstats">Casting: {s.ct} · Range: {s.rg} · Duration: {s.du}{conc ? " · ◈ Concentration" : ""}</div>
+            {multiSave.length > 1 && (
+              <div className="reminder" style={{ marginTop: 8, fontSize: 12 }}>
+                ⚠ <b>Multiple saves</b> ({multiSave.map((a) => a.toUpperCase()).join(", ")}) — different effects use different saves. When you resolve, tap a save-ability chip to switch and re-run the group save for each set of targets.
+              </div>
+            )}
             {blocked ? (
               <div style={{ marginTop: 10 }}>
                 <div className="trait" style={{ fontSize: 12.5, color: "var(--danger)" }}>🤫 <b>{c.name} is Silenced</b> — {s.n} has a Verbal component, so it can't be cast here.</div>
