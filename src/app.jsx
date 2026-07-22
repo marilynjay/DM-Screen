@@ -1154,8 +1154,6 @@ function makeMonster(sb, state, opts = {}) {
     const first = list.find((c) => c.baseName === base && c.name === base);
     if (first) first.name = `${base} 1`;
   }
-  const dexMod = sb.mods?.dex ?? 0;
-  const init = d20(dexMod, opts.advMode || "none");
   const m = {
     uid: newUid(), type: "monster", side: opts.side || "enemy",
     baseName: base, name, cr: sb.cr || null,
@@ -1168,7 +1166,7 @@ function makeMonster(sb, state, opts = {}) {
     bonus: sb.bonus || [], reactions: sb.reactions || [],
     legendary: sb.legendary ? { max: sb.legendary.count, rem: sb.legendary.count, options: sb.legendary.options || [] } : null,
     legRes: sb.legRes ? { max: sb.legRes, rem: sb.legRes } : null,
-    init: init.total, initText: `Initiative ${init.text}`,
+    init: null, initText: null, // monsters roll initiative when combat starts, not when they're added
     conditions: [], concentration: null, reaction: true, advMode: "none", advVs: "none", rx: {},
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false, notes: opts.notes || "", loot: sb.loot ? sb.loot.map((x) => (typeof x === "string" ? x : { ...x })) : [],
   };
@@ -7986,12 +7984,12 @@ export default function App() {
       if (rollHp && sb.hpF) { const r = rollFormula(sb.hpF); if (r) hp = Math.max(1, r.total); }
       const m = makeMonster(sb, d, hp != null ? { hp } : {});
       d.combatants.push(m);
-      L.push(`Added <b>${m.name}</b> — ${m.initText}${hp != null ? `, HP ${m.maxHp} [${sb.hpF}]` : ""}`);
+      L.push(`Added <b>${m.name}</b>${hp != null ? ` — HP ${m.maxHp} [${sb.hpF}]` : ""}`);
     }
   });
   const addCustom = (sb, count, side, notes, saveToo) => {
     mutate((d, L) => {
-      for (let i = 0; i < count; i++) { const m = makeMonster(sb, d, { side, notes }); d.combatants.push(m); L.push(`Added <b>${m.name}</b> — ${m.initText}`); }
+      for (let i = 0; i < count; i++) { const m = makeMonster(sb, d, { side, notes }); d.combatants.push(m); L.push(`Added <b>${m.name}</b>`); }
     });
     if (saveToo) { upsertBestiary([sb]); pushToasts([{ kind: "good", text: `"${sb.name}" saved to your bestiary.` }]); }
   };
@@ -8052,13 +8050,13 @@ export default function App() {
     };
     const gw = makeMonster(BESTIARY.find((b) => b.name === "Goblin Warrior"), d);
     d.combatants.push(gw);
-    L.push(`Added <b>${gw.name}</b> — ${gw.initText}`);
+    L.push(`Added <b>${gw.name}</b>`);
     const am = makeMonster(BESTIARY.find((b) => b.name === "Archmage"), d);
     d.combatants.push(scale(am, { hp: 50, hitDelta: -2, dcDelta: -2, label: "HP 99→50, attacks −2, save DCs −2 (balanced to party)" }));
-    L.push(`Added <b>${am.name}</b> — ${am.initText}`);
+    L.push(`Added <b>${am.name}</b>`);
     const dr = makeMonster(BESTIARY.find((b) => b.name === "Adult Black Dragon"), d);
     d.combatants.push(scale(dr, { hp: 90, hitDelta: -3, dcDelta: -3, legRes: 2, label: "HP 195→90, attacks −3, save DCs −3, Legendary Resistance 3→2 (balanced to party)" }));
-    L.push(`Added <b>${dr.name}</b> — ${dr.initText}`);
+    L.push(`Added <b>${dr.name}</b>`);
     L.push(`🧪 Playtest encounter loaded — 2 players vs goblin + scaled Archmage + scaled dragon.`);
   });
 
@@ -8493,7 +8491,7 @@ export default function App() {
     const sbs = await stGet(`dm5e:group:${name}`);
     if (!Array.isArray(sbs)) return;
     mutate((d, L) => {
-      sbs.forEach((sb) => { const m = makeMonster(sb, d, { side: "enemy" }); d.combatants.push(m); L.push(`Added <b>${m.name}</b> — ${m.initText}`); });
+      sbs.forEach((sb) => { const m = makeMonster(sb, d, { side: "enemy" }); d.combatants.push(m); L.push(`Added <b>${m.name}</b>`); });
     });
     setModal(null);
     pushToasts([{ kind: "good", text: `Added ${sbs.length} monster${sbs.length === 1 ? "" : "s"} from "${name.replace(/_/g, " ")}".` }]);
@@ -9217,7 +9215,7 @@ export default function App() {
               const m = makeMonster(sb, d);
               d.combatants.push(m);
               added.push({ m, band: p.band });
-              L.push(`Added <b>${m.name}</b> — ${m.initText}`);
+              L.push(`Added <b>${m.name}</b>`);
             });
             if (balanced && added.length) {
               const roles = {};
