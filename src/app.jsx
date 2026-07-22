@@ -4686,7 +4686,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
   return (
     <>
       <div className="partygrid">
-        <div className="pgh"><span title="Here tonight">✓</span><span>Name<i className="opt req">*required</i></span><span>AC<i className="opt">opt · rec.</i></span><span>HP<i className="opt">opt · rec.</i></span><span>Spell&nbsp;DC<i className="opt">casters</i></span></div>
+        <div className="pgh"><span title="Here tonight">✓</span><span>Name<i className="opt req">*required</i></span><span>AC<i className="opt">opt · rec.</i></span><span>HP<i className="opt">opt · rec.</i></span><span>Spell&nbsp;DC<i className="opt">opt · casters</i></span></div>
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
