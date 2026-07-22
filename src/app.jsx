@@ -1378,7 +1378,11 @@ const targetCands = (state, attacker) =>
   state.combatants.filter((x) => !x.dead && x.uid !== attacker.uid && x.type !== "effect" && x.type !== "object");
 
 const sideRank = (c) => (c.side === "ally" ? 0 : c.side === "effect" ? 1 : 2);
-const tieRank = (c) => (TIES.playersWin && c.type === "player" ? 0 : 1);
+const tieRank = (c) => {
+  if (TIES.mode === "players") return c.type === "player" ? 0 : 1;
+  if (TIES.mode === "monsters") return c.type === "player" ? 1 : 0;
+  return 0; // dex / ask — no side preference; DEX (or a prompt) decides
+};
 function sortOrder(list) {
   return [...list].sort((a, b) =>
     ((a.dead ? 1 : 0) - (b.dead ? 1 : 0)) ||             // the fallen sink to the bottom of the rail
@@ -1405,7 +1409,8 @@ function playerTieGroups(list) {
       const a = g[i], b = g[i + 1];
       if (a.type !== "player" && b.type !== "player") continue; // monster-only pair — DEX order stands
       if ((a.tb ?? 0) !== (b.tb ?? 0)) continue;                 // resolved by an earlier prompt
-      if (TIES.playersWin && (a.type === "player") !== (b.type === "player")) continue; // players-first separates them
+      if (TIES.mode === "ask") return true;                      // always hand player ties to the DM
+      if ((TIES.mode === "players" || TIES.mode === "monsters") && (a.type === "player") !== (b.type === "player")) continue; // a side wins — separated
       if (dexKnown(a) && dexKnown(b) && (a.mods?.dex ?? 0) !== (b.mods?.dex ?? 0)) continue; // DEX separates them
       return true;
     }
@@ -2135,7 +2140,7 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
 const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
-const TIES = { playersWin: true }; // players act before monsters on initiative ties; App assigns from the setting
+const TIES = { mode: "players" }; // how to break initiative ties: players | dex | monsters | ask (App assigns from the setting)
 const FX = { on: true, all: true }; // damage-type effects over the hit row; App assigns from the settings
 const SFX = { on: true }; // whole-screen attack effects (edge-framed) on a hit; App assigns from the setting
 const SPFX = { on: true }; // whole-screen spell/breath effects on AoE resolve; App assigns from the setting
@@ -4687,6 +4692,31 @@ function LicensesModal({ onClose }) {
   );
 }
 
+function InitTieSettingsModal({ mode, onSet, onClose }) {
+  const opts = [
+    ["players", "Players act first", "On a player/monster tie, players go first. Tracked DEX breaks the rest."],
+    ["dex", "Higher DEX first (RAW)", "Higher tracked DEX wins any tie. If DEX is equal or untracked, you're asked."],
+    ["monsters", "Monsters act first", "On a player/monster tie, monsters go first. Tracked DEX breaks the rest."],
+    ["ask", "Ask me each time", "Any tie involving a player is handed to you to order when combat starts."],
+  ];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>⚑ Initiative ties</h3>
+        <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 8 }}>How to break a tied initiative. Monster-vs-monster ties always fall back to higher DEX. You can still hand-order any tie at combat start.</div>
+        {opts.map(([v, label, hint]) => (
+          <button key={v} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(mode === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
+            {mode === v ? "● " : "○ "}{label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
+          </button>
+        ))}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InitTieModal({ groups, onConfirm }) {
   const [order, setOrder] = useState(() => groups.map((g) => g.members.map((m) => ({ uid: m.uid, name: m.name, type: m.type }))));
   const move = (gi, i, dir) => setOrder(order.map((g, j) => {
@@ -4701,7 +4731,7 @@ function InitTieModal({ groups, onConfirm }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Initiative ties</h3>
         <div className="trait" style={{ marginBottom: 8 }}>
-          Who acts first? The app settles what it can on its own — monster ties by DEX, players before monsters (if that setting is on), player ties by tracked DEX. These are the leftovers, so it's your table's call.
+          Who acts first? The app settles what it can on its own — monster ties by DEX, plus your Initiative ties setting. These are the leftovers, so it's your table's call.
         </div>
         {order.map((g, gi) => (
           <div key={gi} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 8 }}>
@@ -6281,8 +6311,8 @@ export default function App() {
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
-  const [playersWinTies, setPlayersWinTiesState] = useState(true);
-  const setPlayersWinTies = (v) => { setPlayersWinTiesState(v); stSet("dm5e:playersWinTies", v ? 1 : 0); };
+  const [tieMode, setTieModeState] = useState("players"); // players | dex | monsters | ask
+  const setTieMode = (v) => { setTieModeState(v); stSet("dm5e:tieMode", v); };
   const [dmgFx, setDmgFxState] = useState(true);
   const setDmgFx = (v) => { setDmgFxState(v); stSet("dm5e:dmgFx", v ? 1 : 0); };
   const [dmgFxAll, setDmgFxAllState] = useState(true);
@@ -6326,7 +6356,7 @@ export default function App() {
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
-  TIES.playersWin = playersWinTies;
+  TIES.mode = tieMode;
   FX.on = dmgFx;
   FX.all = dmgFxAll;
   SFX.on = dmgSfx;
@@ -6506,8 +6536,9 @@ export default function App() {
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
-      const pwt = await stGet("dm5e:playersWinTies");
-      if (pwt != null) setPlayersWinTiesState(!!pwt); // default stays ON until the DM says otherwise
+      const tm = await stGet("dm5e:tieMode");
+      if (tm && ["players", "dex", "monsters", "ask"].includes(tm)) setTieModeState(tm);
+      else { const pwt = await stGet("dm5e:playersWinTies"); if (pwt != null) setTieModeState(pwt ? "players" : "dex"); } // migrate the old boolean
       const dfx = await stGet("dm5e:dmgFx");
       if (dfx != null) setDmgFxState(!!dfx); // damage-type effects default ON
       const dfxa = await stGet("dm5e:dmgFxAll");
@@ -7509,7 +7540,20 @@ export default function App() {
     d.mode = "combat"; d.round = 1;
     const first = sortOrder(d.combatants).find((c) => !c.dead && c.type !== "object");
     if (first) { d.activeUid = first.uid; L.push(`— <b>Combat begins! Round 1</b> —`); onTurnStart(first, d, L, T); playBurnFx(d); L.push(`▶ <b>${first.name}</b>'s turn.`); }
+    // remember the start-of-combat state so "Reset combat" can rewind to it (cleared when combat ends)
+    d.startSnap = { combatants: structuredClone(d.combatants), activeUid: d.activeUid, round: d.round };
   });
+  const resetCombat = () => {
+    setModal(null); setResults({});
+    mutate((d, L) => {
+      if (!d.startSnap) return;
+      d.combatants = structuredClone(d.startSnap.combatants);
+      d.activeUid = d.startSnap.activeUid;
+      d.round = d.startSnap.round;
+      d.mode = "combat";
+      L.push("↺ <b>Combat reset</b> — everyone restored to the start of the fight.");
+    });
+  };
   const startCombat = () => {
     const cur = stateRef.current;
     // monsters/allies without initiative (e.g. kept through "End combat") auto-roll
@@ -7553,7 +7597,7 @@ export default function App() {
         c.reaction = true; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
       });
       d.combatants = kept;
-      d.mode = "setup"; d.round = 0; d.activeUid = null;
+      d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null;
       L.push(`— <b>Combat ends.</b> The party presses on${kept.some((c) => c.unconscious) ? " (someone's being carried…)" : ""}. —`);
     });
   };
@@ -7593,6 +7637,7 @@ export default function App() {
   const doReset = (keepMonsters) => {
     setModal(null); setResults({});
     mutate((d, L) => {
+      d.startSnap = null; // leaving combat drops the reset snapshot
       if (keepMonsters) {
         d.combatants = d.combatants.filter((c) => c.type === "monster").map((c) => {
           const sb = { ...c, hp: c.maxHp };
@@ -7935,8 +7980,6 @@ export default function App() {
             </div>
           )}
         </span>
-        {/* the 📖 shortcut lends redo its header slot (390px has no spare room); the compendium stays in the ⋯ menu */}
-        {redoN === 0 && <button className="btn small ghost" title="Spell compendium" onClick={() => setSpellBook(true)}>📖</button>}
         <button className="btn small ghost" title="Group save / AoE" onClick={() => setModal({ type: "group-save" })}>⭗</button>
         <span className="hdr-wide">
           <button className="btn small ghost" onClick={toggleLog}>Log</button>
@@ -7951,7 +7994,7 @@ export default function App() {
                 {state.combatants.some((c) => c.side === "ally") && (
                   <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
                 )}
-                <button onClick={() => setModal({ type: "confirm-reset" })}>New combat (keep monsters)</button>
+                {state.startSnap && <button onClick={() => setModal({ type: "confirm-combatreset" })}>↺ Reset combat (rewind to start)</button>}
                 <button className="warn" onClick={() => setModal({ type: "confirm-clear" })}>Clear everything</button>
               </div>
             )}
@@ -7972,11 +8015,11 @@ export default function App() {
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
-              <button onClick={() => setPlayersWinTies(!playersWinTies)} title="When on, players act before monsters on tied initiative. Tracked player DEX breaks the remaining ties.">{playersWinTies ? "✓" : "✗"} Players win init ties</button>
+              <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
-              <button onClick={() => setModal({ type: "confirm-reset" })}>New combat (keep monsters)</button>
+              {state.startSnap && <button onClick={() => setModal({ type: "confirm-combatreset" })}>↺ Reset combat (rewind to start)</button>}
               <button className="warn" onClick={() => setModal({ type: "confirm-clear" })}>Clear everything</button>
             </div>
           )}
@@ -8180,6 +8223,9 @@ export default function App() {
       )}
       {modal?.type === "init-ties" && (
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
+      )}
+      {modal?.type === "init-ties-settings" && (
+        <InitTieSettingsModal mode={tieMode} onSet={setTieMode} onClose={() => setModal(null)} />
       )}
       {modal?.type === "licenses" && <LicensesModal onClose={() => setModal(null)} />}
       {modal?.type === "playtest" && (
@@ -8720,6 +8766,10 @@ export default function App() {
       {modal?.type === "confirm-reset" && (
         <ConfirmModal text="Players and effects are removed; monsters stay with fresh HP, cleared conditions, and rerolled initiative. Back to setup." confirmLabel="Reset combat"
           onYes={() => doReset(true)} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "confirm-combatreset" && (
+        <ConfirmModal text="Rewind this fight to the very start — everyone's HP, conditions, concentration, and initiative snap back to how they were when combat began (round 1, first creature up). Anything added or removed mid-fight is undone." confirmLabel="↺ Reset combat"
+          onYes={resetCombat} onClose={() => setModal(null)} />
       )}
     </div>
   );
