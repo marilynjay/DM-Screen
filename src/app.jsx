@@ -5247,20 +5247,22 @@ function RestModal({ combatants, onAccept, onClose }) {
   const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, String(c.maxHp)]))); // default: full HP
   const set = (uid, v) => setVals((m) => ({ ...m, [uid]: v }));
   const allFull = () => setVals(Object.fromEntries(list.map((c) => [c.uid, String(c.maxHp)])));
+  const shortRest = () => setVals(Object.fromEntries(list.map((c) => [c.uid, ""]))); // clear the full-HP prefill — type in just the hit-dice healing
   const gains = list.filter((c) => { const v = Number(vals[c.uid]); return !isNaN(v) && Math.min(c.maxHp, Math.max(0, Math.round(v))) > (c.hp ?? 0); }).length;
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>🌙 Rest</h3>
-        <div className="trait" style={{ marginBottom: 8 }}>Set each character's HP after the rest — pre-filled to full, adjust down for a short rest. Anyone who gains HP plays the heal effect when you Accept.</div>
-        <div className="frow" style={{ justifyContent: "flex-end", marginBottom: 4 }}>
-          <button className="btn small ghost" onClick={allFull}>All to full</button>
+        <div className="trait" style={{ marginBottom: 8 }}>Set each character's HP after the rest — pre-filled to full for a long rest. Tap <b>Short rest</b> to clear the boxes and type in just the hit-dice healing (a blank box is left unchanged). Anyone who gains HP plays the heal effect when you Accept.</div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginBottom: 4, gap: 6 }}>
+          <button className="btn small ghost" onClick={shortRest} title="Clear the full-HP prefill — for a short rest, type in only the HP each character regains">Short rest</button>
+          <button className="btn small ghost" onClick={allFull} title="Long rest — everyone back to full">All to full</button>
         </div>
         {list.map((c) => (
           <div key={c.uid} className="frow" style={{ alignItems: "center", gap: 8 }}>
             <label style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</label>
             <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>now {c.hp ?? "—"}</span>
-            <input type="number" inputMode="numeric" style={{ width: 68, textAlign: "center" }} value={vals[c.uid] ?? ""} onChange={(e) => set(c.uid, e.target.value)} />
+            <input type="number" inputMode="numeric" placeholder={String(c.hp ?? "")} style={{ width: 68, textAlign: "center" }} value={vals[c.uid] ?? ""} onChange={(e) => set(c.uid, e.target.value)} />
             <span className="ad" style={{ fontSize: 12, minWidth: 40 }}>/ {c.maxHp}</span>
           </div>
         ))}
