@@ -7980,7 +7980,6 @@ export default function App() {
             </div>
           )}
         </span>
-        <button className="btn small ghost" title="Group save / AoE" onClick={() => setModal({ type: "group-save" })}>⭗</button>
         <span className="hdr-wide">
           <button className="btn small ghost" onClick={toggleLog}>Log</button>
           {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
