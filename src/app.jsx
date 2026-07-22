@@ -6749,8 +6749,9 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["v", "❘ Vertical"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
+const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
 const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) => {
@@ -6760,26 +6761,53 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
 
 function RoomShape({ room, cx, cy }) {
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
-  if (room.shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
-  if (room.shape === "hall") {
-    const w = s * 1.55, h = s * 0.5, rot = { h: 0, v: 90, d1: -45, d2: 45 }[room.orient || "h"];
-    return <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={h / 2} fill={col} stroke={stroke} strokeWidth="1.5" transform={`rotate(${rot} ${cx} ${cy})`} />;
+  const shape = room.shape || "hex";
+  if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
+  if (shape === "square") { // extra shape, shrunk inside the hex — sharp corners
+    const side = s * 1.18;
+    return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={col} stroke={stroke} strokeWidth="1.5" />;
   }
-  const side = s * 1.18; // square, shrunk to sit inside the hex
-  return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} rx={6} fill={col} stroke={stroke} strokeWidth="1.5" />;
+  if (shape === "hall") { // a tube that spans the hex, touching its edges/vertices — sharp ends
+    const th = s * 0.42; // pointy-top hex: width sqrt(3)·s (side edges), height 2·s (top/bottom points)
+    const conf = { h: { len: Math.sqrt(3) * s, rot: 0 }, v: { len: 2 * s, rot: 90 }, d1: { len: 2 * s, rot: -30 }, d2: { len: 2 * s, rot: 30 } }[room.orient || "h"];
+    return <rect x={cx - conf.len / 2} y={cy - th / 2} width={conf.len} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${conf.rot} ${cx} ${cy})`} />;
+  }
+  // hex (default) — the whole cell, filled
+  return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
 }
 
 function RoomEditor({ room, onChange, onDelete, onClose }) {
+  const [full, setFull] = useState(null); // note key open full-screen, or null
   const set = (patch) => onChange({ ...room, ...patch });
   const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
   const n = room.notes || {};
+  if (full) { // one note field, expanded to the whole screen for long paragraphs
+    return (
+      <div className="dgn-overlay" style={{ zIndex: 90 }}>
+        <div className="dgn-top">
+          <button className="btn small" onClick={() => setFull(null)}>← Done</button>
+          <span className="nm" style={{ flex: 1, fontFamily: "var(--disp)", fontSize: 16, color: "var(--text)" }}>{DGN_FIELDS[full]}</span>
+        </div>
+        <textarea autoFocus className="dgn-ta" style={{ flex: 1, margin: 12, resize: "none" }} value={n[full] || ""} onChange={(e) => setNote(full, e.target.value)} placeholder={DGN_FIELDS[full] + "…"} />
+      </div>
+    );
+  }
+  const noteField = (k, rows, ph) => (
+    <div key={k}>
+      <div className="frow" style={{ alignItems: "center", margin: "8px 0 3px" }}>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", flex: 1 }}>{DGN_FIELDS[k]}</div>
+        <button className="btn tiny ghost" title="Edit this field full-screen" onClick={() => setFull(k)}>⤢ Full screen</button>
+      </div>
+      <textarea className="dgn-ta" rows={rows} value={n[k] || ""} onChange={(e) => setNote(k, e.target.value)} placeholder={ph} />
+    </div>
+  );
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Room</h3>
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px" }}>Shape</div>
         <div className="pickgrid">
-          {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${room.shape === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
+          {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
         </div>
         {room.shape === "hall" && (
           <div className="pickgrid" style={{ marginTop: 4 }}>
@@ -6790,12 +6818,9 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
         </div>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Room description</div>
-        <textarea className="dgn-ta" rows={3} value={n.desc || ""} onChange={(e) => setNote("desc", e.target.value)} placeholder="What's in here…" />
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>Loot</div>
-        <textarea className="dgn-ta" rows={2} value={n.loot || ""} onChange={(e) => setNote("loot", e.target.value)} placeholder="Treasure, items…" />
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>NPCs</div>
-        <textarea className="dgn-ta" rows={2} value={n.npcs || ""} onChange={(e) => setNote("npcs", e.target.value)} placeholder="Allies, denizens… (encounters come in Phase 2)" />
+        {noteField("desc", 3, "What's in here…")}
+        {noteField("loot", 2, "Chests, podiums, puzzle elements…")}
+        {noteField("npcs", 2, "Allies, denizens… (encounters come in Phase 2)")}
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
           <button className="btn small danger" onClick={onDelete}>Delete room</button>
           <button className="btn primary" onClick={onClose}>Done</button>
@@ -6824,7 +6849,7 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
   }, []);
   const rooms = dg.rooms || {};
   const RANGE = 8; // logical hex extent; the canvas pans/zooms over it
-  const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "square", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
+  const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
