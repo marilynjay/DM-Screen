@@ -39,10 +39,23 @@ input[type=number]{width:64px}
 .dmgline{font-family:var(--mono);color:var(--gold);font-size:11.5px}
 .tobtag{font-size:9px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;padding:0 4px;margin-left:6px;vertical-align:2px;letter-spacing:.05em}
 .partygrid{display:flex;flex-direction:column;gap:5px}
-.pgh,.pgr{display:grid;grid-template-columns:22px minmax(0,1fr) 44px 46px 44px 48px;gap:4px;align-items:center}
+.pgh,.pgr{display:grid;grid-template-columns:22px minmax(0,1fr) 46px 46px 58px;gap:4px;align-items:center}
 .pgh span{font-size:10px;color:var(--faint);letter-spacing:.05em;text-transform:uppercase;text-align:center}
 .pgh span:nth-child(2){text-align:left;padding-left:2px}
 .pgh .opt{display:block;font-size:8px;font-style:italic;text-transform:none;letter-spacing:0;opacity:.65;white-space:nowrap}
+.pgh .opt.req{color:var(--gold);opacity:.85;font-style:normal}
+.morestats{margin-top:4px;padding:6px 8px;border:1px solid var(--line2);border-radius:10px;background:var(--panel)}
+.mstat-row{display:flex;flex-direction:column;gap:3px;padding:5px 0}
+.mstat-row+.mstat-row{border-top:1px solid var(--line)}
+.mstat-name{font-size:12px;font-weight:600;color:var(--dim)}
+.mstat-fields{display:flex;flex-wrap:wrap;gap:5px}
+.mstat-fields label{display:inline-flex;flex-direction:column;align-items:center;font-size:9px;color:var(--faint);text-transform:uppercase;gap:1px}
+.mstat-fields input{width:42px;text-align:center;box-sizing:border-box;background:var(--raised);border:1px solid var(--line2);border-radius:7px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:5px 3px;font-size:16px;-moz-appearance:textfield}
+.mstat-fields input::-webkit-outer-spin-button,.mstat-fields input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.chgrid{display:flex;flex-wrap:wrap;gap:6px}
+.chstat{display:inline-flex;flex-direction:column;align-items:center;font-size:10px;color:var(--faint);text-transform:uppercase;gap:2px}
+.chstat input{width:56px;text-align:center;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:6px 4px;font-size:16px;-moz-appearance:textfield}
+.chstat input::-webkit-outer-spin-button,.chstat input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .pgr input[type="text"],.pgr input[type="number"]{width:100%;box-sizing:border-box;min-width:0;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);caret-color:var(--gold);padding:6px 6px;font-size:16px}
 .pgr input[type="number"]{text-align:center;-moz-appearance:textfield}
 .pgr input::-webkit-outer-spin-button,.pgr input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
@@ -1170,11 +1183,12 @@ function makeMonster(sb, state, opts = {}) {
   return m;
 }
 
-function makePlayer({ name, init, ac, side, hp, pp, dex, spells, memberId, spellDC }) {
+function makePlayer({ name, init, ac, side, hp, pp, dex, spells, memberId, spellDC, mods }) {
   const hpN = hp != null && hp !== "" ? Number(hp) : null;
   const initN = init == null || init === "" || isNaN(Number(init)) ? null : Number(init);
   const ppN = pp != null && pp !== "" ? Number(pp) : null;
   const dexN = dex == null || dex === "" || isNaN(Number(dex)) ? null : Number(dex);
+  const modObj = mods && Object.keys(mods).length ? { ...mods } : (dexN != null ? { dex: dexN } : {}); // players never auto-roll saves; mods are reference (dex still breaks init ties)
   return {
     uid: newUid(), type: "player", side: side || "ally", baseName: name, name,
     ac: ac ?? null, acBoost: 0, acReaction: null, pp: ppN,
@@ -1184,7 +1198,7 @@ function makePlayer({ name, init, ac, side, hp, pp, dex, spells, memberId, spell
     spells: Array.isArray(spells) ? [...spells] : [], // this player's spellbook (compendium keys); persists to their saved party member
     memberId: memberId || null, // links back to the stored party member so spellbook/DC edits survive across sessions
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
-    mods: dexN != null ? { dex: dexN } : {}, saves: {},
+    mods: modObj, saves: {},
     resist: [], immune: [], vuln: [], loot: [],
     traits: [], actions: [], reactions: [], legendary: null, legRes: null, notes: "",
   };
@@ -1521,9 +1535,9 @@ function applyDamage(c, amt, dtype, logs, toasts) {
   }
   if (finalDmg > 0 && c.concentration) {
     const dc = Math.max(10, Math.floor(finalDmg / 2));
-    if (c.type === "player" && c.mods?.con == null) {
+    if (c.type === "player") { // players always roll their own saves — never auto-rolled, even if CON is tracked
       toasts.push({ kind: "bad", text: `${c.name}: DC ${dc} CON save to keep concentrating on ${concLabel(c)}!` });
-      logs.push(`<b>${c.name}</b>: concentration check needed — DC ${dc} CON save (${concLabel(c)}).`);
+      logs.push(`<b>${c.name}</b>: concentration check needed — DC ${dc} CON save (${concLabel(c)}). Roll it, then tap ◈ to drop it on a fail.`);
       return;
     }
     const r = d20(conMod(c), ownAdv(c));
@@ -2459,7 +2473,7 @@ function DmgFx({ type }) {
   return <span className={`dmgfx fx-${t || "plain"}`} aria-hidden>{inner}</span>;
 }
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
+function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
   if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
@@ -2616,8 +2630,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
         </span>
       )}
 
-      {c.type === "player" && c.pp != null && (
-        <span className="acbox" title="Passive Perception">👁 {c.pp}</span>
+      {c.type === "player" && c.pp != null && !inCombat && (
+        <span className="acbox" title="Passive Perception (shown outside battle)">👁 {c.pp}</span>
       )}
 
       {c.type !== "player" && (c.loot || []).length > 0 && (
@@ -2683,10 +2697,10 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx }) {
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
+            {c.type === "player" && <button onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>}
             {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
-            {c.type === "player" && <button onClick={() => api.setDex(c.uid)}>Set DEX tiebreaker…</button>}
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
             {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
@@ -3622,7 +3636,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
 }
 
 const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
-function PlayerCard({ c, api, results }) {
+function PlayerCard({ c, api, results, inCombat }) {
   const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: CONDITIONS[cd.name] || null }));
   return (
     <div className="card torch">
@@ -3635,7 +3649,7 @@ function PlayerCard({ c, api, results }) {
       <div className="statline">
         {c.hp != null && <><b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · </>}
         {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0)} · </>}
-        {c.pp != null && <><b>PP</b> {c.pp} · </>}
+        {c.pp != null && !inCombat && <><b>PP</b> {c.pp} · </>}
         <b>Initiative</b> {c.init ?? "—"}
         {c.concentration && <> · <b>Concentrating:</b> {c.concentration}</>}
       </div>
@@ -4653,7 +4667,9 @@ function InitTieModal({ groups, onConfirm }) {
    file backups) so every later session is one tap. Only names are required;
    the optional level prefills the encounter balancer, the optional team name
    labels the card (for DMs juggling multiple tables). */
-const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", pp: "", dex: "", here: true };
+const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", spellDC: "", pp: "", str: "", dex: "", con: "", int: "", wis: "", cha: "", here: true };
+const PARTY_MODS = ["str", "dex", "con", "int", "wis", "cha"];
+const memberMods = (m) => { const o = {}; for (const k of PARTY_MODS) { const v = m[k]; if (v != null && v !== "" && !isNaN(Number(v))) o[k] = Number(v); } return o; };
 const partyRowsFrom = (saved) =>
   (saved?.members?.length ? saved.members.map((m) => ({ ...PARTY_BLANK_ROW, ...m })) : [{ ...PARTY_BLANK_ROW }]); // one slot to start — "+ Add player" grows it
 const partyRosterOf = (teamName, level, rows) => ({
@@ -4664,22 +4680,39 @@ const partyRosterOf = (teamName, level, rows) => ({
 
 function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) {
   const set = (i, k, v) => setRows(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  const [moreOpen, setMoreOpen] = useState(false);
   const FIELD = { background: "var(--panel)", border: "1px solid var(--line2)", borderRadius: 8, color: "var(--text)", WebkitTextFillColor: "var(--text)", caretColor: "var(--gold)", padding: "6px 8px", fontSize: 16 };
+  const named = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.name.trim());
   return (
     <>
       <div className="partygrid">
-        <div className="pgh"><span title="Here tonight">✓</span><span>Name</span><span>AC<i className="opt">(optional)</i></span><span>HP<i className="opt">(optional)</i></span><span>PP<i className="opt">(optional)</i></span><span>DEX<i className="opt">(optional)</i></span></div>
+        <div className="pgh"><span title="Here tonight">✓</span><span>Name<i className="opt req">*required</i></span><span>AC<i className="opt">opt · rec.</i></span><span>HP<i className="opt">opt · rec.</i></span><span>Spell&nbsp;DC<i className="opt">casters</i></span></div>
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
-            <input type="text" placeholder="Character" autoComplete="off" autoCorrect="off" spellCheck={false} value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
-            <input type="number" placeholder="–" title="Armor Class (optional)" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
-            <input type="number" placeholder="–" title="Max HP (optional) — fill in to track their HP in the app" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
-            <input type="number" placeholder="–" title="Passive Perception (optional)" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} />
-            <input type="number" placeholder="–" title="DEX modifier (optional) — breaks initiative ties, never shown" value={r.dex} onChange={(e) => set(i, "dex", e.target.value)} />
+            <input type="text" placeholder="Character *" autoComplete="off" autoCorrect="off" spellCheck={false} value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
+            <input type="number" placeholder="–" title="Armor Class — recommended so the app can adjudicate attacks on them" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
+            <input type="number" placeholder="–" title="Max HP — recommended so the app tracks their damage" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
+            <input type="number" placeholder="–" title="Spell save DC — recommended for spellcasters; auto-fills when they cast" value={r.spellDC} onChange={(e) => set(i, "spellDC", e.target.value)} />
           </div>
         ))}
       </div>
+      <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setMoreOpen(!moreOpen)}>{moreOpen ? "▾ Hide extra stats" : "▸ Track more stats (optional)"}</button>
+      {moreOpen && (
+        <div className="morestats">
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 6px" }}>Reference only — the app never rolls a player's saves for them. PP shows on the roster outside battle; DEX breaks initiative ties.</div>
+          {named.length === 0
+            ? <div className="trait" style={{ fontSize: 12 }}>Name a player above first.</div>
+            : named.map(({ r, i }) => (
+                <div className="mstat-row" key={i}>
+                  <div className="mstat-name">{r.name.trim()}</div>
+                  <div className="mstat-fields">
+                    <label>PP<input type="number" value={r.pp} onChange={(e) => set(i, "pp", e.target.value)} /></label>
+                    {PARTY_MODS.map((k) => <label key={k}>{k}<input type="number" value={r[k]} onChange={(e) => set(i, k, e.target.value)} /></label>)}
+                  </div>
+                </div>))}
+        </div>
+      )}
       <div className="frow" style={{ marginTop: 8 }}>
         <button className="btn small primary" onClick={() => setRows([...rows, { ...PARTY_BLANK_ROW }])}>＋ Add player</button>
         <span style={{ flex: 1 }} />
@@ -5472,7 +5505,7 @@ function ReadiedOverlay({ c, api, results, onClose }) {
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal readied-modal" onClick={(e) => e.stopPropagation()}>
         <div className="readied-banner">⏳ Readied action — {c.name} acts off-turn{c.reaction ? "" : " · ⚠ their reaction is already spent"}</div>
-        <PlayerCard c={c} api={api} results={results} />
+        <PlayerCard c={c} api={api} results={results} inCombat />
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 6 }}>
           <button className="btn ghost" onClick={() => { if (armed()) onClose(); }}>Close (stay readied)</button>
           <button className="btn primary" onClick={() => { if (armed()) api.resolveReadied(c.uid); }}>Done — reaction spent</button>
@@ -5673,6 +5706,39 @@ function UseItemModal({ c, state, api, onScroll, onClose }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
+  const [d, setD] = useState(() => ({ spellDC: c.spellDC ?? "", pp: c.pp ?? "", ...Object.fromEntries(PARTY_MODS.map((k) => [k, c.mods?.[k] ?? ""])) }));
+  const commit = (key) => api.setCharStat(c.uid, key, d[key]);
+  const stat = (label, key) => (
+    <label className="chstat">{label}<input type="number" inputMode="numeric" value={d[key]} onChange={(e) => setD({ ...d, [key]: e.target.value })} onBlur={() => commit(key)} /></label>
+  );
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🎭 {c.name}</h3>
+        <div className="statline" style={{ fontSize: 13 }}>
+          {c.hp != null && <><b>HP</b> {c.hp}/{c.maxHp} · </>}
+          {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0)} · </>}
+          <b>Init</b> {c.init ?? "—"}
+          {c.concentration && <> · <b>Conc:</b> {c.concentration}</>}
+        </div>
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginBottom: 8 }}>AC & HP are edited from the ⋮ menu (Edit defenses / Damage). The stats below are reference only — the app never rolls a player's saves for them.</div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0 2px" }}>Spellcasting</div>
+        <div className="chgrid">{stat("Spell DC", "spellDC")}</div>
+        <button className="btn small" style={{ marginTop: 6 }} onClick={onSpellbook}>📖 Spellbook ({(c.spells || []).length})</button>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 2px" }}>Perception & ability mods</div>
+        <div className="chgrid">
+          {stat("PP", "pp")}
+          {PARTY_MODS.map((k) => stat(k.toUpperCase(), k))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
       </div>
     </div>
   );
@@ -6514,6 +6580,18 @@ export default function App() {
       persistMember(c.memberId, { spells: list });
     },
     openSpellbook: (uid) => setModal({ type: "spellbook", uid }),
+    openCharacter: (uid) => setModal({ type: "character", uid }),
+    setCharStat: (uid, key, value) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
+      const num = value === "" || value == null || isNaN(Number(value)) ? null : Number(value);
+      mutate((d) => {
+        const cc = d.combatants.find((x) => x.uid === uid); if (!cc) return;
+        if (key === "pp") cc.pp = num;
+        else if (key === "spellDC") cc.spellDC = num;
+        else { cc.mods = { ...(cc.mods || {}) }; if (num == null) delete cc.mods[key]; else cc.mods[key] = num; }
+      });
+      persistMember(c.memberId, { [key]: num });
+    },
     openUseItem: (uid) => setModal({ type: "use-item", uid }),
     consumeItem: (uid, terms) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) consumeLootInDraft(c, terms, L); }),
     itemHeal: (uid, targetUid, amt, itemName, terms) => mutate((d, L, T) => {
@@ -7072,7 +7150,7 @@ export default function App() {
     if (!members.length) return;
     mutate((d, L) => {
       members.forEach((m) => {
-        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, dex: m.dex, spells: m.spells, memberId: m.id, spellDC: m.spellDC });
+        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m) });
         d.combatants.push(p);
       });
       L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
@@ -7590,7 +7668,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`}>
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
             ))}
           </div>
         </>
@@ -7631,7 +7709,7 @@ export default function App() {
         {state.mode === "combat" && active && (
           <div ref={activeCardRef} className="activecard-anchor">
             {active.type === "monster" ? <MonsterCard c={active} api={api} results={results} turnKey={`${state.round}:${state.activeUid}`} />
-            : active.type === "player" ? <PlayerCard c={active} api={api} results={results} />
+            : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} />
             : <EffectCard c={active} api={api} round={state.round} />}
           </div>
         )}
@@ -7988,7 +8066,7 @@ export default function App() {
                 👁 Peeking — {pc.dead ? "dead" : dist == null ? "combat not running" : dist === 0 ? "acting NOW" : `acts in ${dist} turn${dist === 1 ? "" : "s"}`}
                 <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={() => setPeek(null)}>Close</button>
               </div>
-              {pc.type === "player" ? <PlayerCard c={pc} api={api} results={results} /> : <MonsterCard c={pc} api={api} results={results} peek={pc.uid !== state.activeUid || state.mode !== "combat"} turnKey={`${state.round}:${state.activeUid}`} />}
+              {pc.type === "player" ? <PlayerCard c={pc} api={api} results={results} inCombat={state.mode === "combat"} /> : <MonsterCard c={pc} api={api} results={results} peek={pc.uid !== state.activeUid || state.mode !== "combat"} turnKey={`${state.round}:${state.activeUid}`} />}
             </div>
           </div>
         );
@@ -8238,6 +8316,9 @@ export default function App() {
       )}
       {modal?.type === "spellbook" && modalC && (
         <SpellbookModal c={modalC} api={api} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "character" && modalC && (
+        <CharacterSheetModal c={modalC} api={api} onSpellbook={() => setModal({ type: "spellbook", uid: modal.uid })} onClose={() => setModal(null)} />
       )}
       {modal?.type === "use-item" && modalC && (
         <UseItemModal c={modalC} state={state} api={api}
