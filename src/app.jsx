@@ -4990,13 +4990,17 @@ function AddAttackModal({ c, onAdd, onClose }) {
 const ITEM_KINDS = [
   ["weapon", "⚔ Weapon", "Becomes an attack on whoever holds it, using their stats."],
   ["potion", "🧪 Potion / consumable", "One use, then it's gone. Can heal."],
+  ["thrown", "💥 Thrown / grenade", "One use — throw it for damage, maybe a condition or an area burst."],
   ["wand", "✨ Charged item", "Tracks charges; describe what a charge does."],
   ["armor", "🛡 Armor / shield", "Grants an AC bonus while equipped."],
   ["other", "📜 Trinket / other", "Descriptive item — no mechanics."],
 ];
-const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "" };
+// Conditions a thrown item can impart (the cover pseudo-conditions aren't relevant here).
+const THROW_CONDS = Object.keys(CONDITIONS).filter((n) => !/Cover/.test(n));
+const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "", cond: "", aoe: false };
 function itemKindOf(it) {
   if (it.wpn) return "weapon";
+  if (it.thrown) return "thrown";
   if (it.acB != null || it.armor) return "armor";
   if (it.heal || (it.c && it.ch == null)) return "potion";
   if (it.ch != null) return "wand";
@@ -5005,9 +5009,10 @@ function itemKindOf(it) {
 function itemToForm(it) {
   return {
     origN: it.n, kind: itemKindOf(it), n: it.n, rarity: "CURVL".includes(it.rarity) ? it.rarity : "C", d: it.d || "",
-    dmg: it.wpn?.dmg || "1d6", dtype: it.wpn?.dtype || "slashing",
+    dmg: it.wpn?.dmg || it.thrown?.dmg || "1d6", dtype: it.wpn?.dtype || it.thrown?.dtype || "slashing",
     fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, ls: !!it.wpn?.ls, b: String(it.wpn?.b || 0),
     heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
+    cond: it.thrown?.cond || "", aoe: !!it.thrown?.aoe,
   };
 }
 function formToItem(f) {
@@ -5021,6 +5026,11 @@ function formToItem(f) {
     if (f.ls) it.wpn.ls = 1;
     if (parseInt(f.b, 10)) it.wpn.b = parseInt(f.b, 10);
     if (chN != null) it.ch = chN; // e.g. a mace with a 3-charge fear burst
+  } else if (f.kind === "thrown") {
+    it.thrown = { dmg: f.dmg.trim() || "1d6", dtype: f.dtype };
+    if (f.cond) it.thrown.cond = f.cond;
+    if (f.aoe) it.thrown.aoe = 1;
+    it.c = 1; // consumed on use
   } else if (f.kind === "potion") {
     if (f.heal.trim()) it.heal = f.heal.trim();
     it.c = 1;
@@ -5132,6 +5142,26 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
                   <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} title="Optional — for a weapon with a limited-use power described above" />
                 </div>
                 <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Lifesteal heals the wielder for half the damage dealt. Charges are optional, for a limited-use power described above.</div>
+              </>)}
+              {form.kind === "thrown" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Damage</label>
+                  <input type="text" placeholder="3d6" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
+                  <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
+                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                  </select>
+                </div>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Condition</label>
+                  <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — inflicted on a hit / failed save">
+                    <option value="">none</option>
+                    {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
+                  </select>
+                </div>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }} title="Hits everyone in an area — opens the group-save / AoE screen when used"><input type="checkbox" checked={form.aoe} onChange={(e) => setF("aoe", e.target.checked)} /> 💥 Area burst (save for each target)</label>
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use. When used it rolls damage against a target (or, for an area burst, opens the group-save screen). A condition applies on a hit or failed save.</div>
               </>)}
               {form.kind === "potion" && (<>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
@@ -5663,7 +5693,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   );
 }
 
-function UseItemModal({ c, state, api, onScroll, onClose }) {
+function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const isMonster = c.type === "monster";
@@ -5671,6 +5701,18 @@ function UseItemModal({ c, state, api, onScroll, onClose }) {
   const [pot, setPot] = useState(null); const [pf, setPf] = useState(""); const [pamt, setPamt] = useState(""); const [ptar, setPtar] = useState(c.uid);
   const [alch, setAlch] = useState(null); const [af, setAf] = useState(""); const [adt, setAdt] = useState(""); const [atar, setAtar] = useState(""); const [aphase, setAphase] = useState("pick"); const [aamt, setAamt] = useState("");
   const [oNote, setONote] = useState("");
+  // DM-made consumables that a player might reach for: thrown/grenades, custom potions, plain trinkets
+  const usableCustom = (customItems || []).filter((it) => it.thrown || it.heal || it.c || (!it.wpn && it.acB == null && it.ch == null));
+  const useCustomItem = (it) => {
+    if (it.thrown && it.thrown.aoe) {
+      onAoe({ name: it.n, dmg: it.thrown.dmg, dtype: it.thrown.dtype, half: true, casterUid: c.uid,
+        ...(it.thrown.cond ? { cond: it.thrown.cond, condR: null } : {}) });
+      return;
+    }
+    if (it.thrown) { setAlch({ n: it.n, f: it.thrown.dmg, dt: it.thrown.dtype, cond: it.thrown.cond || null, custom: false }); setAf(it.thrown.dmg); setAdt(it.thrown.dtype); if (isMonster) setAamt(String(rollFormula(it.thrown.dmg || "0").total)); setAphase("pick"); setCat("alch"); return; }
+    if (it.heal) { setPot({ n: it.n, f: it.heal }); setPf(it.heal); if (isMonster) setPamt(String(rollFormula(it.heal).total)); setCat("potion"); return; }
+    setONote(it.n); // plain trinket — log it
+  };
   const healTargets = state.combatants.filter((x) => !x.dead && x.maxHp != null && (x.uid === c.uid || x.side === c.side));
   const enemies = state.combatants.filter((x) => !x.dead && x.type !== "effect" && x.type !== "object" && x.uid !== c.uid && (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
   const t = atar ? state.combatants.find((x) => x.uid === atar) : null;
@@ -5694,7 +5736,7 @@ function UseItemModal({ c, state, api, onScroll, onClose }) {
             <button className="btn" onClick={() => setCat("potion")}>🧪 Healing potion</button>
             <button className="btn" onClick={onScroll}>📜 Spell scroll / wand</button>
             <button className="btn" onClick={() => setCat("alch")}>💥 Thrown / alchemical</button>
-            <button className="btn" onClick={() => setCat("other")}>📦 Other</button>
+            <button className="btn" onClick={() => setCat("other")}>📦 Other{usableCustom.length > 0 ? <span className="cr"> {usableCustom.length} custom item{usableCustom.length === 1 ? "" : "s"}</span> : ""}</button>
           </div>
         )}
         {cat === "potion" && (!pot ? (
@@ -5759,7 +5801,21 @@ function UseItemModal({ c, state, api, onScroll, onClose }) {
         ))}
         {cat === "other" && (
           <>
-            <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Item</label><input type="text" style={{ flex: 1 }} value={oNote} onChange={(e) => setONote(e.target.value)} placeholder="e.g. Thunderstone, Antitoxin…" autoFocus /></div>
+            {usableCustom.length > 0 && (
+              <>
+                <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px", letterSpacing: ".08em", textTransform: "uppercase" }}>My items</div>
+                <div className="pcactions">
+                  {usableCustom.map((it) => (
+                    <button key={it.n} className="btn" style={{ textAlign: "left" }} onClick={() => { if (armed()) useCustomItem(it); }}>
+                      {it.n}
+                      <span className="cr">{it.thrown ? `${it.thrown.dmg} ${it.thrown.dtype}${it.thrown.cond ? ` +${it.thrown.cond}` : ""}${it.thrown.aoe ? " · area" : ""}` : it.heal ? `heals ${it.heal}` : rarityLabel(it)}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 4px", letterSpacing: ".08em", textTransform: "uppercase" }}>Something else</div>
+              </>
+            )}
+            <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Item</label><input type="text" style={{ flex: 1 }} value={oNote} onChange={(e) => setONote(e.target.value)} placeholder="e.g. Thunderstone, Antitoxin…" /></div>
             <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
               <button className="btn primary" disabled={!oNote.trim()} onClick={() => { api.itemLog(c.uid, oNote.trim(), [term1(oNote)]); onClose(); }}>Log it</button>
             </div>
@@ -8400,8 +8456,9 @@ export default function App() {
         <CharacterSheetModal c={modalC} api={api} onSpellbook={() => setModal({ type: "spellbook", uid: modal.uid })} onClose={() => setModal(null)} />
       )}
       {modal?.type === "use-item" && modalC && (
-        <UseItemModal c={modalC} state={state} api={api}
+        <UseItemModal c={modalC} state={state} api={api} customItems={myItems}
           onScroll={() => setModal({ type: "player-cast", uid: modal.uid, fromItem: "scroll" })}
+          onAoe={(preset) => setModal({ type: "group-save", preset })}
           onClose={() => setModal(null)} />
       )}
       {modal?.type === "deathsaves" && modalC && (
