@@ -1348,6 +1348,12 @@ const ownAtkAdv = (c) => combineAdv(c.advMode || "none", (condOwnAdv(c) || {}).m
 const SAVE_AUTOFAIL = ["Paralyzed", "Petrified", "Stunned", "Unconscious"];
 const saveAutoFails = (c, ability) => (ability === "str" || ability === "dex") && (c.conditions || []).some((cd) => SAVE_AUTOFAIL.includes(cd.name));
 const saveAdv = (c, ability) => combineAdv(ownAdv(c), (ability === "dex" && (c.conditions || []).some((cd) => cd.name === "Restrained")) ? "dis" : "none");
+// Exhaustion (2024): −2 per level to every d20 Test
+const exhaustLevel = (c) => { const cd = (c.conditions || []).find((x) => x.name === "Exhaustion"); return cd ? (cd.level || 1) : 0; };
+const exhaustPen = (c) => 2 * exhaustLevel(c);
+// A melee hit on a Paralyzed/Unconscious creature is a critical hit (RAW: within 5 ft)
+const HELPLESS_CONDS = ["Paralyzed", "Unconscious"];
+const meleeAutoCrit = (t, a) => !!(a && /Melee[^.]*Attack/i.test(a.d || "") && t && (t.conditions || []).some((cd) => HELPLESS_CONDS.includes(cd.name)));
 const vsState = (t) => (t.advVs && t.advVs !== "none" ? t.advVs : (condAdvVs(t) || {}).mode || "none");
 const combineAdv = (aMode, tMode) => {
   const adv = aMode === "adv" || tMode === "adv";
@@ -1566,7 +1572,7 @@ function applyDamage(c, amt, dtype, logs, toasts) {
       logs.push(`<b>${c.name}</b>: concentration check needed — DC ${dc} CON save (${concLabel(c)}). Roll it, then tap ◈ to drop it on a fail.`);
       return;
     }
-    const r = d20(conMod(c), ownAdv(c));
+    const r = d20(conMod(c) - exhaustPen(c), ownAdv(c));
     const pass = r.total >= dc;
     logs.push(`<b>${c.name}</b> concentration check (DC ${dc}): ${r.text} — <b>${pass ? "HOLDS" : "FAILS"}</b>${pass ? "" : ` — loses ${c.concentration}`}`);
     toasts.push({ kind: pass ? "good" : "bad", text: `${c.name}: concentration on ${concLabel(c)} ${pass ? "holds" : "BROKEN"} (${r.text} vs DC ${dc})` });
@@ -2074,7 +2080,7 @@ function CondBadge({ cond, onTap }) {
   return (
     <span className="cond" title={`${CONDITIONS[cond.name] || (cond.boon ? "Boon" : "Custom effect")} (tap for details)`} onClick={onTap}>
       {cond.boon && !known && <span className="condicon">✨</span>}
-      <CondIcon name={cond.name} plain />{cond.name}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
+      <CondIcon name={cond.name} plain />{cond.name}{cond.name === "Exhaustion" && <span className="rt"> Lv{cond.level || 1}</span>}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
     </span>
   );
 }
@@ -5592,6 +5598,7 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
   const [dtype, setDtype] = useState(spellAtk ? (presetDtype || "") : (c.lastDtype || ""));
   const t = picked ? state.combatants.find((x) => x.uid === picked) : null;
   const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const helplessCond = t && (t.conditions || []).find((cd) => ["Paralyzed", "Unconscious"].includes(cd.name))?.name; // melee hit auto-crits
   const targetRow = (x) => (
     <div key={x.uid} className="gs-target" style={{ cursor: "pointer" }} onClick={() => { if (armed()) { setPicked(x.uid); setPhase("resolve"); } }}>
       <b>{x.name}</b>
@@ -5644,6 +5651,11 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
               <div className="trait" style={{ fontSize: 12, color: "var(--faint)", margin: "2px 0 10px" }}>
                 {c.name} rolled their attack{effAc != null ? ` — did they reach AC ${effAc}?` : " — did it hit?"}
               </div>
+              {helplessCond && (
+                <div className="reminder" style={{ marginBottom: 8, color: "var(--gold)" }}>
+                  ⚡ <b>{t.name} is {helplessCond}.</b> If this was a <b>melee</b> attack (within 5 ft), a hit is a <b>critical hit</b> — roll double the damage dice.
+                </div>
+              )}
               <div className="frow" style={{ gap: 8 }}>
                 <button className="btn hitbtn" style={{ flex: 1 }} onClick={() => setPhase("damage")}>✓ Hit</button>
                 <button className="btn missbtn" style={{ flex: 1 }} onClick={() => { api.playerMiss(c.uid, t.uid); onClose(); }}>✗ Miss</button>
@@ -5658,6 +5670,7 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
         {tab === "single" && phase === "damage" && t && (
           <>
             <div className="atktarget" style={{ marginBottom: 8 }}><b>{t.name}</b><span className="atkac good">✓ Hit</span></div>
+            {helplessCond && <div className="reminder" style={{ marginBottom: 8, color: "var(--gold)", fontSize: 12 }}>⚡ Melee hit on a {helplessCond} target = <b>critical hit</b> — enter the total with double damage dice.</div>}
             <div className="frow">
               <label>Damage</label>
               <input type="number" inputMode="numeric" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
@@ -6705,18 +6718,19 @@ export default function App() {
         c.atkUsedBy[a.n] = (c.atkUsedBy[a.n] || 0) + 1;
       }
       const manual = opts.manual || null;
+      const hitBonus = (a.hit || 0) - exhaustPen(c); // Exhaustion: −2 per level to the attack roll
       const atk = opts.preRolled // a reaction resolution re-runs this attack with the same to-hit roll
         ? opts.preRolled
         : manual
-        ? { nat: manual.d20, total: manual.d20 + (a.hit || 0), crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${a.hit ? fmtMod(a.hit) : ""} = ${manual.d20 + (a.hit || 0)} (your roll)` }
-        : d20(a.hit, mode);
+        ? { nat: manual.d20, total: manual.d20 + hitBonus, crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${hitBonus ? fmtMod(hitBonus) : ""} = ${manual.d20 + hitBonus} (your roll)` }
+        : d20(hitBonus, mode);
       revealHidden(c, L); // the attack roll above keeps any hidden bonus; the Hide ends now
       const both = atk.adv !== "none";
       const d20dice = both
         ? [{ s: 20, v: atk.a, cls: atk.a === 20 ? "critd" : atk.a === 1 ? "fumbled" : "plain", dropped: atk.a !== atk.nat },
            { s: 20, v: atk.b, cls: atk.b === 20 ? "critd" : atk.b === 1 ? "fumbled" : "plain", dropped: atk.b !== atk.nat && atk.a === atk.nat }]
         : [{ s: 20, v: atk.nat, cls: atk.crit ? "critd" : atk.fumble ? "fumbled" : "plain" }];
-      const chips = [{ id: Math.random(), dice: d20dice, dieSize: 30, t: ` ${fmtMod(a.hit)} = ${atk.total} to hit`, k: "hit" }];
+      const chips = [{ id: Math.random(), dice: d20dice, dieSize: 30, t: ` ${fmtMod(hitBonus)} = ${atk.total} to hit${exhaustPen(c) ? ` (−${exhaustPen(c)} exhaustion)` : ""}`, k: "hit" }];
       if (atk.crit) chips.push({ t: "NAT 20 — CRIT!", k: "crit" });
       if (atk.fumble) chips.push({ t: "nat 1…", k: "fumble" });
       let effAc = null, isHit = null;
@@ -6728,6 +6742,9 @@ export default function App() {
         // covers untracked targets, where damage is relayed verbally
         else if (!atk.fumble && t.maxHp == null) chips.push({ t: `${t.name}'s AC unknown — ask if ${atk.total} hits`, k: "cond" });
       }
+      // a melee hit on a Paralyzed/Unconscious target is an automatic critical hit
+      const critHit = atk.crit || (isHit === true && meleeAutoCrit(t, a));
+      if (critHit && !atk.crit) chips.push({ t: `CRIT — ${t.name} is helpless!`, k: "crit" });
       // A landed hit on a creature flagged with a defensive reaction pauses here: show
       // the hit, ask the DM whether the target reacts, then resume (miss, reduce, or full).
       if (t && isHit === true && !opts.skipReact) {
@@ -6753,7 +6770,7 @@ export default function App() {
       const parts = [];
       const dmgRoll = isHit === false ? null : manual ? valuesRoll(a.dmg, manual.dmg) : rollFormula(a.dmg);
       if (dmgRoll) {
-        const critRoll = !atk.crit ? null
+        const critRoll = !critHit ? null
           : manual ? (manual.dmgCrit?.length ? valuesRoll(String(a.dmg).replace(/([+-]\d+)\s*$/, ""), manual.dmgCrit) : null)
           : rollFormula(String(a.dmg).replace(/([+-]\d+)\s*$/, ""));
         const chip = dmgChip(dmgRoll, critRoll, a.dtype || "damage");
@@ -6763,7 +6780,7 @@ export default function App() {
         if (a.extra && (!extraNeedsAdv(a) || atk.adv === "adv")) {
           const ex = manual ? (manual.extra?.length ? valuesRoll(a.extra, manual.extra) : null) : rollFormula(a.extra);
           if (ex) {
-            const exCrit = !atk.crit ? null
+            const exCrit = !critHit ? null
               : manual ? (manual.extraCrit?.length ? valuesRoll(a.extra, manual.extraCrit) : null)
               : rollFormula(a.extra);
             const echip = dmgChip(ex, exCrit, a.extraType);
@@ -7065,7 +7082,7 @@ export default function App() {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         const cd = c.conditions.find((x) => x.name === condName && x.rpt); if (!cd) return;
         const cov = cd.rpt.ab === "dex" ? coverBonus(c) : 0;
-        const r = d20(saveMod(c, cd.rpt.ab) + cov, ownAdv(c));
+        const r = d20(saveMod(c, cd.rpt.ab) + cov - exhaustPen(c), saveAdv(c, cd.rpt.ab));
         const ok = r.total >= cd.rpt.dc;
         L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name}): ${r.text} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
         cd.rptDone = `${d.round}:${d.activeUid}`;
@@ -7258,6 +7275,14 @@ export default function App() {
       L.push(`<b>${c.name}</b> uses <b>${it.n}</b>${it.d ? ` — ${it.d}` : ""}`);
     }),
     addCondition: (uid) => setModal({ type: "cond", uid }),
+    setExhaustion: (uid, delta) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      const ex = (c.conditions || []).find((cd) => cd.name === "Exhaustion");
+      const lvl = Math.max(0, Math.min(6, (ex ? ex.level || 1 : 0) + delta));
+      if (lvl === 0) { c.conditions = c.conditions.filter((cd) => cd.name !== "Exhaustion"); L.push(`<b>${c.name}</b> is no longer <b>Exhausted</b>.`); return; }
+      if (ex) ex.level = lvl; else c.conditions.push({ name: "Exhaustion", rounds: null, level: lvl });
+      L.push(`<b>${c.name}</b> — <b>Exhaustion</b> level ${lvl}${lvl >= 6 ? " (dead by RAW)" : ` (−${2 * lvl} to d20 tests)`}`);
+    }),
     removeCondition: (uid, name) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       c.conditions = c.conditions.filter((x) => x.name !== name);
@@ -7789,7 +7814,7 @@ export default function App() {
           return;
         }
         const cov = ability === "dex" ? coverBonus(c) : 0;
-        const mod = saveMod(c, ability) + cov;
+        const mod = saveMod(c, ability) + cov - exhaustPen(c); // Exhaustion −2/level
         const forced = saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves
         const r = d20(mod, saveAdv(c, ability)); // Restrained → DIS on DEX saves
         const ok = forced ? false : r.total >= dc;
@@ -7840,10 +7865,12 @@ export default function App() {
     mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const cov = ab === "dex" ? coverBonus(c) : 0;
-      const mod = saveMod(c, ab) + cov;
-      const r = d20(mod, ownAdv(c));
-      const dcTxt = dc ? ` vs DC ${dc} — <b>${r.total >= dc ? "SUCCESS" : "FAIL"}</b>` : "";
-      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${r.text}${cov ? ` (incl. +${cov} cover)` : ""}${dcTxt}`);
+      const forced = saveAutoFails(c, ab);
+      const mod = saveMod(c, ab) + cov - exhaustPen(c);
+      const r = d20(mod, saveAdv(c, ab));
+      const passed = dc ? (forced ? false : r.total >= dc) : null;
+      const dcTxt = dc ? ` vs DC ${dc} — <b>${passed ? "SUCCESS" : "FAIL"}</b>${forced ? " (auto-fails)" : ""}` : "";
+      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${cov ? ` (incl. +${cov} cover)` : ""}${dcTxt}`);
       const both = r.adv !== "none";
       const dice = both
         ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
@@ -7869,6 +7896,12 @@ export default function App() {
       uids.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         if ((c.condImmune || []).some((x) => x.toLowerCase() === name.toLowerCase())) { L.push(`<b>${c.name}</b> is immune to ${name}.`); return; }
+        if (name === "Exhaustion") { // stacks as a level (1–6); adding again gains a level
+          const ex = c.conditions.find((cd) => cd.name === "Exhaustion");
+          if (ex) { ex.level = Math.min(6, (ex.level || 1) + 1); L.push(`<b>${c.name}</b> — <b>Exhaustion</b> now level ${ex.level}${ex.level >= 6 ? " (dead by RAW)" : ` (−${2 * ex.level} to d20 tests)`}`); }
+          else { c.conditions.push({ name, rounds, level: 1 }); L.push(`<b>${c.name}</b> gains <b>Exhaustion</b> level 1 (−2 to d20 tests)`); }
+          return;
+        }
         if (!c.conditions.some((cd) => cd.name === name)) c.conditions.push({ name, rounds });
         L.push(`<b>${c.name}</b> gains <b>${name}</b>${rounds ? ` (${rounds} rounds)` : ""}`);
         // an Unconscious creature is also Prone
@@ -8703,11 +8736,20 @@ export default function App() {
         return (
           <div className="overlay" onClick={() => setModal(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()}>
-              <h3>{cond.name} — {modalC.name}</h3>
+              <h3>{cond.name}{cond.name === "Exhaustion" ? ` — level ${cond.level || 1}` : ""} — {modalC.name}</h3>
               {cond.rounds != null && <div className="statline"><b>{cond.rounds}</b> round{cond.rounds === 1 ? "" : "s"} remaining (ticks at the start of their turn)</div>}
               <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>
                 {CONDITIONS[cond.name] || "Custom effect — as the DM decreed."}
               </div>
+              {cond.name === "Exhaustion" && (
+                <div className="frow" style={{ gap: 8, alignItems: "center", marginBottom: 12 }}>
+                  <label style={{ minWidth: 0 }}>Level</label>
+                  <button className="btn small" onClick={() => api.setExhaustion(modal.uid, -1)}>−</button>
+                  <b style={{ minWidth: 16, textAlign: "center" }}>{cond.level || 1}</b>
+                  <button className="btn small" disabled={(cond.level || 1) >= 6} onClick={() => api.setExhaustion(modal.uid, 1)}>+</button>
+                  <span className="ad" style={{ fontSize: 11 }}>{(cond.level || 1) >= 6 ? "level 6 = death (RAW)" : `−${2 * (cond.level || 1)} to every d20 test`}</span>
+                </div>
+              )}
               <div className="frow" style={{ justifyContent: "flex-end" }}>
                 <button className="btn" onClick={() => setModal(null)}>✕ Close</button>
                 <button className="btn danger" onClick={() => { api.removeCondition(modal.uid, cond.name); setModal(null); }}>Remove condition</button>
