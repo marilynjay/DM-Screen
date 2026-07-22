@@ -668,6 +668,7 @@ const CONDITIONS = {
   Burning: "Takes 1d4 fire damage at the start of each of its turns until doused (an action) or submerged.",
   Suffocating: "Out of breath: gains 1 Exhaustion level at the end of each of its turns until it can breathe.",
   Hiding: "Counts as Invisible: its attacks have ADV; attacks vs it have DIS. Ends when it attacks, casts with a verbal component, makes noise, or is found.",
+  Silenced: "In a Silence field: Deafened and can't cast spells with a Verbal (V) component. Apply to everyone inside the area.",
   "Half Cover": "+2 to AC and DEX saving throws.",
   "Three-Quarters Cover": "+5 to AC and DEX saving throws.",
   "Total Cover": "Can't be targeted directly by an attack or spell.",
@@ -678,7 +679,7 @@ const CONDITION_ICONS = {
   Blinded: "svg:blind", Charmed: "💘", Deafened: "🔕", Frightened: "😱",
   Grappled: "🤼", Incapacitated: "🚫", Invisible: "🫥", Paralyzed: "⚡",
   Petrified: "🗿", Poisoned: "🤢", Prone: "svg:prone", Restrained: "🪢",
-  Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥",
+  Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥", Silenced: "🤫",
   Suffocating: "🫁", Hiding: "🥷",
   "Half Cover": "🌗", "Three-Quarters Cover": "🌘", "Total Cover": "🌑",
 };
@@ -5650,6 +5651,9 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const [pick, setPick] = useState(null);
   const [dc, setDc] = useState(c.spellDC ?? "");
   const [noLearn, setNoLearn] = useState(!!fromItem); // scroll/wand casts never join the spellbook
+  const [castAnyway, setCastAnyway] = useState(false); // Subtle Spell / DM override for a Silenced caster
+  const silenced = (c.conditions || []).some((cd) => cd.name === "Silenced");
+  useEffect(() => { setCastAnyway(false); }, [pick]); // re-block each newly picked spell
   const commit = () => api.setSpellDC(c.uid, dc);
   const consumeScroll = () => { if (fromItem && pick) api.consumeItem(c.uid, ["scroll", SPELL_REF[pick].n]); };
   const byName = (a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n);
@@ -5666,6 +5670,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const conc = s ? /Concentration/i.test(s.du || "") : false;
   const sd = s ? spellSaveDmg(s.d, 1) : null;
   const verbal = s ? spellHasVerbal(s) : false; // a verbal spell reveals a hidden caster
+  const blocked = silenced && verbal && !castAnyway; // Silenced casters can't use spells with a Verbal component
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn(); consumeScroll();
@@ -5682,6 +5687,11 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{fromItem ? `📜 ${c.name} casts from a scroll` : `✨ ${c.name} casts a spell`}</h3>
+        {silenced && (
+          <div className="trait" style={{ fontSize: 12, color: "var(--danger)", margin: "0 0 6px" }}>
+            🤫 <b>{c.name} is Silenced</b> — no spells with a Verbal (V) component. Spells without a V (e.g. Minor Illusion) still work.
+          </div>
+        )}
         {(!pick || saveAb) && (
           <div className="frow" style={{ gap: 6, fontSize: 12 }}>
             <label style={{ minWidth: 0 }}>Spell save DC</label>
@@ -5720,15 +5730,22 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
           </>
         ) : (
           <>
-            <div className="statline" style={{ fontSize: 14, marginTop: 4 }}><b>{s.n}</b> — {s.m}</div>
+            <div className="statline" style={{ fontSize: 14, marginTop: 4 }}><b>{s.n}</b> — {s.m}{verbal ? " · V" : ""}</div>
             <div className="spellstats">Casting: {s.ct} · Range: {s.rg} · Duration: {s.du}{conc ? " · ◈ Concentration" : ""}</div>
-            <div className="pcactions" style={{ marginTop: 10 }}>
-              {saveAb
-                ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
-                : isAttack
-                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : "", verbal); }}>⚔ Spell attack — you roll to hit</button>
-                : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc, verbal); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
-            </div>
+            {blocked ? (
+              <div style={{ marginTop: 10 }}>
+                <div className="trait" style={{ fontSize: 12.5, color: "var(--danger)" }}>🤫 <b>{c.name} is Silenced</b> — {s.n} has a Verbal component, so it can't be cast here.</div>
+                <button className="btn small ghost" style={{ marginTop: 8 }} onClick={() => setCastAnyway(true)}>Cast anyway (Subtle Spell / DM override) →</button>
+              </div>
+            ) : (
+              <div className="pcactions" style={{ marginTop: 10 }}>
+                {saveAb
+                  ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
+                  : isAttack
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : "", verbal); }}>⚔ Spell attack — you roll to hit</button>
+                  : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc, verbal); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
+              </div>
+            )}
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
             {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
             {fromItem
