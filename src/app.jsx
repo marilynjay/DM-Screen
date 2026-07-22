@@ -5399,7 +5399,7 @@ function AdvSetModal({ c, onSetOwn, onSetVs, onClose }) {
   );
 }
 
-function PlayerAttackModal({ c, state, api, onSave, onClose }) {
+function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spellName, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const isEnemy = c.side !== "ally";
@@ -5411,7 +5411,8 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
   const [picked, setPicked] = useState(null);
   const [phase, setPhase] = useState("pick"); // pick → resolve → damage
   const [amt, setAmt] = useState("");
-  const [dtype, setDtype] = useState(c.lastDtype || ""); // default to this player's last weapon type
+  // spell attacks carry their own damage type (Fire Bolt → fire); weapons default to the player's last type
+  const [dtype, setDtype] = useState(spellAtk ? (presetDtype || "") : (c.lastDtype || ""));
   const t = picked ? state.combatants.find((x) => x.uid === picked) : null;
   const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
   const targetRow = (x) => (
@@ -5427,13 +5428,15 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
   return (
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>⚔ {c.name} attacks</h3>
-        <div className="tabs" style={{ marginBottom: 8 }}>
-          {[["single", "🎯 One target"], ["aoe", "✦ AoE / save"]].map(([k, lbl]) => (
-            <button key={k} className="btn small" style={tab === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
-              onClick={() => setTab(k)}>{lbl}</button>
-          ))}
-        </div>
+        <h3>⚔ {c.name}{spellAtk && spellName ? ` casts ${spellName}` : " attacks"}</h3>
+        {!spellAtk && (
+          <div className="tabs" style={{ marginBottom: 8 }}>
+            {[["single", "🎯 One target"], ["aoe", "✦ AoE / save"]].map(([k, lbl]) => (
+              <button key={k} className="btn small" style={tab === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
+                onClick={() => setTab(k)}>{lbl}</button>
+            ))}
+          </div>
+        )}
         {tab === "aoe" && (
           <div>
             <div className="trait" style={{ fontSize: 12.5, color: "var(--faint)", marginBottom: 10 }}>
@@ -5468,7 +5471,7 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
                 <button className="btn hitbtn" style={{ flex: 1 }} onClick={() => setPhase("damage")}>✓ Hit</button>
                 <button className="btn missbtn" style={{ flex: 1 }} onClick={() => { api.playerMiss(c.uid, t.uid); onClose(); }}>✗ Miss</button>
               </div>
-              <button className="btn small ghost" style={{ marginTop: 10 }} onClick={onSave}>…actually it needs a save →</button>
+              {!spellAtk && <button className="btn small ghost" style={{ marginTop: 10 }} onClick={onSave}>…actually it needs a save →</button>}
             </div>
             <div className="frow" style={{ justifyContent: "space-between", marginTop: 10 }}>
               <button className="btn small ghost" onClick={() => { setPicked(null); setPhase("pick"); }}>← back</button>
@@ -5492,7 +5495,7 @@ function PlayerAttackModal({ c, state, api, onSave, onClose }) {
             </div>
             <div className="frow" style={{ justifyContent: "space-between", marginTop: 12 }}>
               <button className="btn small ghost" onClick={() => setPhase("resolve")}>← back</button>
-              <button className="btn primary" disabled={amt === "" || Number(amt) < 0} onClick={() => { api.playerHit(c.uid, t.uid, amt, dtype); onClose(); }}>
+              <button className="btn primary" disabled={amt === "" || Number(amt) < 0} onClick={() => { api.playerHit(c.uid, t.uid, amt, dtype, spellAtk); onClose(); }}>
                 Apply {amt !== "" ? `${amt}${dtype ? ` ${dtype}` : ""}` : "damage"}
               </button>
             </div>
@@ -5552,11 +5555,13 @@ function PlayerCastModal({ c, api, fromItem, onClose }) {
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{fromItem ? `📜 ${c.name} casts from a scroll` : `✨ ${c.name} casts a spell`}</h3>
-        <div className="frow" style={{ gap: 6, fontSize: 12 }}>
-          <label style={{ minWidth: 0 }}>Spell save DC</label>
-          <input type="number" inputMode="numeric" style={{ width: 56 }} value={dc} placeholder="—" onChange={(e) => setDc(e.target.value)} onBlur={commit} />
-          <span style={{ fontSize: 11, color: "var(--faint)" }}>optional — saved on {c.name}, auto-fills saves</span>
-        </div>
+        {(!pick || saveAb) && (
+          <div className="frow" style={{ gap: 6, fontSize: 12 }}>
+            <label style={{ minWidth: 0 }}>Spell save DC</label>
+            <input type="number" inputMode="numeric" style={{ width: 56 }} value={dc} placeholder="—" onChange={(e) => setDc(e.target.value)} onBlur={commit} />
+            <span style={{ fontSize: 11, color: "var(--faint)" }}>optional — saved on {c.name}, auto-fills saves</span>
+          </div>
+        )}
         {!pick ? (
           <>
             <input className="sbook-search" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -5588,7 +5593,7 @@ function PlayerCastModal({ c, api, fromItem, onClose }) {
               {saveAb
                 ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                 : isAttack
-                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc); }}>⚔ Spell attack — you roll to hit</button>
+                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : ""); }}>⚔ Spell attack — you roll to hit</button>
                 : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
             </div>
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
@@ -6538,12 +6543,12 @@ export default function App() {
     openGroupSave: (preset) => setModal({ type: "group-save", preset }),
     // ---- player turn helpers (players roll their own dice; the DM records the outcome) ----
     playerAttack: (uid) => setModal({ type: "player-attack", uid }),
-    playerHit: (attackerUid, targetUid, amt, dtype) => mutate((d, L, T) => {
+    playerHit: (attackerUid, targetUid, amt, dtype, spellAtk) => mutate((d, L, T) => {
       const c = d.combatants.find((x) => x.uid === attackerUid);
       const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c || !t) return;
       c.atkCount = (c.atkCount || 0) + 1;
-      c.lastDtype = dtype || ""; // remember this player's weapon type — the picker defaults to it next attack
+      if (!spellAtk) c.lastDtype = dtype || ""; // remember this player's weapon type — the picker defaults to it next attack (spells carry their own type)
       const n = Math.max(0, Math.round(Number(amt) || 0));
       const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
       if (n > 0 && t.maxHp != null) { applyDamage(t, n, dtype || null, L, T); holdGhost(t, snap, 600, dtype || null); }
@@ -6635,9 +6640,9 @@ export default function App() {
       L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
       if (conc) c.concentration = name;
     }),
-    castSpellAttack: (uid, name, conc) => {
+    castSpellAttack: (uid, name, conc, dtype) => {
       mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; L.push(`<b>${c.name}</b> casts <b>${name}</b> — spell attack${conc ? " (concentrating)" : ""}.`); if (conc) c.concentration = name; });
-      setModal({ type: "player-attack", uid });
+      setModal({ type: "player-attack", uid, spellAtk: true, dtype: dtype || "", spellName: name });
     },
     openHide: (uid) => setModal({ type: "hide-check", uid }),
     hide: (uid, success) => mutate((d, L) => {
@@ -8325,7 +8330,7 @@ export default function App() {
         <ReactionPromptModal data={modal.data} onChoose={(id) => api.resolveReaction(id)} />
       )}
       {modal?.type === "player-attack" && modalC && (
-        <PlayerAttackModal c={modalC} state={state} api={api} onClose={() => setModal(null)}
+        <PlayerAttackModal c={modalC} state={state} api={api} spellAtk={modal.spellAtk} presetDtype={modal.dtype} spellName={modal.spellName} onClose={() => setModal(null)}
           onSave={() => setModal({ type: "group-save" })} />
       )}
       {modal?.type === "hide-check" && modalC && (
