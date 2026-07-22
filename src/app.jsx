@@ -1785,11 +1785,14 @@ function onTurnStart(c, state, logs, toasts) {
   c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0;
   c.atkCount = 0; c.dodging = false; c.readied = false; c.hidTurn = false; // player-turn helpers: attack tally, Dodge, readied action, and the once-per-turn Hide all reset when this creature acts again
   if (c.legendary) c.legendary.rem = c.legendary.max;
+  state.burnFx = []; // creatures that took Burning damage this turn-start, for the roster fire animation
   // hazards fire before durations tick (players get a popup instead — handled in the UI)
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Burning")) {
     const r = ri(4);
+    const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
     logs.push(`🔥 <b>${c.name}</b> is Burning (${r}(d4) fire):`);
     applyDamage(c, r, "fire", logs, toasts);
+    state.burnFx.push({ uid: c.uid, snap });
   }
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Suffocating")) {
     logs.push(`🫁 <b>${c.name}</b> is Suffocating — +1 Exhaustion level at the end of this turn.`);
@@ -7418,7 +7421,7 @@ export default function App() {
     if (d.combatants.length === 0) return;
     d.mode = "combat"; d.round = 1;
     const first = sortOrder(d.combatants).find((c) => !c.dead && c.type !== "object");
-    if (first) { d.activeUid = first.uid; L.push(`— <b>Combat begins! Round 1</b> —`); onTurnStart(first, d, L, T); L.push(`▶ <b>${first.name}</b>'s turn.`); }
+    if (first) { d.activeUid = first.uid; L.push(`— <b>Combat begins! Round 1</b> —`); onTurnStart(first, d, L, T); playBurnFx(d); L.push(`▶ <b>${first.name}</b>'s turn.`); }
   });
   const startCombat = () => {
     const cur = stateRef.current;
@@ -7496,7 +7499,8 @@ export default function App() {
     if (stateRef.current.mode === "combat" && rpts.length) { setModal({ type: "repeat-save", uid: act.uid, done: {} }); return; }
     next();
   };
-  const next = () => mutate((d, L, T) => { advanceTurn(d, L, T, 1); clearActiveResults(d, showRechargeDice(d)); });
+  const playBurnFx = (d) => (d.burnFx || []).forEach(({ uid, snap }) => { const t = d.combatants.find((x) => x.uid === uid); if (t) holdGhost(t, snap, 600, "fire"); });
+  const next = () => mutate((d, L, T) => { advanceTurn(d, L, T, 1); playBurnFx(d); clearActiveResults(d, showRechargeDice(d)); });
   const prev = () => mutate((d, L, T) => { advanceTurn(d, L, T, -1); clearActiveResults(d); });
 
   const doReset = (keepMonsters) => {
@@ -8503,7 +8507,12 @@ export default function App() {
           onApplyFire={(amt) => {
             const c = stateRef.current.combatants.find((x) => x.uid === modal.uid);
             const alsoSuff = !!c && c.conditions.some((cd) => cd.name === "Suffocating");
-            mutate((d, L, T) => { const cc = d.combatants.find((x) => x.uid === modal.uid); if (cc) applyDamage(cc, Math.max(0, amt), "fire", L, T); });
+            mutate((d, L, T) => {
+              const cc = d.combatants.find((x) => x.uid === modal.uid); if (!cc) return;
+              const snap = { hp: cc.hp, thp: cc.thp, dead: cc.dead, unconscious: cc.unconscious, stable: cc.stable, id: Math.random() };
+              applyDamage(cc, Math.max(0, amt), "fire", L, T);
+              holdGhost(cc, snap, 600, "fire");
+            });
             if (!alsoSuff) setModal(null); // damage entered → dismiss (unless the Suffocating reminder still needs showing)
           }}
           onRemoveCond={(name) => {
