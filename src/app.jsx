@@ -3965,6 +3965,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
         <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>
+        <button className="btn small" onClick={() => api.openMonsterItems(c.uid)}>🎒 Use item…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>
           Rolls: {c.advMode === "none" ? "normal" : c.advMode === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}
         </button>
@@ -5555,6 +5556,55 @@ function formToItem(f) {
     if (parseInt(f.acB, 10)) it.acB = parseInt(f.acB, 10);
   }
   return it;
+}
+
+// A monster's own item bag — only what the DM has given it (never the full player catalog).
+// Empty → prompts to give one, leading to the give-loot dialogue.
+function MonsterItemsModal({ c, api, onGive, onClose }) {
+  const loot = c.loot || [];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🎒 {c.name}'s items</h3>
+        {loot.length === 0 ? (
+          <>
+            <div className="trait" style={{ marginBottom: 12 }}>{c.name} has no items — creatures can only use what you've given them.</div>
+            <div className="frow" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn" onClick={onClose}>Close</button>
+              <button className="btn primary" onClick={onGive}>Give item…</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {loot.map((raw, i) => {
+              const it = lootObj(raw);
+              const usable = it.heal || it.ch != null || (it.c && !it.wpn) || (it.d && !it.wpn && !it.armor && !it.acB);
+              return (
+                <div className="actrow" key={i}>
+                  <span className="an">{it.n}{it.ch != null && <span style={{ color: "var(--faint)", fontSize: 11 }}> ({it.ch} ch)</span>}</span>
+                  {it.wpn && <span className="chip ok" title="This weapon appears as an attack on the card">⚔ in attacks</span>}
+                  {(it.armor || it.acB) && <button className="btn small" onClick={() => api.equipItem(c.uid, i)}>{it.eq ? "Unequip" : "Equip"}</button>}
+                  {it.scroll && SPELL_REF[it.scroll] ? (
+                    <button className="btn small primary" title={`Cast ${SPELL_REF[it.scroll].n} from this scroll (consumes it)`} onClick={() => api.openScrollCast(c.uid, it.scroll)}>📜 Cast</button>
+                  ) : usable ? (
+                    <button className="btn small" disabled={it.ch === 0} onClick={() => api.useItem(c.uid, i)}>
+                      {it.heal ? "Drink" : it.ch != null ? "Use charge" : it.c ? "Consume" : "Use"}
+                    </button>
+                  ) : null}
+                  {it.d && <span className="ad" style={{ flexBasis: "100%", fontSize: 11 }}>{it.d}{it.heal ? ` (${it.heal})` : ""}</span>}
+                </div>
+              );
+            })}
+            <div className="frow" style={{ gap: 8, marginTop: 12, alignItems: "center" }}>
+              <button className="btn small ghost" onClick={onGive}>Give / edit items…</button>
+              <span style={{ flex: 1 }} />
+              <button className="btn" onClick={onClose}>Close</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDeleteCustomItem, onSave, onClose }) {
@@ -7798,6 +7848,7 @@ export default function App() {
     openDefenses: (uid) => setModal({ type: "defenses", uid }),
     openAddAttack: (uid) => setModal({ type: "addattack", uid }),
     openLoot: (uid) => setModal({ type: "loot-give", uid }),
+    openMonsterItems: (uid) => { setPeek(null); setModal({ type: "monster-items", uid }); },
     openDeathSaves: (uid) => setModal({ type: "deathsaves", uid }),
     openCondInfo: (uid, condName) => setModal({ type: "cond-info", uid, condName }),
     openThp: (uid) => setModal({ type: "thp-edit", uid }),
@@ -9125,6 +9176,11 @@ export default function App() {
             });
             setModal(null);
           }} />
+      )}
+      {modal?.type === "monster-items" && modalC && (
+        <MonsterItemsModal c={modalC} api={api}
+          onGive={() => setModal({ type: "loot-give", uid: modal.uid })}
+          onClose={() => setModal(null)} />
       )}
       {modal?.type === "item-compendium" && (
         <LootGiveModal compendium customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)} />
