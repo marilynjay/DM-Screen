@@ -1341,7 +1341,13 @@ function condOwnAdv(c) {
   if (!adv && !dis) return null;
   return { mode: adv && dis ? "none" : adv ? "adv" : "dis", from: froms.join(", "), cancel: adv && dis };
 }
-const ownAdv = (c) => combineAdv(c.advMode, selfAdv(c)); // the creature's effective advantage on its own d20s
+const ownAdv = (c) => combineAdv(c.advMode, selfAdv(c)); // effective advantage on its own d20s (manual toggle + trait aura; used for saves)
+// attack rolls also fold in condition-driven adv/dis (Poisoned/Blinded/Frightened/Prone/Restrained → DIS, Invisible → ADV)
+const ownAtkAdv = (c) => combineAdv(c.advMode || "none", (condOwnAdv(c) || {}).mode || "none");
+// these conditions auto-fail STR & DEX saves; Restrained gives DIS on DEX saves
+const SAVE_AUTOFAIL = ["Paralyzed", "Petrified", "Stunned", "Unconscious"];
+const saveAutoFails = (c, ability) => (ability === "str" || ability === "dex") && (c.conditions || []).some((cd) => SAVE_AUTOFAIL.includes(cd.name));
+const saveAdv = (c, ability) => combineAdv(ownAdv(c), (ability === "dex" && (c.conditions || []).some((cd) => cd.name === "Restrained")) ? "dis" : "none");
 const vsState = (t) => (t.advVs && t.advVs !== "none" ? t.advVs : (condAdvVs(t) || {}).mode || "none");
 const combineAdv = (aMode, tMode) => {
   const adv = aMode === "adv" || tMode === "adv";
@@ -3525,6 +3531,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
 function MonsterCard({ c, api, results, peek, turnKey }) {
   const [hintOpen, setHintOpen] = useState(null); // [actionIndex, hintIndex] of expanded advantage-hint chip
   const [spellOpen, setSpellOpen] = useState(null); // `${rowKey}:${spellKey}` of expanded spell chip
+  const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
   const cov = coverBonus(c);
   const effAc = c.ac + (c.acBoost || 0) + cov;
   return (
@@ -3574,7 +3581,9 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
             </span>
           )}
         </div>
-        {c.actions.map((a, i) => (
+        {incapCond ? (
+          <div className="reminder" style={{ color: "var(--danger)" }}>🚫 <b>{incapCond}</b> — Incapacitated: no actions, bonus actions, or reactions until it ends.</div>
+        ) : c.actions.map((a, i) => (
           <div className="actrow" key={i}>
             <span className="an">{a.n}{a.rech ? <span style={{ color: "var(--faint)", fontSize: 11 }}> (Recharge {a.rech}–6)</span> : null}</span>
             {a.kind === "atk" && (
@@ -3635,7 +3644,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
         ))}
       </div>
 
-      {c.legendary && c.legendary.options.length > 0 && (
+      {!incapCond && c.legendary && c.legendary.options.length > 0 && (
         <div className="sect">
           <div className="lbl">Legendary Actions ({c.legendary.rem} left)</div>
           <LegendaryOptions c={c} api={api} results={results} turnKey={turnKey} />
@@ -6688,7 +6697,8 @@ export default function App() {
       const t = opts.targetUid ? d.combatants.find((x) => x.uid === opts.targetUid) : null;
       const tMode0 = t ? (opts.vsOverride || vsState(t)) : "none";
       const tMode = tMode0 === "adv*" ? "adv" : tMode0;
-      const mode = t ? combineAdv(ownAdv(c), tMode) : ownAdv(c);
+      const atkAdv = ownAtkAdv(c); // attacker's own adv/dis, incl. conditions like Poisoned/Blinded/Prone
+      const mode = t ? combineAdv(atkAdv, tMode) : atkAdv;
       if (opts.countAtk) {
         c.atkUsed = (c.atkUsed || 0) + 1;
         c.atkUsedBy = c.atkUsedBy || {};
@@ -7780,8 +7790,9 @@ export default function App() {
         }
         const cov = ability === "dex" ? coverBonus(c) : 0;
         const mod = saveMod(c, ability) + cov;
-        const r = d20(mod, ownAdv(c));
-        const ok = r.total >= dc;
+        const forced = saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves
+        const r = d20(mod, saveAdv(c, ability)); // Restrained → DIS on DEX saves
+        const ok = forced ? false : r.total >= dc;
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
@@ -7793,7 +7804,7 @@ export default function App() {
           note = (note ? note + " " : "") + `+${cond}`;
           L.push(`<b>${c.name}</b> gains <b>${cond}</b>${condR ? ` (${condR} rd)` : ""} from the failed save.`);
         }
-        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} save ${r.text} vs DC ${dc} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
+        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} save ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
         const both = r.adv !== "none";
         const dice = both
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
