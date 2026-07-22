@@ -1487,6 +1487,12 @@ function applyDeathSave(c, kind, logs, toasts) {
 
 /* Applies damage to combatant IN PLACE (on a cloned state). Returns log lines + toasts. */
 /* 2024 rules: temp HP doesn't stack — keep the higher value; healing never restores it */
+// Attacking gives a hidden creature away — the Hide (Invisible) ends once they attack.
+function revealHidden(c, logs) {
+  if (!c || !(c.conditions || []).some((cd) => cd.name === "Hiding")) return;
+  c.conditions = c.conditions.filter((cd) => cd.name !== "Hiding");
+  logs.push(`<b>${c.name}</b> is no longer <b>Hiding</b> — attacking gives their position away.`);
+}
 function grantTempHp(c, amt, logs) {
   if (c.hp == null || amt <= 0) return;
   if ((c.thp || 0) >= amt) {
@@ -6534,6 +6540,7 @@ export default function App() {
         : manual
         ? { nat: manual.d20, total: manual.d20 + (a.hit || 0), crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${a.hit ? fmtMod(a.hit) : ""} = ${manual.d20 + (a.hit || 0)} (your roll)` }
         : d20(a.hit, mode);
+      revealHidden(c, L); // the attack roll above keeps any hidden bonus; the Hide ends now
       const both = atk.adv !== "none";
       const d20dice = both
         ? [{ s: 20, v: atk.a, cls: atk.a === 20 ? "critd" : atk.a === 1 ? "fumbled" : "plain", dropped: atk.a !== atk.nat },
@@ -6700,6 +6707,7 @@ export default function App() {
       const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c || !t) return;
       c.atkCount = (c.atkCount || 0) + 1;
+      revealHidden(c, L);
       if (!spellAtk) c.lastDtype = dtype || ""; // remember this player's weapon type — the picker defaults to it next attack (spells carry their own type)
       const n = Math.max(0, Math.round(Number(amt) || 0));
       const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
@@ -6712,6 +6720,7 @@ export default function App() {
       const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c) return;
       c.atkCount = (c.atkCount || 0) + 1;
+      revealHidden(c, L);
       L.push(`<b>${c.name}</b> misses${t ? ` <b>${t.name}</b>` : ""}.`);
     }),
     dodge: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.dodging = true; L.push(`<b>${c.name}</b> takes the <b>Dodge</b> action — attacks against them have DISADVANTAGE until their next turn.`); }),
@@ -6770,6 +6779,7 @@ export default function App() {
       const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c || !t) return;
       const n = Math.max(0, Math.round(Number(amt) || 0));
+      revealHidden(c, L);
       const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
       if (n > 0 && t.maxHp != null) { applyDamage(t, n, dtype || null, L, T); holdGhost(t, snap, 600, dtype || null); }
       if (cond && !t.dead && !t.conditions.some((cd) => cd.name === cond)) t.conditions.push({ name: cond, rounds: null });
@@ -6779,6 +6789,7 @@ export default function App() {
     itemMiss: (uid, targetUid, itemName, terms) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); const t = d.combatants.find((x) => x.uid === targetUid);
       if (!c) return;
+      revealHidden(c, L);
       L.push(`<b>${c.name}</b> misses${t ? ` <b>${t.name}</b>` : ""} with <b>${itemName}</b>.`);
       consumeLootInDraft(c, terms, L);
     }),
