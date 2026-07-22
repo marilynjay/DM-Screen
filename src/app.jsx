@@ -1375,6 +1375,14 @@ const isBlessed = (c) => (c.conditions || []).some((cd) => cd.name === "Blessed"
 const isBaned = (c) => (c.conditions || []).some((cd) => cd.name === "Baned");
 const isRestrained = (c) => (c.conditions || []).some((cd) => cd.name === "Restrained");
 const hasMagicResistance = (c) => (c.traits || []).some((t) => /Advantage on saving throws against spells/i.test(t.d || ""));
+// Regeneration: "regains N Hit Points at the start of each of its turns" (Troll, Oni, …)
+function regenTrait(c) {
+  for (const t of (c.traits || [])) {
+    const m = (t.d || "").match(/regains (\d+) Hit Points at the start/i);
+    if (m) return { amt: +m[1], needsPositive: /at least 1 Hit Point/i.test(t.d), acidFireStops: /Acid or Fire damage/i.test(t.d) };
+  }
+  return null;
+}
 // Bless (+1d4) / Bane (−1d4): roll the die each time it applies; returns the signed delta and a note
 function blessBaneRoll(c) {
   let delta = 0; const notes = [];
@@ -1618,6 +1626,8 @@ function applyDamage(c, amt, dtype, logs, toasts) {
   }
   c.hp = Math.max(0, c.hp - through);
   logs.push(`${amt} ${dtype || "dmg"} → <b>${c.name}</b>${tag ? ` (${tag})` : ""}${absTag} = ${finalDmg} · HP ${before}→${c.hp}`);
+  // acid/fire shuts off Regeneration on the creature's next turn (Troll, etc.)
+  if (finalDmg > 0 && (dtype === "fire" || dtype === "acid")) { const rg = regenTrait(c); if (rg && rg.acidFireStops) c.regenOff = true; }
   const half = Math.floor(c.maxHp / 2);
   if (before > half && c.hp <= half && c.hp > 0) logs.push(`<b>${c.name}</b> is <b>Bloodied</b>.`);
   if (c.hp === 0 && before > 0) {
@@ -1863,6 +1873,21 @@ function spellCondFrom(text, du) {
 
 const singleTargetText = (t) => /\b(?:one|a|an) (?:willing )?(?:creature|target|humanoid|beast|person|giant)\b|creature (?:that )?(?:you|it) (?:can see|touch)/i.test(t || "") && !/each creature/i.test(t || "");
 
+// A condition an attack imposes on a hit ("…has the Grappled condition", "…has the Prone condition").
+// save = the DC/ability that negates it (Poisoned bites etc.); null = auto-on-hit (Grab, Gore).
+function actionCondRider(a) {
+  const d = (a && a.d) || "";
+  const m = d.match(/ha(?:s|ve) the (\w+) condition/);
+  if (!m || !CONDITIONS[m[1]]) return null;
+  const sm = d.match(/DC (\d+)\s+(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/i);
+  const gated = /saving throw/i.test(d);
+  return {
+    cond: m[1],
+    condR: /until the end of its next turn/i.test(d) ? 1 : null,
+    save: gated ? { ab: sm ? sm[2].slice(0, 3).toLowerCase() : "", dc: sm ? +sm[1] : null } : null,
+  };
+}
+
 // Distinct ability saves a spell actually FORCES (a creature is made to roll). Excludes flavor
 // like "a −2 penalty to Dexterity saving throws" or "Disadvantage on Wisdom saving throws".
 // >1 means the spell resolves different effects with different saves (Prismatic Spray, Symbol, …),
@@ -1927,6 +1952,22 @@ function onTurnStart(c, state, logs, toasts) {
   if (c.type === "monster" && !c.dead && c.conditions.some((x) => x.name === "Suffocating")) {
     logs.push(`🫁 <b>${c.name}</b> is Suffocating — +1 Exhaustion level at the end of this turn.`);
     toasts.push({ kind: "bad", text: `${c.name} is suffocating — +1 Exhaustion at end of turn.` });
+  }
+  // Regeneration: regain HP at the start of the creature's turn, unless acid/fire shut it off
+  if (c.type === "monster" && !c.dead) {
+    const rg = regenTrait(c);
+    if (rg) {
+      const suppressed = rg.acidFireStops && c.regenOff;
+      c.regenOff = false; // the suppression only lasts this one turn
+      if (suppressed) {
+        logs.push(`🩹 <b>${c.name}</b> — Regeneration doesn't function this turn (took acid/fire).`);
+        toasts.push({ kind: "good", text: `${c.name}'s Regeneration is suppressed (acid/fire).` });
+      } else if (c.hp > 0 && c.hp < c.maxHp) {
+        const before = c.hp;
+        c.hp = Math.min(c.maxHp, c.hp + rg.amt);
+        logs.push(`🩹 <b>${c.name}</b> regenerates ${c.hp - before} HP · ${before}→${c.hp}.`);
+      }
+    }
   }
   // recharge rolls (results recorded for the UI to render as dice)
   state.rechargeRolls = [];
@@ -3753,7 +3794,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
             )}
             {a.kind === "save" && a.save?.dc && !replacesAttack(c, a) && (
               <button className="btn small cond" disabled={a.rech && !a.ready} title="Roll this save for multiple targets and apply damage"
-                onClick={() => api.openGroupSave({ name: `${c.name} — ${a.n}`, ability: a.save.ability, dc: a.save.dc, dmg: a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]) || "", dtype: a.dtype || "", casterUid: c.uid })}>
+                onClick={() => api.openGroupSave({ name: `${c.name} — ${a.n}`, ability: a.save.ability, dc: a.save.dc, dmg: a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]) || "", dtype: a.dtype || "", casterUid: c.uid, ...(spellCondFrom(a.d, "") || {}), rpt: /repeats the save/i.test(a.d || "") })}>
                 ⭗ Group
               </button>
             )}
@@ -6992,6 +7033,20 @@ export default function App() {
           parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, opts.T || []));
           const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
           chips.push({ t: `${dmgStr} applied to ${t.name}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}`, k: "sgood" });
+          // condition rider on a landed hit (Grab→Grappled, Gore→Prone, poison bite→Poisoned…)
+          const rider = actionCondRider(a);
+          if (rider && !t.dead) {
+            if (condImmuneTo(t, rider.cond)) {
+              chips.push({ t: `${t.name} is immune to ${rider.cond}`, k: "sbad" });
+            } else if (rider.save) {
+              chips.push({ t: `↯ or ${rider.cond} — ${t.name}: ${rider.save.dc ? `DC ${rider.save.dc} ` : ""}${rider.save.ab ? rider.save.ab.toUpperCase() + " " : ""}save (⋮ → Roll save)`, k: "cond" });
+              L.push(`<b>${t.name}</b> must make a ${rider.save.dc ? `DC ${rider.save.dc} ` : ""}${rider.save.ab ? rider.save.ab.toUpperCase() + " " : ""}save or be <b>${rider.cond}</b>.`);
+            } else if (!t.conditions.some((cd) => cd.name === rider.cond)) {
+              t.conditions.push({ name: rider.cond, rounds: rider.condR ?? null });
+              chips.push({ t: `+ ${rider.cond}${rider.condR ? ` (${rider.condR}r)` : ""}`, k: "cond" });
+              L.push(`<b>${t.name}</b> is now <b>${rider.cond}</b> (from ${a.n}).`);
+            }
+          }
           if (a.ls) {
             // lifesteal: half the damage actually dealt (post-resistance when the target tracks HP)
             const dealt = t.maxHp != null && hpBefore != null ? Math.max(0, hpBefore - t.hp) : parts.reduce((s, p) => s + p.amt, 0);
