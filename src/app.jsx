@@ -1456,11 +1456,15 @@ function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.m
 
 // returns {finalDmg, tag} applying resist/immune/vuln; tag describes the adjustment
 function adjustDamage(c, amt, dtype) {
-  if (!dtype) return { finalDmg: amt, tag: null };
-  const t = dtype.toLowerCase();
-  if ((c.immune || []).some((x) => x.toLowerCase() === t)) return { finalDmg: 0, tag: "immune" };
-  if ((c.resist || []).some((x) => x.toLowerCase() === t)) return { finalDmg: Math.floor(amt / 2), tag: "resist, ½" };
-  if ((c.vuln || []).some((x) => x.toLowerCase() === t)) return { finalDmg: amt * 2, tag: "vulnerable, ×2" };
+  const t = dtype ? dtype.toLowerCase() : null;
+  if (t && (c.immune || []).some((x) => x.toLowerCase() === t)) return { finalDmg: 0, tag: "immune" };
+  // Petrified grants Resistance to ALL damage (typed or not)
+  const petrified = (c.conditions || []).some((cd) => cd.name === "Petrified");
+  const resisted = petrified || (t && (c.resist || []).some((x) => x.toLowerCase() === t));
+  const vulnerable = t && (c.vuln || []).some((x) => x.toLowerCase() === t);
+  if (resisted && vulnerable) return { finalDmg: amt, tag: null }; // resistance & vulnerability cancel → normal
+  if (resisted) return { finalDmg: Math.floor(amt / 2), tag: petrified ? "petrified, ½" : "resist, ½" };
+  if (vulnerable) return { finalDmg: amt * 2, tag: "vulnerable, ×2" };
   return { finalDmg: amt, tag: null };
 }
 
@@ -7850,8 +7854,14 @@ export default function App() {
       uids.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         if ((c.condImmune || []).some((x) => x.toLowerCase() === name.toLowerCase())) { L.push(`<b>${c.name}</b> is immune to ${name}.`); return; }
-        c.conditions.push({ name, rounds });
+        if (!c.conditions.some((cd) => cd.name === name)) c.conditions.push({ name, rounds });
         L.push(`<b>${c.name}</b> gains <b>${name}</b>${rounds ? ` (${rounds} rounds)` : ""}`);
+        // an Unconscious creature is also Prone
+        if (name === "Unconscious" && !c.conditions.some((cd) => cd.name === "Prone")
+            && !(c.condImmune || []).some((x) => x.toLowerCase() === "prone")) {
+          c.conditions.push({ name: "Prone", rounds: null });
+          L.push(`<b>${c.name}</b> is also <b>Prone</b>.`);
+        }
       });
     });
   };
