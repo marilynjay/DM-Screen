@@ -5044,6 +5044,24 @@ function InitTieModal({ groups, onConfirm }) {
 const PARTY_BLANK_ROW = { name: "", ac: "", hp: "", spellDC: "", pp: "", pi: "", str: "", dex: "", con: "", int: "", wis: "", cha: "", here: true };
 const PARTY_MODS = ["str", "dex", "con", "int", "wis", "cha"];
 const memberMods = (m) => { const o = {}; for (const k of PARTY_MODS) { const v = m[k]; if (v != null && v !== "" && !isNaN(Number(v))) o[k] = Number(v); } return o; };
+// Push a saved party member's reference fields onto a live combatant (used when the DM opts to apply
+// party edits to players already on screen). Mirrors makePlayer's field mapping. Max HP updates and
+// current HP is clamped to it (never healed here — the caller offers a separate heal-to-full choice);
+// any active ability-item boosts (abilAdj) are re-layered on top of the member's base modifiers.
+function syncMemberToCombatant(c, m) {
+  c.name = m.name; c.baseName = m.name;
+  c.ac = (m.ac !== "" && m.ac != null && !isNaN(parseInt(m.ac, 10))) ? parseInt(m.ac, 10) : null;
+  const newMax = (m.hp !== "" && m.hp != null && !isNaN(Number(m.hp))) ? Number(m.hp) : null;
+  if (newMax == null) { c.hp = null; c.maxHp = null; }
+  else { c.maxHp = newMax; c.hp = c.hp == null ? newMax : Math.min(c.hp, newMax); }
+  c.pp = (m.pp !== "" && m.pp != null && !isNaN(Number(m.pp))) ? Number(m.pp) : null;
+  c.pi = (m.pi !== "" && m.pi != null && !isNaN(Number(m.pi))) ? Number(m.pi) : null;
+  c.spellDC = (m.spellDC == null || m.spellDC === "") ? null : Number(m.spellDC);
+  const base = memberMods(m);
+  (c.abilAdj || []).forEach((a) => { base[a.ability] = (base[a.ability] ?? 0) + a.modDelta; });
+  c.mods = base;
+  if (Array.isArray(m.spells)) c.spells = [...m.spells];
+}
 const partyRowsFrom = (saved) =>
   (saved?.members?.length ? saved.members.map((m) => ({ ...PARTY_BLANK_ROW, ...m })) : [{ ...PARTY_BLANK_ROW }]); // one slot to start — "+ Add player" grows it
 const partyRosterOf = (teamName, level, rows) => ({
@@ -5166,7 +5184,7 @@ function PartySetupCard({ parties, onPick, onAdd, onSave }) {
    new HP, roster changes, team names, whole new tables. Never touches whoever
    is currently in the fight. Edits are local until Save; empty parties (no
    named members) are discarded on save. */
-function PartyEditModal({ parties, activeId, onSaveAll, onClose }) {
+function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds, onApply }) {
   const toDraft = (p) => ({ id: p.id, teamName: p.name ?? "", level: p.level ?? "", rows: partyRowsFrom(p) });
   const newDraft = () => ({ id: newUid(), teamName: "", level: "", rows: partyRowsFrom(null) });
   const [st, setSt] = useState(() => {
@@ -5174,6 +5192,7 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose }) {
     const sel = list.some((d) => d.id === activeId) ? activeId : list[0].id;
     return { list, sel };
   });
+  const [applyLive, setApplyLive] = useState(false);
   const d = st.list.find((x) => x.id === st.sel);
   const upd = (patch) => setSt((s) => ({ ...s, list: s.list.map((x) => (x.id === s.sel ? { ...x, ...patch } : x)) }));
   const addParty = () => setSt((s) => { const nd = newDraft(); return { list: [...s.list, nd], sel: nd.id }; });
@@ -5183,12 +5202,16 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose }) {
     return { list, sel: list[0].id };
   });
   const anyNamed = st.list.some((x) => x.rows.some((r) => r.name.trim()));
+  // how many members being edited are the same players currently on screen (linked by row id)
+  const liveSet = new Set(screenMemberIds || []);
+  const liveCount = st.list.reduce((n, p) => n + p.rows.filter((r) => r.id && liveSet.has(r.id)).length, 0);
   const save = () => {
     const clean = st.list
       .map((x) => ({ id: x.id, ...partyRosterOf(x.teamName, x.level, x.rows) }))
       .filter((p) => p.members.length);
     onSaveAll(clean, clean.some((p) => p.id === st.sel) ? st.sel : (clean[0]?.id ?? null));
-    onClose();
+    if (applyLive && liveCount && onApply) onApply(clean); // onApply owns the modal transition (heal prompt or close)
+    else onClose();
   };
   return (
     <div className="overlay" onClick={onClose}>
@@ -5201,7 +5224,13 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose }) {
           <span className="lvlchip" onClick={addParty} title="Start another party — handy for DMs running more than one table">＋ New party</span>
         </div>
         <PartyFields rows={d.rows} setRows={(rows) => upd({ rows })} level={d.level} setLevel={(v) => upd({ level: v })} teamName={d.teamName} setTeamName={(v) => upd({ teamName: v })} />
-        <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time a party is added to the screen — players already in the fight aren't modified. Only names are required; a party with no named members is discarded when you save.</div>
+        {liveCount > 0 ? (
+          <label className="ad" style={{ display: "block", margin: "8px 0" }}>
+            <input type="checkbox" checked={applyLive} onChange={(e) => setApplyLive(e.target.checked)} /> ⟳ Also update the {liveCount} player{liveCount === 1 ? "" : "s"} already on screen with these stats <span style={{ color: "var(--faint)" }}>(otherwise changes only apply the next time this party is added). You'll be asked whether to heal them to full.</span>
+          </label>
+        ) : (
+          <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time a party is added to the screen — players already in the fight aren't modified. Only names are required; a party with no named members is discarded when you save.</div>
+        )}
         <div className="frow">
           <button className="btn small danger" onClick={deleteParty}>Delete this party</button>
           <span style={{ flex: 1 }} />
@@ -6763,6 +6792,33 @@ export default function App() {
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
   };
   const pickParty = (id) => { setActivePartyIdState(id); stSet("dm5e:activeParty", id); };
+  // Apply edited party members onto the matching players already on screen (opt-in from Edit parties).
+  // Syncs reference fields + max HP, then — if anyone ends up below their (possibly new) max — offers a
+  // heal-to-full choice via a follow-up popup.
+  const applyPartyEditsToScreen = (cleanList) => {
+    const byId = {};
+    (cleanList || []).forEach((p) => (p.members || []).forEach((m) => { byId[m.id] = m; }));
+    // Compute affected/wounded players synchronously from current state — mutate's updater runs later,
+    // so we can't count inside it and read the count here.
+    const linked = stateRef.current.combatants.filter((c) => c.type === "player" && c.memberId && byId[c.memberId]);
+    const woundedUids = linked.filter((c) => {
+      if (c.dead) return false;
+      const m = byId[c.memberId];
+      const newMax = (m.hp !== "" && m.hp != null && !isNaN(Number(m.hp))) ? Number(m.hp) : null;
+      return newMax != null && c.hp != null && Math.min(c.hp, newMax) < newMax;
+    }).map((c) => c.uid);
+    mutate((d, L) => {
+      let n = 0;
+      d.combatants.forEach((c) => {
+        if (c.type !== "player" || !c.memberId) return;
+        const m = byId[c.memberId]; if (!m) return;
+        syncMemberToCombatant(c, m); n++;
+      });
+      if (n) L.push(`⟳ Updated <b>${n}</b> player${n === 1 ? "" : "s"} on screen from party edits.`);
+    });
+    // own the modal transition: offer heal-to-full if anyone's below max, otherwise just close Edit parties
+    setModal(woundedUids.length ? { type: "party-heal-check", uids: woundedUids } : null);
+  };
   // Write a live player's caster data (spellbook, DC) back onto its saved party member so it survives across sessions.
   const persistMember = (memberId, patch) => {
     if (!memberId) return;
@@ -8933,7 +8989,31 @@ export default function App() {
           onApply={applyBalance} />
       )}
       {modal?.type === "party-edit" && (
-        <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll} onClose={() => setModal(null)} />
+        <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll}
+          screenMemberIds={state.combatants.filter((c) => c.type === "player" && c.memberId && !c.dead).map((c) => c.memberId)}
+          onApply={applyPartyEditsToScreen} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "party-heal-check" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Heal updated players?</h3>
+            <div className="trait" style={{ marginBottom: 10 }}>
+              {modal.uids.length === 1 ? "1 player is" : `${modal.uids.length} players are`} below their max HP after the update. Restore them to full, or keep their current HP?
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end" }}>
+              <button className="btn" onClick={() => setModal(null)}>Keep current HP</button>
+              <button className="btn primary" onClick={() => {
+                const uids = new Set(modal.uids);
+                mutate((d, L) => {
+                  let n = 0;
+                  d.combatants.forEach((c) => { if (uids.has(c.uid) && c.maxHp != null && c.hp !== c.maxHp) { c.hp = c.maxHp; n++; } });
+                  if (n) L.push(`💚 Healed <b>${n}</b> updated player${n === 1 ? "" : "s"} to full HP.`);
+                });
+                setModal(null);
+              }}>Heal to full</button>
+            </div>
+          </div>
+        </div>
       )}
       {modal?.type === "player" && (
         <div className="overlay" onClick={() => setModal(null)}>
