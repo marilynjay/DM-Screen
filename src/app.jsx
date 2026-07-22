@@ -670,6 +670,9 @@ const CONDITIONS = {
   Hiding: "Counts as Invisible: its attacks have ADV; attacks vs it have DIS. Ends when it attacks, casts with a verbal component, makes noise, or is found.",
   Silenced: "In a Silence field: Deafened and can't cast spells with a Verbal (V) component. Apply to everyone inside the area.",
   Slowed: "Speed halved; −2 AC and −2 DEX saves; no Reactions; one action or bonus action (not both) and only one attack per turn; somatic spells may fail (25%). Repeats the WIS save each turn to end.",
+  Hasted: "Speed doubled; +2 AC; advantage on DEX saves; one extra action each turn (Attack ×1, Dash, Disengage, Hide, or Use an Object). When it ends, it can't move or act until after its next turn.",
+  Blessed: "+1d4 to every attack roll and saving throw.",
+  Baned: "−1d4 to every attack roll and saving throw.",
   "Half Cover": "+2 to AC and DEX saving throws.",
   "Three-Quarters Cover": "+5 to AC and DEX saving throws.",
   "Total Cover": "Can't be targeted directly by an attack or spell.",
@@ -681,7 +684,7 @@ const CONDITION_ICONS = {
   Grappled: "🤼", Incapacitated: "🚫", Invisible: "🫥", Paralyzed: "⚡",
   Petrified: "🗿", Poisoned: "🤢", Prone: "svg:prone", Restrained: "🪢",
   Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥", Silenced: "🤫",
-  Suffocating: "🫁", Hiding: "🥷", Slowed: "🐌",
+  Suffocating: "🫁", Hiding: "🥷", Slowed: "🐌", Hasted: "⏩", Blessed: "🙏", Baned: "👎",
   "Half Cover": "🌗", "Three-Quarters Cover": "🌘", "Total Cover": "🌑",
 };
 function coverBonus(c) {
@@ -1349,7 +1352,16 @@ const ownAtkAdv = (c) => combineAdv(c.advMode || "none", (condOwnAdv(c) || {}).m
 // these conditions auto-fail STR & DEX saves; Restrained gives DIS on DEX saves
 const SAVE_AUTOFAIL = ["Paralyzed", "Petrified", "Stunned", "Unconscious"];
 const saveAutoFails = (c, ability) => (ability === "str" || ability === "dex") && (c.conditions || []).some((cd) => SAVE_AUTOFAIL.includes(cd.name));
-const saveAdv = (c, ability) => combineAdv(ownAdv(c), (ability === "dex" && (c.conditions || []).some((cd) => cd.name === "Restrained")) ? "dis" : "none");
+// advantage/disadvantage on a saving throw. magical=true means the save comes from a spell (Magic Resistance applies).
+function saveAdv(c, ability, magical) {
+  const base = ownAdv(c); // manual advMode + self-advantage trait aura
+  let hasAdv = base === "adv";
+  let hasDis = base === "dis";
+  if (ability === "dex" && (c.dodging || isHasted(c))) hasAdv = true; // Dodge / Haste → ADV on DEX saves
+  if (magical && hasMagicResistance(c)) hasAdv = true;                 // Magic Resistance → ADV on saves vs spells
+  if (ability === "dex" && isRestrained(c)) hasDis = true;             // Restrained → DIS on DEX saves
+  return hasAdv && hasDis ? "none" : hasAdv ? "adv" : hasDis ? "dis" : "none"; // adv + dis cancel
+}
 // Exhaustion (2024): −2 per level to every d20 Test
 const exhaustLevel = (c) => { const cd = (c.conditions || []).find((x) => x.name === "Exhaustion"); return cd ? (cd.level || 1) : 0; };
 const exhaustPen = (c) => 2 * exhaustLevel(c);
@@ -1357,8 +1369,30 @@ const exhaustPen = (c) => 2 * exhaustLevel(c);
 const isSlowed = (c) => (c.conditions || []).some((cd) => cd.name === "Slowed");
 const slowSavePen = (c, ability) => (ability === "dex" && isSlowed(c) ? 2 : 0);
 const slowAcPen = (c) => (isSlowed(c) ? 2 : 0); // Slow: −2 AC
-// effective AC: base + reaction shield + cover − Slow penalty (null when the creature has no AC)
-const effAcOf = (c) => (c.ac == null ? null : c.ac + (c.acBoost || 0) + coverBonus(c) - slowAcPen(c));
+const isHasted = (c) => (c.conditions || []).some((cd) => cd.name === "Hasted");
+const hasteAcBonus = (c) => (isHasted(c) ? 2 : 0); // Haste: +2 AC
+const isBlessed = (c) => (c.conditions || []).some((cd) => cd.name === "Blessed");
+const isBaned = (c) => (c.conditions || []).some((cd) => cd.name === "Baned");
+const isRestrained = (c) => (c.conditions || []).some((cd) => cd.name === "Restrained");
+const hasMagicResistance = (c) => (c.traits || []).some((t) => /Advantage on saving throws against spells/i.test(t.d || ""));
+// Bless (+1d4) / Bane (−1d4): roll the die each time it applies; returns the signed delta and a note
+function blessBaneRoll(c) {
+  let delta = 0; const notes = [];
+  if (isBlessed(c)) { const v = ri(4); delta += v; notes.push(`+${v} Bless`); }
+  if (isBaned(c)) { const v = ri(4); delta -= v; notes.push(`−${v} Bane`); }
+  return { delta, note: notes.join(" ") };
+}
+// Reminders for a player about to roll a save (they roll their own dice): flat mods, dice, and advantage sources.
+function saveReminders(c, ability) {
+  const r = [];
+  if (isBlessed(c)) r.push("🙏 +1d4 Bless");
+  if (isBaned(c)) r.push("👎 −1d4 Bane");
+  if (ability === "dex" && isSlowed(c)) r.push("🐌 −2 Slow");
+  if (ability === "dex" && (c.dodging || isHasted(c))) r.push(`↗ roll ADVANTAGE (${c.dodging ? "Dodge" : "Haste"})`);
+  return r;
+}
+// effective AC: base + reaction shield + cover + Haste − Slow (null when the creature has no AC)
+const effAcOf = (c) => (c.ac == null ? null : c.ac + (c.acBoost || 0) + coverBonus(c) - slowAcPen(c) + hasteAcBonus(c));
 // A melee hit on a Paralyzed/Unconscious creature is a critical hit (RAW: within 5 ft)
 const HELPLESS_CONDS = ["Paralyzed", "Unconscious"];
 const meleeAutoCrit = (t, a) => !!(a && /Melee[^.]*Attack/i.test(a.d || "") && t && (t.conditions || []).some((cd) => HELPLESS_CONDS.includes(cd.name)));
@@ -1759,13 +1793,16 @@ const spellHasVerbal = (s) => /\bV\b/.test(s?.cp || "");
 // Spells that blanket an area with a condition and no saving throw — cast them by marking
 // who's inside (keyed by SPELL_REF key → condition name). Concentration-linked, so the
 // condition clears when the caster drops concentration.
-const ZONE_COND_SPELLS = { silence: { cond: "Silenced", also: "Deafened" } };
+const ZONE_COND_SPELLS = {
+  silence: { cond: "Silenced", also: "Deafened", label: "mark who's inside the area" },
+  bless: { cond: "Blessed", label: "choose who to bless" },
+};
 // No-save spells that grant a condition to a chosen creature (or self) — cast them via the
 // buff target picker so the condition is actually applied (and linked to concentration).
-const BUFF_COND_SPELLS = { invisibility: "Invisible", "greater invisibility": "Invisible", mislead: "Invisible", sequester: "Invisible" };
+const BUFF_COND_SPELLS = { invisibility: "Invisible", "greater invisibility": "Invisible", mislead: "Invisible", sequester: "Invisible", haste: "Hasted" };
 // Save-for-effect spells that apply a tracked condition on a FAILED save, where the condition name
 // isn't spelled out as "has the X condition" (so spellCondFrom can't find it). rpt = repeat save to end.
-const SAVE_COND_SPELLS = { slow: { cond: "Slowed", rpt: true } };
+const SAVE_COND_SPELLS = { slow: { cond: "Slowed", rpt: true }, bane: { cond: "Baned" } };
 // The condition part of a spell's group-save preset: an explicit SAVE_COND_SPELLS entry wins,
 // otherwise fall back to whatever spellCondFrom parses from the text.
 function spellCondPreset(key, text, du) {
@@ -2662,6 +2699,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   const cov = coverBonus(c);
   const effAc = effAcOf(c);
   const slowAc = slowAcPen(c);
+  const hasteAc = hasteAcBonus(c);
   const derived = condAdvVs(c);
   const manual = c.advVs || "none";
   const shown = manual !== "none" ? manual : derived ? derived.mode : "none";
@@ -2741,8 +2779,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       )}
 
       {effAc != null && (
-        <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
-          AC {effAc}{(c.acBoost || cov || slowAc) ? "*" : ""}
+        <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
+          AC {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? "*" : ""}
           {c.acReaction && (
             <span
               className={`shield ${c.acBoost ? "on" : ""}`}
@@ -3254,7 +3292,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
           {resolved.pending && resolved.pending.map((p) => (
             <div key={p.uid} className="gs-row" onClick={(e) => e.stopPropagation()}>
               <b>{p.name}</b>
-              <span className="ad">reports their roll…{p.slowed ? <span style={{ color: "var(--gold)" }}> 🐌 −2 from Slow</span> : null}</span>
+              <span className="ad">reports their roll…{(p.reminders || []).length ? <span style={{ color: "var(--gold)" }}> · {p.reminders.join(" · ")}</span> : null}</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button className="btn small cond" onClick={() => onPlayerResult(p.uid, true)}>✓ {resolved.ctx?.check ? "passed" : "saved"}</button>
                 <button className="btn small" onClick={() => onPlayerResult(p.uid, false)}>✗ failed</button>
@@ -3358,7 +3396,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
         )}
         <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center" }}>
           <button className="btn primary" disabled={!sel.size || (!noSave && !parseInt(dc, 10)) || (noSave && !noDmg && !dmg.trim())}
-            onClick={() => onResolve({ name: preset?.name || (check && skill ? skill : null), ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: check ? "" : dmg.trim(), dtype: check ? "" : dtype.trim(), halfOn, targets: [...sel], noSave, check, dmRoll, cond: preset?.cond || null, cond2: preset?.cond2 || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
+            onClick={() => onResolve({ name: preset?.name || (check && skill ? skill : null), ability: ab, dc: noSave ? null : parseInt(dc, 10), dmg: check ? "" : dmg.trim(), dtype: check ? "" : dtype.trim(), halfOn, targets: [...sel], noSave, check, dmRoll, magical: !!preset?.magical, cond: preset?.cond || null, cond2: preset?.cond2 || null, condR: preset?.condR || null, effectUid: preset?.effectUid || null, laUid: preset?.laUid || null, cmdPick: !!preset?.cmdPick, concSrc: preset?.concSrc || null, concCast: preset?.concCast || null, rpt: !!preset?.rpt, rptNote: preset?.rptNote || null, spellCastUid: preset?.spellCastUid || null })}>
             {check ? `Call ${sel.size} check${sel.size === 1 ? "" : "s"}` : noSave ? `Apply to ${sel.size}` : `Roll ${sel.size} save${sel.size === 1 ? "" : "s"}`}
           </button>
           <span className="spacer" />
@@ -3533,7 +3571,7 @@ function SpellInfo({ k, c, api, laUid, laLocked, turnKey }) {
             <button className="btn small primary" style={{ marginLeft: 8 }}
               disabled={laUid ? (laLocked || c.legendary?.rem <= 0) : !!econBlock}
               title={laUid && laLocked ? "Legendary action already used this turn" : laUid ? "Resolving spends a legendary action" : econBlock ? `${econBlock} — Undo or tap +1 to override` : ownTurn ? (c.spellStyle === "replace" ? "Casting replaces one attack" : "Casting uses this creature's action") : undefined}
-              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), ...(k === "command" ? {} : spellCondPreset(k, s.d, s.du)), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(spellSaveAbilities(s.d).length > 1 ? { multiSave: spellSaveAbilities(s.d) } : {}), ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
+              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), magical: true, ...(k === "command" ? {} : spellCondPreset(k, s.d, s.du)), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(spellSaveAbilities(s.d).length > 1 ? { multiSave: spellSaveAbilities(s.d) } : {}), ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
               ⭗ Roll this save{laUid ? " (spends LA)" : ""}
             </button>
           )}
@@ -3638,12 +3676,13 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
   const cov = coverBonus(c);
   const slowAc = slowAcPen(c);
+  const hasteAc = hasteAcBonus(c);
   const effAc = effAcOf(c);
   return (
     <div className="card torch">
       <h3>{c.name}{c.cr ? <span style={{ color: "var(--faint)", marginLeft: 8, fontSize: 11 }}>CR {c.cr}</span> : null}</h3>
       <div className="statline">
-        <b>AC</b> {effAc}{(c.acBoost || cov || slowAc) ? ` (base ${c.ac}${cov ? `, +${cov} cover` : ""}${slowAc ? `, −${slowAc} Slow` : ""})` : ""} · <b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · <b>Speed</b> {c.spd}
+        <b>AC</b> {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? ` (base ${c.ac}${cov ? `, +${cov} cover` : ""}${hasteAc ? `, +${hasteAc} Haste` : ""}${slowAc ? `, −${slowAc} Slow` : ""})` : ""} · <b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · <b>Speed</b> {c.spd}
         {c.resist?.length > 0 && <> · <b>Resist</b> {c.resist.join(", ")}</>}
         {c.immune?.length > 0 && <> · <b>Immune</b> {c.immune.join(", ")}</>}
         {c.vuln?.length > 0 && <> · <b>Vulnerable</b> {c.vuln.join(", ")}</>}
@@ -5874,7 +5913,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
       name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
       dc: dc === "" ? null : Number(dc), single: singleTargetText(s.d), casterUid: c.uid,
-      noDmg: !/damage/i.test(s.d), ...spellCondPreset(pick, s.d, s.du),
+      noDmg: !/damage/i.test(s.d), magical: true, ...spellCondPreset(pick, s.d, s.du),
       ...(multiSave.length > 1 ? { multiSave } : {}),
       ...(conc ? { concSrc: c.uid, concCast: s.n } : {}),
     });
@@ -5943,7 +5982,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
                 {isMM
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openMagicMissile(c.uid); }}>✨ Cast — assign darts →</button>
                   : zoneCond
-                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond.cond, cond2: zoneCond.also || null, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond.cond, cond2: zoneCond.also || null, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — {zoneCond.label || "choose affected creatures"} →</button>
                   : buffCond
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openBuffCast({ k: pick, casterUid: c.uid, cond: buffCond, condR: conc && /hour/i.test(s.du) ? null : (spellCondFrom(s.d, s.du)?.condR ?? null), conc: conc ? s.n : null }); }}>✨ Cast — apply {buffCond} to a creature →</button>
                   : saveAb
@@ -6863,13 +6902,15 @@ export default function App() {
         : manual
         ? { nat: manual.d20, total: manual.d20 + hitBonus, crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${hitBonus ? fmtMod(hitBonus) : ""} = ${manual.d20 + hitBonus} (your roll)` }
         : d20(hitBonus, mode);
+      let bbNote = "";
+      if (!opts.preRolled) { const bb = blessBaneRoll(c); atk.total += bb.delta; bbNote = bb.note; } // Bless +1d4 / Bane −1d4 on the attack
       revealHidden(c, L); // the attack roll above keeps any hidden bonus; the Hide ends now
       const both = atk.adv !== "none";
       const d20dice = both
         ? [{ s: 20, v: atk.a, cls: atk.a === 20 ? "critd" : atk.a === 1 ? "fumbled" : "plain", dropped: atk.a !== atk.nat },
            { s: 20, v: atk.b, cls: atk.b === 20 ? "critd" : atk.b === 1 ? "fumbled" : "plain", dropped: atk.b !== atk.nat && atk.a === atk.nat }]
         : [{ s: 20, v: atk.nat, cls: atk.crit ? "critd" : atk.fumble ? "fumbled" : "plain" }];
-      const chips = [{ id: Math.random(), dice: d20dice, dieSize: 30, t: ` ${fmtMod(hitBonus)} = ${atk.total} to hit${exhaustPen(c) ? ` (−${exhaustPen(c)} exhaustion)` : ""}`, k: "hit" }];
+      const chips = [{ id: Math.random(), dice: d20dice, dieSize: 30, t: ` ${fmtMod(hitBonus)} = ${atk.total} to hit${bbNote ? ` (${bbNote})` : ""}${exhaustPen(c) ? ` (−${exhaustPen(c)} exhaustion)` : ""}`, k: "hit" }];
       if (atk.crit) chips.push({ t: "NAT 20 — CRIT!", k: "crit" });
       if (atk.fumble) chips.push({ t: "nat 1…", k: "fumble" });
       let effAc = null, isHit = null;
@@ -7224,9 +7265,11 @@ export default function App() {
         const cd = c.conditions.find((x) => x.name === condName && x.rpt); if (!cd) return;
         const cov = cd.rpt.ab === "dex" ? coverBonus(c) : 0;
         const slowPen = slowSavePen(c, cd.rpt.ab); // Slow: −2 to DEX saves
-        const r = d20(saveMod(c, cd.rpt.ab) + cov - exhaustPen(c) - slowPen, saveAdv(c, cd.rpt.ab));
-        const ok = r.total >= cd.rpt.dc;
-        L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name})${slowPen ? " (−2 Slow)" : ""}: ${r.text} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
+        const bb = blessBaneRoll(c); // Bless +1d4 / Bane −1d4
+        const r = d20(saveMod(c, cd.rpt.ab) + cov - exhaustPen(c) - slowPen, saveAdv(c, cd.rpt.ab, !!cd.spell)); // spell-linked repeat → Magic Resistance applies
+        const total = r.total + bb.delta;
+        const ok = total >= cd.rpt.dc;
+        L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name})${slowPen ? " (−2 Slow)" : ""}: ${r.text}${bb.note ? ` ${bb.note} = ${total}` : ""} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
         cd.rptDone = `${d.round}:${d.activeUid}`;
         if (ok) removeRptCondition(d, L, c, cd);
         const both = r.adv !== "none";
@@ -7234,7 +7277,7 @@ export default function App() {
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
              { s: 20, v: r.b, cls: r.b === 20 ? "critd" : r.b === 1 ? "fumbled" : "plain", dropped: r.b !== r.nat && r.a === r.nat }]
           : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
-        setTimeout(() => setModal((mm) => (mm && (mm.type === "repeat-save" || mm.type === "turn-warn") ? { ...mm, done: { ...(mm.done || {}), [condName]: { total: r.total, ok, dice } } } : mm)), 0);
+        setTimeout(() => setModal((mm) => (mm && (mm.type === "repeat-save" || mm.type === "turn-warn") ? { ...mm, done: { ...(mm.done || {}), [condName]: { total, ok, dice } } } : mm)), 0);
       });
     },
     markRepeatSave: (uid, condName, ok) => {
@@ -7883,7 +7926,7 @@ export default function App() {
     }
   };
 
-  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, check, dmRoll, cond, cond2, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
+  const resolveGroupSave = ({ name, ability, dc, dmg, dtype, halfOn, targets, noSave, check, dmRoll, magical, cond, cond2, condR, effectUid, laUid, cmdPick, concSrc, concCast, rpt, rptNote, spellCastUid }) => {
     // beat one: the breath/spell goes off — a whole-screen shape by delivery, colored by type (not for plain ability checks)
     if (!check && targets && targets.length) fireScreenFx(spellShape(name), 0, false, dtypeColor(dtype));
     mutate((d, L, T) => {
@@ -7937,7 +7980,7 @@ export default function App() {
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c || c.dead) return;
         if (!noSave && c.type === "player" && !dmRoll) {
-          pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null, slowed: !check && ability === "dex" && isSlowed(c) });
+          pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null, reminders: check ? [] : saveReminders(c, ability) });
           return;
         }
         const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
@@ -7961,8 +8004,10 @@ export default function App() {
         const slowPen = check ? 0 : slowSavePen(c, ability); // Slow: −2 to DEX saves (not ability checks)
         const mod = (check ? checkMod(c, ability) : saveMod(c, ability)) + cov - exhaustPen(c) - slowPen; // Exhaustion −2/level
         const forced = !check && saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves (saves only)
-        const r = d20(mod, check ? "none" : saveAdv(c, ability)); // Restrained → DIS on DEX saves
-        const ok = forced ? false : r.total >= dc;
+        const r = d20(mod, check ? "none" : saveAdv(c, ability, magical)); // Dodge/Haste/Magic Resistance → ADV; Restrained → DIS
+        const bb = check ? { delta: 0, note: "" } : blessBaneRoll(c); // Bless +1d4 / Bane −1d4 (saves, not ability checks)
+        const total = r.total + bb.delta;
+        const ok = forced ? false : total >= dc;
         let amt = null, note = "";
         if (dmgRoll) {
           amt = ok ? (halfOn ? Math.floor(dmgRoll.total / 2) : 0) : dmgRoll.total;
@@ -7974,7 +8019,7 @@ export default function App() {
           note = (note ? note + " " : "") + `+${cond}`;
           L.push(`<b>${c.name}</b> gains <b>${cond}</b>${condR ? ` (${condR} rd)` : ""} from the failed save.`);
         }
-        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} ${check ? "check" : "save"} ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`}${slowPen ? " (−2 Slow)" : ""} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
+        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} ${check ? "check" : "save"} ${forced ? "auto-fails (incapacitated)" : `${r.text}${bb.note ? ` ${bb.note} = ${total}` : ""} vs DC ${dc}`}${slowPen ? " (−2 Slow)" : ""} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
         const both = r.adv !== "none";
         const dice = both
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
@@ -7982,14 +8027,14 @@ export default function App() {
           : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
         chipUpdates[`${uid}:save`] = [{
           id: Math.random(), dice, dieSize: 30,
-          t: ` ${ability.toUpperCase()} ${check ? "check" : "save"} ${fmtMod(mod)} = ${r.total} vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}${amt != null ? ` · takes ${amt}` : ""}`,
+          t: ` ${ability.toUpperCase()} ${check ? "check" : "save"} ${fmtMod(mod)} = ${total}${bb.note ? ` (${bb.note})` : ""} vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}${amt != null ? ` · takes ${amt}` : ""}`,
           k: ok ? "sgood" : "sbad", mod, dc,
         }];
         const rowDice = (r.adv !== "none")
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
              { s: 20, v: r.b, cls: r.b === 20 ? "critd" : r.b === 1 ? "fumbled" : "plain", dropped: r.b !== r.nat && r.a === r.nat }]
           : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
-        rows.push({ uid: c.uid, name: c.name, total: r.total, mod, ok, dmg: amt, note, dice: rowDice });
+        rows.push({ uid: c.uid, name: c.name, total, mod, ok, dmg: amt, note, dice: rowDice });
       });
       const resolved = {
         pending,
@@ -8014,22 +8059,24 @@ export default function App() {
       const cov = ab === "dex" ? coverBonus(c) : 0;
       const forced = saveAutoFails(c, ab);
       const slowPen = slowSavePen(c, ab); // Slow: −2 to DEX saves
+      const bb = blessBaneRoll(c); // Bless +1d4 / Bane −1d4
       const mod = saveMod(c, ab) + cov - exhaustPen(c) - slowPen;
       const r = d20(mod, saveAdv(c, ab));
-      const passed = dc ? (forced ? false : r.total >= dc) : null;
+      const total = r.total + bb.delta;
+      const passed = dc ? (forced ? false : total >= dc) : null;
       const dcTxt = dc ? ` vs DC ${dc} — <b>${passed ? "SUCCESS" : "FAIL"}</b>${forced ? " (auto-fails)" : ""}` : "";
-      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${cov ? ` (incl. +${cov} cover)` : ""}${slowPen ? " (−2 Slow)" : ""}${dcTxt}`);
+      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${bb.note ? ` ${bb.note} = ${total}` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${slowPen ? " (−2 Slow)" : ""}${dcTxt}`);
       const both = r.adv !== "none";
       const dice = both
         ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
            { s: 20, v: r.b, cls: r.b === 20 ? "critd" : r.b === 1 ? "fumbled" : "plain", dropped: r.b !== r.nat && r.a === r.nat }]
         : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
-      const ok = dc ? r.total >= dc : null;
+      const ok = dc ? total >= dc : null;
       const chip = {
         id: Math.random(), dice, dieSize: 30,
-        t: ` ${ab.toUpperCase()} save ${fmtMod(mod)} = ${r.total}${cov ? ` (incl. +${cov} cover)` : ""}${dc ? ` vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}` : ""}`,
+        t: ` ${ab.toUpperCase()} save ${fmtMod(mod)} = ${total}${bb.note ? ` (${bb.note})` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${dc ? ` vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}` : ""}`,
         k: ok == null ? "hit" : ok ? "sgood" : "sbad",
-        badge: { ab: ab.toUpperCase(), total: r.total, ok },
+        badge: { ab: ab.toUpperCase(), total, ok },
         mod, dc,
       };
       setTimeout(() => {
