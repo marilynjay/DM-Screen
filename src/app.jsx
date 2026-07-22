@@ -3729,7 +3729,7 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
   const targets = state.combatants.filter((c) => c.type !== "effect");
   const [amt, setAmt] = useState("");
   const [dtype, setDtype] = useState("");
-  const [mode, setMode] = useState(initMode || "dmg"); // dmg | heal | thp
+  const [mode, setMode] = useState(initMode || "dmg"); // dmg | heal | thp | set
   const heal = mode === "heal";
   const [sel, setSel] = useState(() => new Set(presetUid ? [presetUid] : []));
   const [half, setHalf] = useState(() => new Set());
@@ -3739,9 +3739,9 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{mode === "heal" ? "Heal" : mode === "thp" ? "Temp HP" : "Damage"}</h3>
+        <h3>{mode === "heal" ? "Heal" : mode === "thp" ? "Temp HP" : mode === "set" ? "Set HP" : "Damage"}</h3>
         <div className="tabs" style={{ marginBottom: 8 }}>
-          {[["dmg", "Damage"], ["heal", "Heal"], ["thp", "Temp HP"]].map(([k, lbl]) => (
+          {[["dmg", "Damage"], ["heal", "Heal"], ["thp", "Temp HP"], ["set", "Set"]].map(([k, lbl]) => (
             <button key={k} className="btn small"
               style={mode === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
               onClick={() => setMode(k)}>{lbl}</button>
@@ -3752,8 +3752,13 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
             Doesn't stack — targets keep the higher value. Healing won't restore it.
           </div>
         )}
+        {mode === "set" && (
+          <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 6 }}>
+            Corrects the HP directly to this value — no damage or heal animation. Use it when the tracked number was wrong.
+          </div>
+        )}
         <div className="frow">
-          <label>Amount</label>
+          <label>{mode === "set" ? "Set HP" : "Amount"}</label>
           <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)} />
         </div>
         {mode === "dmg" && (
@@ -3781,7 +3786,7 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
         ))}
         {targets.length === 0 && <div className="trait">No creatures in combat yet.</div>}
         {!more && targets.length > 1 && (
-          <button className="btn small ghost" onClick={() => setMore(true)}>{mode === "heal" ? "Heal" : mode === "thp" ? "Grant to" : "Damage"} more combatants ▼</button>
+          <button className="btn small ghost" onClick={() => setMore(true)}>{mode === "heal" ? "Heal" : mode === "thp" ? "Grant to" : mode === "set" ? "Set HP on" : "Damage"} more combatants ▼</button>
         )}
         <div className="frow" style={{ marginTop: 12, justifyContent: "flex-end" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -7289,6 +7294,21 @@ export default function App() {
         const amt = half.includes(uid) ? Math.floor(amount / 2) : amount;
         if (mode === "heal") { const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() }; applyHeal(c, amt, L); holdGhost(c, snap, 600, "heal"); }
         else if (mode === "thp") grantTempHp(c, amt, L);
+        else if (mode === "set") {
+          // reconcile: correct the HP directly to a value, no damage/heal math or animation
+          if (c.type === "player" && c.maxHp == null) { L.push(`<b>${c.name}</b> — players track their own HP; nothing to set.`); return; }
+          const before = c.hp;
+          const nv = c.maxHp != null ? Math.max(0, Math.min(c.maxHp, amt)) : Math.max(0, amt);
+          c.hp = nv;
+          if (nv > 0) {
+            c.dead = false; c.unconscious = false; c.stable = false; c.ds = { s: 0, f: 0 };
+          } else if (c.side === "enemy" || c.type === "object") {
+            c.dead = true; c.thp = 0; c.concentration = null;
+          } else {
+            c.unconscious = true; c.concentration = null; c.stable = false; c.ds = { s: 0, f: 0 };
+          }
+          L.push(`<b>${c.name}</b> HP corrected to ${nv}${c.maxHp != null ? `/${c.maxHp}` : ""} (was ${before}).`);
+        }
         else {
           const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
           applyDamage(c, amt, dtype, L, T);
