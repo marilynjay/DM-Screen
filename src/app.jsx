@@ -5314,13 +5314,14 @@ function HazardModal({ c, onApplyFire, onRemoveCond, onClose }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Start of {c.name}'s turn</h3>
         {burning && (<>
-          <div className="reminder" style={{ marginBottom: 8 }}>🔥 <b>{c.name} is Burning</b> — they roll <b>1d4 fire damage</b> now (dousing takes an action).</div>
+          <div className="reminder" style={{ marginBottom: 8 }}>🔥 <b>{c.name} is Burning</b> — apply <b>1d4 fire damage</b> now (their roll, or tap 🎲 to roll it). Dousing takes an action.</div>
           {c.hp != null && (
-            <div className="frow">
-              <label>Damage rolled</label>
-              <input type="number" value={amt} onChange={(e) => setAmt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && amt) { onApplyFire(parseInt(amt, 10)); setAmt(""); } }} />
-              <button className="btn small primary" disabled={!amt} onClick={() => { onApplyFire(parseInt(amt, 10)); setAmt(""); }}>Apply as fire</button>
+            <div className="frow" style={{ gap: 6 }}>
+              <label style={{ minWidth: 0 }}>Damage rolled</label>
+              <input type="number" style={{ width: 60 }} value={amt} onChange={(e) => setAmt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && amt) onApplyFire(parseInt(amt, 10)); }} />
+              <button className="btn small ghost" onClick={() => setAmt(String(ri(4)))}>🎲 roll</button>
+              <button className="btn small primary" disabled={!amt} onClick={() => onApplyFire(parseInt(amt, 10))}>Apply as fire</button>
             </div>
           )}
           <div className="frow">
@@ -8260,7 +8261,10 @@ export default function App() {
       {modal?.type === "hazard" && modalC && (
         <HazardModal c={modalC} onClose={() => setModal(null)}
           onApplyFire={(amt) => {
-            mutate((d, L, T) => { const c = d.combatants.find((x) => x.uid === modal.uid); if (c) applyDamage(c, Math.max(0, amt), "fire", L, T); });
+            const c = stateRef.current.combatants.find((x) => x.uid === modal.uid);
+            const alsoSuff = !!c && c.conditions.some((cd) => cd.name === "Suffocating");
+            mutate((d, L, T) => { const cc = d.combatants.find((x) => x.uid === modal.uid); if (cc) applyDamage(cc, Math.max(0, amt), "fire", L, T); });
+            if (!alsoSuff) setModal(null); // damage entered → dismiss (unless the Suffocating reminder still needs showing)
           }}
           onRemoveCond={(name) => {
             const c = stateRef.current.combatants.find((x) => x.uid === modal.uid);
