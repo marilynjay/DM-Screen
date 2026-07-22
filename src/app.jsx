@@ -369,7 +369,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .row{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:3px 10px 4px;border-bottom:1px solid var(--line);
   min-height:38px}
 .rline{display:flex;align-items:center;gap:8px;min-width:0}
-.rline.r2{padding-left:45px;gap:6px 8px;flex-wrap:wrap;margin-top:-6px}
+.rline.r2{padding-left:45px;gap:6px 8px;flex-wrap:wrap;margin-top:1px}
 .row:last-child{border-bottom:none}
 .row.active{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
 .row.dead > *:not(.lootico){opacity:.42}
