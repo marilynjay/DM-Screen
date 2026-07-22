@@ -2551,11 +2551,20 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   const derived = condAdvVs(c);
   const manual = c.advVs || "none";
   const shown = manual !== "none" ? manual : derived ? derived.mode : "none";
-  const vsTitle =
-    shown === "none" ? "Advantage — tap to set this creature's own rolls and attacks against it"
-    : shown === "adv*" ? "Prone: melee attacks within 5 ft have ADVANTAGE; ranged attacks have DISADVANTAGE — tap to adjust"
-    : `Attacks against ${c.name} have ${shown === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}` +
-      (manual !== "none" ? " (manual)" : ` (from ${derived.from})`) + " — tap to adjust";
+  // the creature's OWN attacks & saves: manual override combined with derived adv/dis
+  // (Aura of Authority / Bloodied Frenzy, Poisoned, Prone, Invisible, …) so the chip
+  // shows advantage that comes from a trait or condition, not just a manual toggle.
+  const derivedOwn = condOwnAdv(c);
+  const ownShown = combineAdv(c.advMode || "none", derivedOwn ? derivedOwn.mode : "none");
+  const advParts = [];
+  if (ownShown !== "none")
+    advParts.push(`${c.name}'s attacks & saves: ${ownShown === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}` +
+      ((c.advMode || "none") !== "none" ? " (manual)" : derivedOwn ? ` (from ${derivedOwn.from})` : ""));
+  if (shown !== "none")
+    advParts.push(`Attacks against ${c.name}: ${shown === "adv*" ? "melee ADVANTAGE / ranged DISADVANTAGE" : shown === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}` +
+      (manual !== "none" ? " (manual)" : derived ? ` (from ${derived.from})` : ""));
+  const vsTitle = advParts.length ? advParts.join(" · ") + " — tap to adjust"
+    : "Advantage — tap to set this creature's own rolls and attacks against it";
   const bloody = isBloodied(c);
 
   return (
@@ -2654,10 +2663,10 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       </span>
 
       {c.type !== "effect" && c.type !== "object" && !c.dead && (
-        <button className={`advchip ${(c.advMode !== "none" || shown !== "none") ? "on" : ""}`}
+        <button className={`advchip ${(ownShown !== "none" || shown !== "none") ? "on" : ""}`}
           title={vsTitle} onClick={() => api.openAdv(c.uid)}>
-          {c.advMode === "none" && shown === "none" ? "A/D" : (<>
-            {c.advMode !== "none" && <b className={c.advMode}>{c.advMode.toUpperCase()}</b>}
+          {ownShown === "none" && shown === "none" ? "A/D" : (<>
+            {ownShown !== "none" && <b className={ownShown}>{ownShown.toUpperCase()}</b>}
             {shown !== "none" && <b className={shown === "adv*" ? "mix" : shown}>⊕{shown === "adv*" ? "A/D" : shown.toUpperCase()}</b>}
           </>)}
         </button>
