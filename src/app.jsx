@@ -7584,7 +7584,7 @@ export default function App() {
       )}
 
       <div className="hdr">
-        <span className={`title ${state.mode === "combat" ? "incombat" : ""}`}>Tablekeeper</span>
+        <span className={`title ${state.mode === "combat" ? "incombat" : ""}`}>Combatkeeper</span>
         {state.mode === "combat" && <span key={state.round} className="round roundpulse"><span className="roundword">Round </span><span className="roundabbr">R</span>{state.round}</span>}
         {state.mode === "combat" && (<>
           <button className="btn small ghost" onClick={prev} title="Back one turn">◀</button>
