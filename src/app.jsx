@@ -658,7 +658,7 @@ const CONDITIONS = {
   Incapacitated: "No actions, bonus actions, or reactions.",
   Invisible: "Its attacks: ADV. Attacks vs it: DIS.",
   Paralyzed: "Incapacitated; auto-fail STR/DEX saves. Attacks vs it: ADV; hits within 5 ft crit.",
-  Petrified: "Incapacitated; immune to all damage; auto-fail STR/DEX saves.",
+  Petrified: "Incapacitated; resistance to all damage; immune to the Poisoned condition; auto-fail STR/DEX saves.",
   Poisoned: "DIS on attack rolls and ability checks.",
   Prone: "Its attacks: DIS. Melee attacks vs it (5 ft): ADV; ranged vs it: DIS.",
   Restrained: "Speed 0. Its attacks: DIS; DEX saves: DIS. Attacks vs it: ADV.",
@@ -1466,12 +1466,20 @@ const DTYPE_COLORS = {
 function conMod(c) { return c.saves?.con ?? c.mods?.con ?? 0; }
 function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.mods?.[k] ?? 0; }
 
+// true when an active condition on c makes it immune to gaining condition `name` (RAW)
+function condGivesImmunity(c, name) {
+  // a Petrified creature is immune to the Poisoned condition
+  if (name && name.toLowerCase() === "poisoned" && (c.conditions || []).some((cd) => cd.name === "Petrified")) return true;
+  return false;
+}
+
 // returns {finalDmg, tag} applying resist/immune/vuln; tag describes the adjustment
 function adjustDamage(c, amt, dtype) {
-  // Petrified — immune to all damage (house rule; RAW is Resistance)
-  if ((c.conditions || []).some((cd) => cd.name === "Petrified")) return { finalDmg: 0, tag: "petrified — immune" };
+  // Petrified — resistance to all damage (RAW)
+  const petrified = (c.conditions || []).some((cd) => cd.name === "Petrified");
   const t = dtype ? dtype.toLowerCase() : null;
   if (t && (c.immune || []).some((x) => x.toLowerCase() === t)) return { finalDmg: 0, tag: "immune" };
+  if (petrified) return { finalDmg: Math.floor(amt / 2), tag: "petrified — resist, ½" };
   const resisted = t && (c.resist || []).some((x) => x.toLowerCase() === t);
   const vulnerable = t && (c.vuln || []).some((x) => x.toLowerCase() === t);
   if (resisted && vulnerable) return { finalDmg: amt, tag: null }; // resistance & vulnerability cancel → normal
@@ -6532,6 +6540,15 @@ export default function App() {
       const draft = structuredClone(prev);
       const logs = [], tst = [];
       fn(draft, logs, tst);
+      // strip any condition a creature is immune to by virtue of another condition (e.g. Petrified → Poisoned)
+      draft.combatants.forEach((t) => {
+        if (!t.conditions) return;
+        const blocked = t.conditions.filter((cd) => condGivesImmunity(t, cd.name));
+        if (blocked.length) {
+          t.conditions = t.conditions.filter((cd) => !condGivesImmunity(t, cd.name));
+          blocked.forEach((cd) => logs.push(`<b>${t.name}</b> is immune to <b>${cd.name}</b> while Petrified.`));
+        }
+      });
       draft.combatants.forEach((t) => {
         if (!t.conditions || !t.conditions.some((cd) => cd.src)) return;
         const keep = [], drop = [];
@@ -7896,6 +7913,7 @@ export default function App() {
       uids.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         if ((c.condImmune || []).some((x) => x.toLowerCase() === name.toLowerCase())) { L.push(`<b>${c.name}</b> is immune to ${name}.`); return; }
+        if (condGivesImmunity(c, name)) { L.push(`<b>${c.name}</b> is immune to ${name} while Petrified.`); return; }
         if (name === "Exhaustion") { // stacks as a level (1–6); adding again gains a level
           const ex = c.conditions.find((cd) => cd.name === "Exhaustion");
           if (ex) { ex.level = Math.min(6, (ex.level || 1) + 1); L.push(`<b>${c.name}</b> — <b>Exhaustion</b> now level ${ex.level}${ex.level >= 6 ? " (dead by RAW)" : ` (−${2 * ex.level} to d20 tests)`}`); }
