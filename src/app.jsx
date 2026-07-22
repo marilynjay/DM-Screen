@@ -1619,6 +1619,14 @@ function normalizeAction(a) {
       if (m) { a.extra = m[1].replace(/\s+/g, ""); a.extraType = "chosen type"; }
     }
   }
+  // Save-based AoE (breath weapons, etc.) carry their damage type only in prose ("(9d8) Cold damage").
+  // Surface it structurally so the group-save / legendary presets can pre-select the type,
+  // matching how attack actions store dtype. Guarded to real damage types so "Half damage" etc. never leak in.
+  if (a.kind === "save" && !a.dtype && a.d) {
+    const m = a.d.match(/\(\d+d\d+(?:\s*[+-]\s*\d+)?\)\s*(\w+) damage/i);
+    const ty = m && m[1].toLowerCase();
+    if (ty && DTYPES.includes(ty)) a.dtype = ty;
+  }
   return a;
 }
 
