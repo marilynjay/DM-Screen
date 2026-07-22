@@ -227,7 +227,7 @@ input[type=number]{width:64px}
   background:var(--ink);border-top:1px solid var(--line)}
 .osapplybar{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));z-index:49;display:flex;justify-content:center;padding:6px 12px;pointer-events:none}
 .osapplybar button{pointer-events:auto;flex:1;max-width:440px;font-size:16px;padding:11px}
-.osfield{width:36px;text-align:center;padding:4px 2px;font-size:14px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);-webkit-appearance:none;appearance:none}
+.osfield{width:42px;text-align:center;padding:4px 2px;font-size:16px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);-webkit-appearance:none;appearance:none}
 .osfield.osdmg{border-color:var(--danger);color:var(--danger);-webkit-text-fill-color:var(--danger);caret-color:var(--danger)}
 .osfield.osheal{border-color:#6bbf7a;color:#6bbf7a;-webkit-text-fill-color:#6bbf7a;caret-color:#6bbf7a}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
