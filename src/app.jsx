@@ -1766,6 +1766,22 @@ function spellSaveDmg(text, ratio) {
     const mm = (text || "").match(/(\d+d\d+(?:\s*[+-]\s*\d+)?) damage of the chosen type/);
     if (mm) dice = mm[1];
   }
+  // multi-type damage lists ("5d8 Acid, Cold, Fire, Lightning, or Thunder damage") — take the first listed type
+  if (!dice) {
+    const mm = (text || "").match(new RegExp(`(\\d+d\\d+(?:\\s*[+-]\\s*\\d+)?) (${TYPES.join("|")})(?=[,\\s][^.]*damage)`, "i"));
+    if (mm) { dice = mm[1]; dtype = mm[2].toLowerCase(); }
+  }
+  // "The spell's base damage is 12d6" (Delayed Blast Fireball and friends)
+  if (!dice) {
+    const mm = (text || "").match(/base damage is (\d+d\d+(?:\s*[+-]\s*\d+)?)/i);
+    if (mm) dice = mm[1];
+  }
+  // bare "takes 8d8 damage" whose type is described in prose ("damage of the spirit's type").
+  // Requires "takes" so buff riders ("deal an extra 1d4 damage on a hit") aren't mistaken for save damage.
+  if (!dice) {
+    const mm = (text || "").match(/takes (\d+d\d+(?:\s*[+-]\s*\d+)?) damage\b/i);
+    if (mm) dice = mm[1];
+  }
   if (!dice) return null;
   return {
     dmg: scaleDice(dice.replace(/\s/g, ""), ratio || 1),
