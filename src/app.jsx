@@ -1518,6 +1518,13 @@ function condGivesImmunity(c, name) {
   if (name && name.toLowerCase() === "poisoned" && (c.conditions || []).some((cd) => cd.name === "Petrified")) return true;
   return false;
 }
+// true if c can't hold condition `name` at all — a static creature immunity (condImmune) or one
+// granted by another condition. Matched exactly so conditional entries ("Charmed (with Mind Blank)")
+// don't block the base condition.
+function condImmuneTo(c, name) {
+  if ((c.condImmune || []).some((x) => x.toLowerCase() === (name || "").toLowerCase())) return true;
+  return condGivesImmunity(c, name);
+}
 
 // returns {finalDmg, tag} applying resist/immune/vuln; tag describes the adjustment
 function adjustDamage(c, amt, dtype) {
@@ -6701,13 +6708,15 @@ export default function App() {
       const draft = structuredClone(prev);
       const logs = [], tst = [];
       fn(draft, logs, tst);
-      // strip any condition a creature is immune to by virtue of another condition (e.g. Petrified → Poisoned)
+      // strip any condition a creature is immune to — a static immunity (undead vs Poisoned, etc.) or one
+      // granted by another condition (Petrified → Poisoned). Catches conditions from any source: spell,
+      // attack rider, or manual, so immunities are always honored.
       draft.combatants.forEach((t) => {
         if (!t.conditions) return;
-        const blocked = t.conditions.filter((cd) => condGivesImmunity(t, cd.name));
+        const blocked = t.conditions.filter((cd) => condImmuneTo(t, cd.name));
         if (blocked.length) {
-          t.conditions = t.conditions.filter((cd) => !condGivesImmunity(t, cd.name));
-          blocked.forEach((cd) => logs.push(`<b>${t.name}</b> is immune to <b>${cd.name}</b> while Petrified.`));
+          t.conditions = t.conditions.filter((cd) => !condImmuneTo(t, cd.name));
+          blocked.forEach((cd) => logs.push(`<b>${t.name}</b> is immune to <b>${cd.name}</b>${condGivesImmunity(t, cd.name) ? " while Petrified" : ""} — it doesn't take effect.`));
         }
       });
       draft.combatants.forEach((t) => {
@@ -7990,9 +7999,11 @@ export default function App() {
           let note = c.dead ? "☠" : c.unconscious ? "(down)" : "";
           // no-save area effects (e.g. Silence) can also impose one or two conditions on everyone caught
           [cond, cond2].forEach((cn) => {
-            if (cn && !c.dead && !c.conditions.some((cd) => cd.name === cn)) {
+            if (cn && !c.dead && !condImmuneTo(c, cn) && !c.conditions.some((cd) => cd.name === cn)) {
               c.conditions.push({ name: cn, rounds: condR ?? null, src: concSrc || null, spell: concCast || null, rpt: rpt ? { ab: ability, dc, note: rptNote || null } : null });
               note = (note ? note + " " : "") + `+${cn}`;
+            } else if (cn && !c.dead && condImmuneTo(c, cn)) {
+              note = (note ? note + " " : "") + `(immune to ${cn})`;
             }
           });
           const condLbl = [cond, cond2].filter(Boolean).join(" & ");
@@ -8014,7 +8025,10 @@ export default function App() {
           if (amt > 0) { applyDamage(c, amt, dtype || null, L, T); holdGhost(c, snap, 600, dtype || null); }
           if (c.dead) note = "☠"; else if (c.unconscious) note = "(down)";
         }
-        if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
+        if (cond && !ok && !c.dead && condImmuneTo(c, cond)) {
+          note = (note ? note + " " : "") + `(immune to ${cond})`;
+          L.push(`<b>${c.name}</b> is immune to <b>${cond}</b> — no condition applied.`);
+        } else if (cond && !ok && !c.dead && !c.conditions.some((cd) => cd.name === cond)) {
           c.conditions.push({ name: cond, rounds: condR ?? null, src: concSrc || null, spell: concCast || null, rpt: rpt ? { ab: ability, dc, note: rptNote || null } : null });
           note = (note ? note + " " : "") + `+${cond}`;
           L.push(`<b>${c.name}</b> gains <b>${cond}</b>${condR ? ` (${condR} rd)` : ""} from the failed save.`);
