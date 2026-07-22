@@ -6763,7 +6763,7 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
   return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`;
 }).join(" ");
 
-function RoomShape({ room, cx, cy }) {
+function RoomShape({ room, cx, cy, hexKey }) {
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
   if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
@@ -6789,7 +6789,14 @@ function RoomShape({ room, cx, cy }) {
     const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
     const d = `M ${pt(ro, aA)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${pt(ro, aB)} L ${pt(ri, aB)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${pt(ri, aA)} Z`;
     const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per edge pair
-    return <path d={d} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${rot} ${cx} ${cy})`} />;
+    // clip to the hex so the tube ends meet the edges flush instead of poking through
+    const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
+    return (
+      <g transform={`rotate(${rot} ${cx} ${cy})`}>
+        <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>
+        <path d={d} fill={col} stroke={stroke} strokeWidth="1" clipPath={`url(#${clipId})`} />
+      </g>
+    );
   }
   // hex (default) — the whole cell, filled
   return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
@@ -6918,7 +6925,7 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
       out.push(
         <g key={key} style={{ cursor: "pointer" }} onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
-          {room && <RoomShape room={room} cx={x} cy={y} />}
+          {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
         </g>
       );
     }
