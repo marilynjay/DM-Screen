@@ -305,6 +305,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .sbook-lvls{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
 .lvlchip{cursor:pointer;font-size:11px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--dim);padding:2px 8px}
 .lvlchip.on{color:var(--gold);border-color:var(--gold)}
+.azbar{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px}
+.azkey{font-family:var(--mono);font-size:12px;min-width:22px;flex:1 0 auto;padding:3px 0;text-align:center;background:var(--panel);border:1px solid var(--line2);border-radius:5px;color:var(--dim);cursor:pointer}
+.azkey.on{color:var(--gold);border-color:var(--gold);background:var(--gold-soft)}
+.azkey:disabled{opacity:.28;cursor:default}
 .pickgrid{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
 .dchip{cursor:pointer;font-size:11px;border-radius:8px;padding:3px 9px;font-weight:600;text-transform:capitalize;
   color:var(--dc);border:1px solid var(--dc);background:none;opacity:.68}
@@ -3268,15 +3272,35 @@ function UseConfirmModal({ c, kind, k, api, onClose }) {
   );
 }
 
+const AZ_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+// A–Z browse strip — keyboard-free way to jump to spells by first letter. `enabled`
+// (a Set of uppercase first letters) dims letters that have no spells.
+function AzBar({ value, onPick, enabled }) {
+  return (
+    <div className="azbar">
+      {AZ_LETTERS.map((L) => {
+        const off = enabled ? !enabled.has(L) : false;
+        return (
+          <button key={L} className={`azkey ${value === L ? "on" : ""}`} disabled={off}
+            onClick={() => onPick(value === L ? null : L)}>{L}</button>
+        );
+      })}
+    </div>
+  );
+}
+const SPELL_FIRST_LETTERS = new Set(Object.keys(SPELL_REF).map((k) => (SPELL_REF[k].n[0] || "").toUpperCase()));
+
 function SpellBook({ onClose, activeC, onConc }) {
   const [q, setQ] = useState("");
   const [lvl, setLvl] = useState(null); // null all, 0 cantrip, 1-9
+  const [letter, setLetter] = useState(null); // A–Z browse
   const [open, setOpen] = useState(null);
   const keys = useMemo(() => Object.keys(SPELL_REF).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)), []);
   const lvlOf = (s) => { const m = s.m.match(/^Level (\d+)/); return m ? +m[1] : 0; };
   const list = keys.filter((k) => {
     const s = SPELL_REF[k];
     if (q && !s.n.toLowerCase().includes(q.toLowerCase())) return false;
+    if (letter && !s.n.toUpperCase().startsWith(letter)) return false;
     if (lvl != null && lvlOf(s) !== lvl) return false;
     return true;
   });
@@ -3287,7 +3311,8 @@ function SpellBook({ onClose, activeC, onConc }) {
           <h3 style={{ margin: 0 }}>Spell Compendium <span style={{ color: "var(--faint)", fontSize: 11, fontWeight: 400 }}>{list.length} of {keys.length}</span></h3>
           <button className="btn small ghost" onClick={onClose}>✕</button>
         </div>
-        <input className="sbook-search" autoFocus style={{ color: "var(--text)", WebkitTextFillColor: "var(--text)", background: "var(--panel)", caretColor: "var(--gold)" }} placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input className="sbook-search" autoFocus style={{ color: "var(--text)", WebkitTextFillColor: "var(--text)", background: "var(--panel)", caretColor: "var(--gold)" }} placeholder="Search spells…" value={q} onChange={(e) => { setQ(e.target.value); if (e.target.value) setLetter(null); }} />
+        <AzBar value={letter} enabled={SPELL_FIRST_LETTERS} onPick={(L) => { setLetter(L); if (L) setQ(""); }} />
         <div className="sbook-lvls">
           <button className={`lvlchip ${lvl == null ? "on" : ""}`} onClick={() => setLvl(null)}>All</button>
           <button className={`lvlchip ${lvl === 0 ? "on" : ""}`} onClick={() => setLvl(lvl === 0 ? null : 0)}>Cantrip</button>
@@ -5539,13 +5564,19 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const [q, setQ] = useState("");
+  const [letter, setLetter] = useState(null); // A–Z browse (keyboard-free)
   const [pick, setPick] = useState(null);
   const [dc, setDc] = useState(c.spellDC ?? "");
   const [noLearn, setNoLearn] = useState(!!fromItem); // scroll/wand casts never join the spellbook
   const commit = () => api.setSpellDC(c.uid, dc);
   const consumeScroll = () => { if (fromItem && pick) api.consumeItem(c.uid, ["scroll", SPELL_REF[pick].n]); };
-  const matches = q.trim().length >= 2
-    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 40)
+  const byName = (a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n);
+  const searching = q.trim().length >= 2;
+  const browsing = searching || !!letter;
+  const matches = searching
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort(byName).slice(0, 40)
+    : letter
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toUpperCase().startsWith(letter)).sort(byName)
     : [];
   const s = pick ? SPELL_REF[pick] : null;
   const saveAb = s ? (s.d.match(/(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/i) || [])[1] : null;
@@ -5576,9 +5607,10 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
         )}
         {!pick ? (
           <>
-            <input className="sbook-search" placeholder="Search spells…" value={q} onChange={(e) => setQ(e.target.value)} />
-            {q.trim().length >= 2
-              ? (matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{q.trim()}”.</div>
+            <input className="sbook-search" placeholder="Search spells…" value={q} onChange={(e) => { setQ(e.target.value); if (e.target.value) setLetter(null); }} />
+            <AzBar value={letter} enabled={SPELL_FIRST_LETTERS} onPick={(L) => { setLetter(L); if (L) setQ(""); }} />
+            {browsing
+              ? (matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>{searching ? `No spells match “${q.trim()}”.` : `No spells start with ${letter}.`}</div>
                 : <div className="mlist">{matches.map((k) => (
                     <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
                       {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
