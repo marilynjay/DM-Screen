@@ -3176,13 +3176,14 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
   );
 }
 
-function EncounterSuggestModal({ party, playerCount, onAdd, onClose }) {
+function EncounterSuggestModal({ party, playerCount, onAdd, onClose, balancedDefault, onBalancedChange }) {
   const [biome, setBiome] = useState("Forest");
   const [level, setLevel] = useState(party.set ? String(party.level) : "");
   const [size, setSize] = useState(party.set ? String(party.size) : playerCount ? String(playerCount) : "");
   const [difficulty, setDifficulty] = useState(party.difficulty || "moderate");
   const [template, setTemplate] = useState("Skirmish");
-  const [balanced, setBalanced] = useState(true);
+  const [balanced, setBalancedState] = useState(!!balancedDefault); // off by default; App persists the DM's choice
+  const setBalanced = (v) => { setBalancedState(v); onBalancedChange?.(v); };
   const [addLair, setAddLair] = useState(false);
   const [sugg, setSugg] = useState(null);
   const roll = () => setSugg(suggestEncounter({ biome, level: parseInt(level, 10) || 3, size: parseInt(size, 10) || 4, difficulty, template, balanced }));
@@ -6699,6 +6700,8 @@ export default function App() {
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   const [promptScore, setPromptScoreState] = useState(false); // ask for the exact score on +X ability items
   const setPromptScore = (v) => { setPromptScoreState(v); stSet("dm5e:promptScore", v ? 1 : 0); };
+  const [encBalance, setEncBalanceState] = useState(false); // ⚖ auto-tune suggested monsters to the party — off by default, remembers your choice
+  const setEncBalance = (v) => { setEncBalanceState(v); stSet("dm5e:encBalance", v ? 1 : 0); };
   const [tieMode, setTieModeState] = useState("players"); // players | dex | monsters | ask
   const setTieMode = (v) => { setTieModeState(v); stSet("dm5e:tieMode", v); };
   const [dmgFx, setDmgFxState] = useState(true);
@@ -6936,6 +6939,7 @@ export default function App() {
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
       setPromptScoreState(!!(await stGet("dm5e:promptScore")));
+      setEncBalanceState(!!(await stGet("dm5e:encBalance")));
       const tm = await stGet("dm5e:tieMode");
       if (tm && ["players", "dex", "monsters", "ask"].includes(tm)) setTieModeState(tm);
       else { const pwt = await stGet("dm5e:playersWinTies"); if (pwt != null) setTieModeState(pwt ? "players" : "dex"); } // migrate the old boolean
@@ -9059,6 +9063,7 @@ export default function App() {
       })()}
       {modal?.type === "suggest-enc" && (
         <EncounterSuggestModal party={party} playerCount={state.combatants.filter((c) => c.type === "player" && !c.dead).length}
+          balancedDefault={encBalance} onBalancedChange={setEncBalance}
           onClose={() => setModal(null)} onAdd={({ picks, biome, level, size, difficulty, balanced, addLair }) => {
           setModal(null);
           setParty((p) => ({ ...p, level, size, difficulty, set: true }));
