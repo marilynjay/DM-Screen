@@ -5535,7 +5535,7 @@ function ReadiedOverlay({ c, api, results, onClose }) {
   );
 }
 
-function PlayerCastModal({ c, api, fromItem, onClose }) {
+function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const [q, setQ] = useState("");
@@ -5596,6 +5596,11 @@ function PlayerCastModal({ c, api, fromItem, onClose }) {
                   <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 4 }}>Or search the full compendium above — anything cast is saved here.</div>
                 </>
               ) : <div className="trait" style={{ fontSize: 12 }}>Search the compendium — spells {c.name} casts are saved to their spellbook for next time.</div>}
+            {onBack && (
+              <div className="frow" style={{ justifyContent: "flex-start", marginTop: 10 }}>
+                <button className="btn small ghost" onClick={() => { if (armed()) onBack(); }}>← Back to items</button>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -8352,7 +8357,9 @@ export default function App() {
         <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player-cast" && modalC && (
-        <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem} onClose={() => setModal(null)} />
+        <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem}
+          onBack={modal.fromItem ? () => setModal({ type: "use-item", uid: modal.uid }) : null}
+          onClose={() => setModal(null)} />
       )}
       {modal?.type === "spellbook" && modalC && (
         <SpellbookModal c={modalC} api={api} onClose={() => setModal(null)} />
