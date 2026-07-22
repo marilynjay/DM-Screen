@@ -5242,6 +5242,37 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
   );
 }
 
+function RestModal({ combatants, onAccept, onClose }) {
+  const list = combatants;
+  const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, String(c.maxHp)]))); // default: full HP
+  const set = (uid, v) => setVals((m) => ({ ...m, [uid]: v }));
+  const allFull = () => setVals(Object.fromEntries(list.map((c) => [c.uid, String(c.maxHp)])));
+  const gains = list.filter((c) => { const v = Number(vals[c.uid]); return !isNaN(v) && Math.min(c.maxHp, Math.max(0, Math.round(v))) > (c.hp ?? 0); }).length;
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🌙 Rest</h3>
+        <div className="trait" style={{ marginBottom: 8 }}>Set each character's HP after the rest — pre-filled to full, adjust down for a short rest. Anyone who gains HP plays the heal effect when you Accept.</div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginBottom: 4 }}>
+          <button className="btn small ghost" onClick={allFull}>All to full</button>
+        </div>
+        {list.map((c) => (
+          <div key={c.uid} className="frow" style={{ alignItems: "center", gap: 8 }}>
+            <label style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</label>
+            <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>now {c.hp ?? "—"}</span>
+            <input type="number" inputMode="numeric" style={{ width: 68, textAlign: "center" }} value={vals[c.uid] ?? ""} onChange={(e) => set(c.uid, e.target.value)} />
+            <span className="ad" style={{ fontSize: 12, minWidth: 40 }}>/ {c.maxHp}</span>
+          </div>
+        ))}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" onClick={() => onAccept(vals)}>Accept{gains ? ` — heal ${gains}` : ""}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RollInitModal({ list, onStart, onClose }) {
   const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, ""])));
   const ready = list.every((c) => String(vals[c.uid]).trim() !== "");
@@ -7053,6 +7084,8 @@ export default function App() {
   }, [state.activeUid, state.mode]);
 
   const order = useMemo(() => sortOrder(state.combatants), [state.combatants]);
+  // party/allies whose HP is tracked — eligible for a between-combats Rest
+  const restable = order.filter((c) => c.maxHp != null && c.type !== "effect" && c.type !== "object" && c.side !== "enemy");
   const active = state.combatants.find((c) => c.uid === state.activeUid) || null;
   const [legOpen, setLegOpen] = useState(null); // uid of expanded legendary banner
   useEffect(() => { setLegOpen(null); }, [state.activeUid]);
@@ -8218,6 +8251,28 @@ export default function App() {
       });
     });
   };
+  // Rest: set each character's HP to a rested value. It's a set (no heal math), but anyone whose HP
+  // went UP gets the heal presentation — the ghost row + heal ✦ effect — after Accept.
+  const applyRest = (vals) => {
+    setModal(null);
+    mutate((d, L) => {
+      let set = 0, healed = 0;
+      Object.entries(vals || {}).forEach(([uid, raw]) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c || c.maxHp == null) return;
+        if (raw === "" || raw == null || isNaN(Number(raw))) return;
+        const amt = Math.max(0, Math.min(c.maxHp, Math.round(Number(raw))));
+        const before = c.hp ?? 0;
+        const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
+        c.hp = amt;
+        if (amt > 0) { c.dead = false; c.unconscious = false; c.stable = false; c.ds = { s: 0, f: 0 }; }
+        else if (c.side === "enemy" || c.type === "object") { c.dead = true; c.thp = 0; c.concentration = null; }
+        else { c.unconscious = true; c.concentration = null; c.stable = false; c.ds = { s: 0, f: 0 }; }
+        set++;
+        if (amt > before) { healed++; holdGhost(c, snap, 600, "heal"); } // played only when HP rose
+      });
+      if (set) L.push(`🌙 <b>Rest</b> — set HP on ${set} character${set === 1 ? "" : "s"}${healed ? `, ${healed} healed` : ""}.`);
+    });
+  };
   const removeRptCondition = (d, L, c, cd) => {
     c.conditions = c.conditions.filter((x) => x !== cd);
     L.push(`<b>${c.name}</b> shakes off <b>${cd.name}</b>.`);
@@ -8621,8 +8676,11 @@ export default function App() {
       {order.length > 0 && (
         <>
           <div className="railbar">
-            <span>Initiative order</span>
+            <span>{state.mode === "combat" ? "Initiative order" : "Roster"}</span>
             <span className="spacer" style={{ flex: 1 }} />
+            {state.mode !== "combat" && restable.length > 0 && (
+              <button className="btn small ghost" onClick={() => setModal({ type: "rest" })} title="Set everyone's HP after a rest — heals play for anyone who gains HP">🌙 Rest</button>
+            )}
             {state.combatants.some((c) => c.dead && (c.loot || []).length > 0) && (
               <button className="btn small ghost" onClick={() => setModal({ type: "loot-fallen" })}>💰 Loot the fallen</button>
             )}
@@ -8992,6 +9050,9 @@ export default function App() {
         <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll}
           screenMemberIds={state.combatants.filter((c) => c.type === "player" && c.memberId && !c.dead).map((c) => c.memberId)}
           onApply={applyPartyEditsToScreen} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "rest" && restable.length > 0 && (
+        <RestModal combatants={restable} onAccept={applyRest} onClose={() => setModal(null)} />
       )}
       {modal?.type === "party-heal-check" && (
         <div className="overlay" onClick={() => setModal(null)}>
