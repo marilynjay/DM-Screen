@@ -1711,6 +1711,9 @@ const spellHasVerbal = (s) => /\bV\b/.test(s?.cp || "");
 // who's inside (keyed by SPELL_REF key → condition name). Concentration-linked, so the
 // condition clears when the caster drops concentration.
 const ZONE_COND_SPELLS = { silence: "Silenced" };
+// No-save spells that grant a condition to a chosen creature (or self) — cast them via the
+// buff target picker so the condition is actually applied (and linked to concentration).
+const BUFF_COND_SPELLS = { invisibility: "Invisible", "greater invisibility": "Invisible", mislead: "Invisible", sequester: "Invisible" };
 function spellSaveDmg(text, ratio) {
   const TYPES = ["acid","bludgeoning","cold","fire","force","lightning","necrotic","piercing","poison","psychic","radiant","slashing","thunder"];
   let dice = null, dtype = "";
@@ -5676,6 +5679,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const verbal = s ? spellHasVerbal(s) : false; // a verbal spell reveals a hidden caster
   const blocked = silenced && verbal && !castAnyway; // Silenced casters can't use spells with a Verbal component
   const zoneCond = pick ? ZONE_COND_SPELLS[pick] : null; // e.g. Silence → mark who's inside
+  const buffCond = pick ? BUFF_COND_SPELLS[pick] : null; // e.g. Invisibility → apply to a chosen creature
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn(); consumeScroll();
@@ -5746,6 +5750,8 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
               <div className="pcactions" style={{ marginTop: 10 }}>
                 {zoneCond
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
+                  : buffCond
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openBuffCast({ k: pick, casterUid: c.uid, cond: buffCond, condR: conc && /hour/i.test(s.du) ? null : (spellCondFrom(s.d, s.du)?.condR ?? null), conc: conc ? s.n : null }); }}>✨ Cast — apply {buffCond} to a creature →</button>
                   : saveAb
                   ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                   : isAttack
