@@ -5683,6 +5683,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const blocked = silenced && verbal && !castAnyway; // Silenced casters can't use spells with a Verbal component
   const zoneCond = pick ? ZONE_COND_SPELLS[pick] : null; // e.g. Silence → mark who's inside
   const buffCond = pick ? BUFF_COND_SPELLS[pick] : null; // e.g. Invisibility → apply to a chosen creature
+  const isMM = pick === "magic missile"; // auto-hit force darts — its own little flow
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn(); consumeScroll();
@@ -5751,7 +5752,9 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
               </div>
             ) : (
               <div className="pcactions" style={{ marginTop: 10 }}>
-                {zoneCond
+                {isMM
+                  ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openMagicMissile(c.uid); }}>✨ Cast — assign darts →</button>
+                  : zoneCond
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openGroupSave({ name: `${c.name} — ${s.n}`, noSave: true, noDmg: true, cond: zoneCond.cond, cond2: zoneCond.also || null, condR: null, casterUid: c.uid, ...(conc ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>✦ Cast — mark who's inside the area →</button>
                   : buffCond
                   ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.openBuffCast({ k: pick, casterUid: c.uid, cond: buffCond, condR: conc && /hour/i.test(s.du) ? null : (spellCondFrom(s.d, s.du)?.condR ?? null), conc: conc ? s.n : null }); }}>✨ Cast — apply {buffCond} to a creature →</button>
@@ -5775,6 +5778,63 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+function MagicMissileModal({ c, state, api, onClose }) {
+  const openedAt = useRef(Date.now());
+  const armed = () => Date.now() - openedAt.current > 300;
+  const [darts, setDarts] = useState(3);
+  const [assign, setAssign] = useState({}); // uid -> dart count
+  const cands = targetCands(state, c).filter((x) => !x.dead);
+  const primary = cands.filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
+  const others = cands.filter((x) => !primary.includes(x));
+  const [showOthers, setShowOthers] = useState(false);
+  const used = Object.values(assign).reduce((a, b) => a + b, 0);
+  const remaining = darts - used;
+  const add = (uid, delta) => setAssign((a) => { const n = { ...a }; n[uid] = Math.max(0, (n[uid] || 0) + delta); if (!n[uid]) delete n[uid]; return n; });
+  const row = (t) => (
+    <div key={t.uid} className="gs-target" style={{ alignItems: "center", gap: 6 }}>
+      <b style={{ flex: 1 }}>{t.name}</b>
+      <span className="ad">{t.hp != null ? `${t.hp}/${t.maxHp}` : ""}</span>
+      <button className="btn small" disabled={!assign[t.uid]} onClick={() => add(t.uid, -1)}>−</button>
+      <span style={{ minWidth: 16, textAlign: "center", fontWeight: 600 }}>{assign[t.uid] || 0}</span>
+      <button className="btn small" disabled={remaining <= 0} onClick={() => add(t.uid, 1)}>+</button>
+    </div>
+  );
+  return (
+    <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>✨ {c.name} — Magic Missile</h3>
+        <div className="frow" style={{ gap: 8, alignItems: "center" }}>
+          <label style={{ minWidth: 0 }}>Darts</label>
+          <button className="btn small" disabled={darts <= 1} onClick={() => setDarts((d) => Math.max(1, d - 1))}>−</button>
+          <b style={{ minWidth: 16, textAlign: "center" }}>{darts}</b>
+          <button className="btn small" onClick={() => setDarts((d) => d + 1)}>+</button>
+          <span className="ad" style={{ fontSize: 11 }}>3 at level 1, +1 per slot above</span>
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>
+          Assign the {remaining} remaining dart{remaining === 1 ? "" : "s"} — each hits for 1d4+1 force.
+        </div>
+        <div className="gs-targets">
+          {primary.map(row)}
+          {others.length > 0 && !showOthers && (
+            <div className="gs-target" style={{ cursor: "pointer", opacity: 0.5, fontSize: 11, padding: "2px 0" }} onClick={() => setShowOthers(true)}>
+              <span className="ad" style={{ fontSize: 11 }}>other targets ({others.length})…</span>
+            </div>
+          )}
+          {showOthers && others.map(row)}
+          {cands.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No one to target.</div>}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={used === 0}
+            onClick={() => { api.magicMissile(c.uid, Object.entries(assign).map(([uid, n]) => ({ uid, darts: n }))); onClose(); }}>
+            Launch {used} dart{used === 1 ? "" : "s"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -6134,6 +6194,19 @@ export default function App() {
   const [spellBook, setSpellBook] = useState(false);
   const [peek, setPeek] = useState(null);
   const [rowFlash, setRowFlash] = useState(null);
+  // Pin the page while any dialog is open so iOS Safari can't yank the background around
+  // (on open and again when an input is focused). The overlays themselves are position:fixed.
+  const overlayOpen = !!(modal || readiedUid || spellBook || peek);
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const y = window.scrollY || document.documentElement.scrollTop || 0;
+    const b = document.body, prev = { position: b.style.position, top: b.style.top, left: b.style.left, right: b.style.right, width: b.style.width };
+    b.style.position = "fixed"; b.style.top = `-${y}px`; b.style.left = "0"; b.style.right = "0"; b.style.width = "100%";
+    return () => {
+      Object.assign(b.style, prev);
+      window.scrollTo(0, y);
+    };
+  }, [overlayOpen]);
   // Victory: every enemy dead (and the party not wiped — mutual destruction is
   // a TPK, not a win). Tap to dismiss; auto-fades after 12s as a fallback.
   const [victory, setVictory] = useState(null);
@@ -6865,6 +6938,20 @@ export default function App() {
       consumeLootInDraft(c, terms, L);
     }),
     revealCaster: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) revealHidden(c, L); }),
+    openMagicMissile: (uid) => setModal({ type: "magic-missile", uid }),
+    magicMissile: (casterUid, hits) => mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === casterUid); if (!c) return;
+      L.push(`<b>${c.name}</b> casts <b>Magic Missile</b>.`);
+      revealHidden(c, L); // Magic Missile is a Verbal spell — casting it gives away a hidden caster
+      hits.forEach(({ uid, darts }) => {
+        const t = d.combatants.find((x) => x.uid === uid); if (!t || t.dead) return;
+        let total = 0; for (let i = 0; i < darts; i++) total += ri(4) + 1; // each dart 1d4+1 force, auto-hit
+        const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
+        if (t.maxHp != null) { applyDamage(t, total, "force", L, T); holdGhost(t, snap, 600, "force"); }
+        else setTimeout(() => setRowFlash({ uid: t.uid, text: `${total} force → ${t.name}`, id: Math.random() }), 0);
+        L.push(`<b>${t.name}</b> takes ${total} force from ${darts} dart${darts === 1 ? "" : "s"}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}.`);
+      });
+    }),
     castUtility: (uid, name, conc, verbal) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
@@ -8588,6 +8675,9 @@ export default function App() {
       )}
       {modal?.type === "hide-check" && modalC && (
         <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "magic-missile" && modalC && (
+        <MagicMissileModal c={modalC} state={state} api={api} onClose={() => setModal(null)} />
       )}
       {modal?.type === "player-cast" && modalC && (
         <PlayerCastModal c={modalC} api={api} fromItem={modal.fromItem}
