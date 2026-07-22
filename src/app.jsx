@@ -241,6 +241,10 @@ input[type=number]{width:64px}
 .dgn-swatch{width:30px;height:30px;border-radius:6px;border:2px solid var(--line2);cursor:pointer;padding:0}
 .dgn-swatch.on{border-color:var(--gold)}
 .dgn-ta{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;padding:6px 8px;resize:vertical;margin-bottom:6px}
+.dgn-sec{border:1px solid var(--line2);border-radius:8px;padding:6px 8px;margin-bottom:6px;background:rgba(255,255,255,.02)}
+.dgn-sec-hd{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.dgn-sec-title{flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;font-weight:600;padding:2px 0}
+.dgn-fold{background:none;border:none;color:var(--gold);font-size:15px;cursor:pointer;padding:0 2px;line-height:1}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 .turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -6776,6 +6780,40 @@ function RoomShape({ room, cx, cy }) {
   return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
 }
 
+// A note field is a list of collapsible sections {id, title, body, collapsed}. A plain string
+// (older data, or a simple one-liner) is treated as a single untitled section.
+function asSections(v) {
+  if (Array.isArray(v) && v.length) return v;
+  return [{ id: "main", title: "", body: typeof v === "string" ? v : "", collapsed: false }];
+}
+function SectionsEditor({ value, onChange, rows }) {
+  const secs = asSections(value);
+  const upd = (id, patch) => onChange(secs.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const add = () => onChange([...secs, { id: newUid(), title: "", body: "", collapsed: false }]);
+  const del = (id) => onChange(secs.filter((s) => s.id !== id));
+  return (
+    <div>
+      {secs.map((s) => {
+        const titled = (s.title || "").trim().length > 0;
+        const collapsed = titled && s.collapsed;
+        return (
+          <div key={s.id} className="dgn-sec">
+            <div className="dgn-sec-hd">
+              {titled
+                ? <button className="dgn-fold" title={collapsed ? "Expand" : "Collapse"} onClick={() => upd(s.id, { collapsed: !s.collapsed })}>{collapsed ? "▸" : "▾"}</button>
+                : <span className="dgn-fold" style={{ opacity: 0.3 }}>•</span>}
+              <input className="dgn-sec-title" placeholder="Header — optional (e.g. a name)" value={s.title || ""} onChange={(e) => upd(s.id, { title: e.target.value })} />
+              {secs.length > 1 && <button className="btn tiny ghost warn" title="Remove section" onClick={() => del(s.id)}>✕</button>}
+            </div>
+            {!collapsed && <textarea className="dgn-ta" rows={rows || 2} value={s.body || ""} onChange={(e) => upd(s.id, { body: e.target.value })} placeholder="Notes…" />}
+          </div>
+        );
+      })}
+      <button className="btn small ghost" style={{ marginTop: 2 }} onClick={add}>＋ Add section</button>
+    </div>
+  );
+}
+
 function RoomEditor({ room, onChange, onDelete, onClose }) {
   const [full, setFull] = useState(null); // note key open full-screen, or null
   const set = (patch) => onChange({ ...room, ...patch });
@@ -6788,17 +6826,19 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
           <button className="btn small" onClick={() => setFull(null)}>← Done</button>
           <span className="nm" style={{ flex: 1, fontFamily: "var(--disp)", fontSize: 16, color: "var(--text)" }}>{DGN_FIELDS[full]}</span>
         </div>
-        <textarea autoFocus className="dgn-ta" style={{ flex: 1, margin: 12, resize: "none" }} value={n[full] || ""} onChange={(e) => setNote(full, e.target.value)} placeholder={DGN_FIELDS[full] + "…"} />
+        <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+          <SectionsEditor value={n[full]} onChange={(v) => setNote(full, v)} rows={6} />
+        </div>
       </div>
     );
   }
-  const noteField = (k, rows, ph) => (
+  const noteField = (k) => (
     <div key={k}>
       <div className="frow" style={{ alignItems: "center", margin: "8px 0 3px" }}>
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", flex: 1 }}>{DGN_FIELDS[k]}</div>
         <button className="btn tiny ghost" title="Edit this field full-screen" onClick={() => setFull(k)}>⤢ Full screen</button>
       </div>
-      <textarea className="dgn-ta" rows={rows} value={n[k] || ""} onChange={(e) => setNote(k, e.target.value)} placeholder={ph} />
+      <SectionsEditor value={n[k]} onChange={(v) => setNote(k, v)} rows={2} />
     </div>
   );
   return (
@@ -6818,9 +6858,9 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
         </div>
-        {noteField("desc", 3, "What's in here…")}
-        {noteField("loot", 2, "Chests, podiums, puzzle elements…")}
-        {noteField("npcs", 2, "Allies, denizens… (encounters come in Phase 2)")}
+        {noteField("desc")}
+        {noteField("loot")}
+        {noteField("npcs")}
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
           <button className="btn small danger" onClick={onDelete}>Delete room</button>
           <button className="btn primary" onClick={onClose}>Done</button>
