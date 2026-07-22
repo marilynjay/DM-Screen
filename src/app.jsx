@@ -7960,7 +7960,7 @@ export default function App() {
           <button className="btn small ghost" onClick={prev} title="Back one turn">◀</button>
           <button className="btn primary" onClick={requestNext}>Next ▶</button>
         </>)}
-        {state.mode === "setup" && state.combatants.length > 0 && (
+        {state.mode === "setup" && state.combatants.some((c) => c.side === "enemy" && c.type !== "effect" && c.type !== "object") && (
           <button className="btn primary" onClick={startCombat}>Start combat</button>
         )}
         <span className="spacer" />
