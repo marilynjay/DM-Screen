@@ -5066,10 +5066,10 @@ function formToItem(f) {
   return it;
 }
 
-function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomItem, onSave, onClose }) {
-  const [items, setItems] = useState(() => (c.loot || []).map(lootObj));
+function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDeleteCustomItem, onSave, onClose }) {
+  const [items, setItems] = useState(() => (c?.loot || []).map(lootObj));
   const [custom, setCustom] = useState("");
-  const [browse, setBrowse] = useState(false);
+  const [browse, setBrowse] = useState(!!compendium); // the compendium is a browse-first view
   const [q, setQ] = useState("");
   const [tab, setTab] = useState("all");
   const [form, setForm] = useState(null); // null = builder closed
@@ -5087,34 +5087,39 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
   const saveForm = () => {
     const it = formToItem(form);
     onSaveCustomItem(it, form.origN);
-    if (!form.origN) setItems([...items, JSON.parse(JSON.stringify(it))]); // creating from this creature's loot screen: hand it over too
+    if (!form.origN && !compendium) setItems([...items, JSON.parse(JSON.stringify(it))]); // creating from this creature's loot screen: hand it over too
     setForm(null);
   };
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{c.type === "player" ? `🎒 ${c.name}'s bag` : `Loot — ${c.name}`}</h3>
-        {items.length === 0 && <div className="trait">Nothing carried yet.</div>}
-        {items.map((it, i) => (
-          <div className="targetline" key={i}>
-            <span style={{ flex: 1 }}>
-              {lootName(it)}
-              {it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}
-              {it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}
-            </span>
-            <button className="btn small danger" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button>
+        <h3>{compendium ? "📦 Item Compendium" : c.type === "player" ? `🎒 ${c.name}'s bag` : `Loot — ${c.name}`}</h3>
+        {!compendium && (<>
+          {items.length === 0 && <div className="trait">Nothing carried yet.</div>}
+          {items.map((it, i) => (
+            <div className="targetline" key={i}>
+              <span style={{ flex: 1 }}>
+                {lootName(it)}
+                {it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}
+                {it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}
+              </span>
+              <button className="btn small danger" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button>
+            </div>
+          ))}
+          <div className="frow" style={{ marginTop: 8 }}>
+            <input type="text" placeholder="Custom item or gold — e.g. 23 gp" value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addCustomLine()} style={{ flex: 1 }} />
+            <button className="btn small" disabled={!custom.trim()} onClick={addCustomLine}>+ Add</button>
           </div>
-        ))}
-        <div className="frow" style={{ marginTop: 8 }}>
-          <input type="text" placeholder="Custom item or gold — e.g. 23 gp" value={custom}
-            onChange={(e) => setCustom(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addCustomLine()} style={{ flex: 1 }} />
-          <button className="btn small" disabled={!custom.trim()} onClick={addCustomLine}>+ Add</button>
-        </div>
+        </>)}
+        {compendium && <div className="trait" style={{ color: "var(--faint)", marginBottom: 4 }}>Build custom items here — they're offered to players via Use item → Other and in the give-loot screens.</div>}
         <div className="frow" style={{ marginTop: 6 }}>
-          <button className="btn small ghost" onClick={() => setBrowse(!browse)}>
-            {browse ? "Hide catalog ▲" : "Browse magic items (SRD) ▼"}
-          </button>
+          {!compendium && (
+            <button className="btn small ghost" onClick={() => setBrowse(!browse)}>
+              {browse ? "Hide catalog ▲" : "Browse magic items (SRD) ▼"}
+            </button>
+          )}
           <button className="btn small ghost" onClick={() => setForm(form ? null : { ...BLANK_ITEM_FORM })}>
             {form && !form.origN ? "Close builder ▲" : "＋ New custom item…"}
           </button>
@@ -5259,7 +5264,7 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
                     </span>
                     <button className="btn small ghost" title="Edit this item" onClick={() => setForm(itemToForm(it))}>✎</button>
                     <button className="btn small ghost" title="Delete from my items" onClick={() => onDeleteCustomItem(it.n)}>✕</button>
-                    <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>
+                    {!compendium && <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>}
                   </div>
                 ))}
                 <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD catalog</div>
@@ -5270,19 +5275,23 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
                     {it.n} <span style={{ color: "var(--faint)", fontSize: 11 }}>· {rarityLabel(it)}</span>
                     <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>
                   </span>
-                  <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>
+                  {!compendium && <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>}
                 </div>
               ))}
               {filtered.length === 0 && mineFiltered.length === 0 && <div className="trait">No matches.</div>}
             </div>
           </div>
         )}
-        <div className="trait" style={{ marginTop: 8, color: "var(--faint)" }}>
-          Usable items (potions, wands…) show on the creature's turn card with a Use button. Consumed items drop off the loot list; the rest await the players in "Loot the fallen."
-        </div>
+        {!compendium && (
+          <div className="trait" style={{ marginTop: 8, color: "var(--faint)" }}>
+            Usable items (potions, wands…) show on the creature's turn card with a Use button. Consumed items drop off the loot list; the rest await the players in "Loot the fallen."
+          </div>
+        )}
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={() => onSave(items)}>Save</button>
+          {compendium
+            ? <button className="btn primary" onClick={onClose}>Done</button>
+            : <><button className="btn" onClick={onClose}>Cancel</button>
+                <button className="btn primary" onClick={() => onSave(items)}>Save</button></>}
         </div>
       </div>
     </div>
@@ -7824,6 +7833,7 @@ export default function App() {
             <div className="menu" onClick={() => setMoreMenu(false)}>
               <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
               <button onClick={() => setSpellBook(true)}>📖 Spell compendium…</button>
+              <button onClick={() => setModal({ type: "item-compendium" })}>📦 Item compendium…</button>
               <button onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>
               <button onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>
               {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
@@ -8204,6 +8214,9 @@ export default function App() {
             });
             setModal(null);
           }} />
+      )}
+      {modal?.type === "item-compendium" && (
+        <LootGiveModal compendium customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)} />
       )}
       {modal?.type === "loot-fallen" && (
         <LootFallenModal state={state} onClose={() => setModal(null)}
