@@ -225,6 +225,11 @@ input[type=number]{width:64px}
 .turnbar{position:fixed;left:0;right:0;bottom:0;z-index:50;display:flex;align-items:center;gap:10px;
   padding:10px 14px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
   background:var(--ink);border-top:1px solid var(--line)}
+.osapplybar{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom,0px));z-index:49;display:flex;justify-content:center;padding:6px 12px;pointer-events:none}
+.osapplybar button{pointer-events:auto;flex:1;max-width:440px;font-size:16px;padding:11px}
+.osfield{width:36px;text-align:center;padding:4px 2px;font-size:14px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);-webkit-appearance:none;appearance:none}
+.osfield.osdmg{border-color:var(--danger);color:var(--danger);-webkit-text-fill-color:var(--danger);caret-color:var(--danger)}
+.osfield.osheal{border-color:#6bbf7a;color:#6bbf7a;-webkit-text-fill-color:#6bbf7a;caret-color:#6bbf7a}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 .turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -1657,7 +1662,7 @@ function applyDamage(c, amt, dtype, logs, toasts) {
   }
   if (finalDmg > 0 && c.concentration) {
     const dc = Math.max(10, Math.floor(finalDmg / 2));
-    if (c.type === "player") { // players always roll their own saves — never auto-rolled, even if CON is tracked
+    if (c.type === "player" || OLDSCHOOL.on) { // players roll their own; Old School Mode never rolls for monsters either
       toasts.push({ kind: "bad", text: `${c.name}: DC ${dc} CON save to keep concentrating on ${concLabel(c)}!` });
       logs.push(`<b>${c.name}</b>: concentration check needed — DC ${dc} CON save (${concLabel(c)}). Roll it, then tap ◈ to drop it on a fail.`);
       return;
@@ -2017,9 +2022,9 @@ function onTurnStart(c, state, logs, toasts) {
       }
     }
   }
-  // recharge rolls (results recorded for the UI to render as dice)
+  // recharge rolls (results recorded for the UI to render as dice) — skipped in Old School Mode (DM rolls)
   state.rechargeRolls = [];
-  (c.actions || []).forEach((a, ai) => {
+  if (!OLDSCHOOL.on) (c.actions || []).forEach((a, ai) => {
     if (a.rech && !a.ready) {
       const r = ri(6);
       a.ready = r >= a.rech;
@@ -2354,6 +2359,7 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
 const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
 const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
+const OLDSCHOOL = { on: false }; // Old School Mode: the app never rolls for monsters — pure HP tracker; App assigns from the setting
 const TIES = { mode: "players" }; // how to break initiative ties: players | dex | monsters | ask (App assigns from the setting)
 const FX = { on: true, all: true }; // damage-type effects over the hit row; App assigns from the settings
 const SFX = { on: true }; // whole-screen attack effects (edge-framed) on a hit; App assigns from the setting
@@ -2719,7 +2725,7 @@ function DmgFx({ type }) {
   return <span className={`dmgfx fx-${t || "plain"}`} aria-hidden>{inner}</span>;
 }
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat }) {
+function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
   if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
@@ -2850,6 +2856,10 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       </div>
 
       <div className="rline r2">
+      {oldSchoolHp && c.hp != null && c.type !== "effect" && (
+        <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="–" value={entry?.dmg ?? ""}
+          title="Damage — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("dmg", e.target.value)} />
+      )}
       {c.hp != null && c.type !== "effect" && (
         <span className="hpbox">
           <span key={pulse ? pulse.id : "still"}
@@ -2872,6 +2882,10 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           {shatter && <span key={shatter.id} className="thpchip shattering">+{shatter.amt}</span>}
           {skull && <span key={skull.id} className="skullghost">💀</span>}
         </span>
+      )}
+      {oldSchoolHp && c.hp != null && c.type !== "effect" && (
+        <input className="osfield osheal" type="number" inputMode="numeric" placeholder="–" value={entry?.heal ?? ""}
+          title="Healing — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("heal", e.target.value)} />
       )}
 
       {effAc != null && (
@@ -3768,7 +3782,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
   );
 }
 
-function MonsterCard({ c, api, results, peek, turnKey }) {
+function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
   const [hintOpen, setHintOpen] = useState(null); // [actionIndex, hintIndex] of expanded advantage-hint chip
   const [spellOpen, setSpellOpen] = useState(null); // `${rowKey}:${spellKey}` of expanded spell chip
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
@@ -3828,21 +3842,27 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
         ) : c.actions.map((a, i) => (
           <div className="actrow" key={i}>
             <span className="an">{a.n}{a.rech ? <span style={{ color: "var(--faint)", fontSize: 11 }}> (Recharge {a.rech}–6)</span> : null}</span>
-            {a.kind === "atk" && (
+            {a.kind === "atk" && oldSchool && (
+              <span style={{ fontSize: 12, color: "var(--dim)", fontFamily: "var(--mono)" }} title="Old School Mode — roll it at the table">{fmtMod(a.hit)} to hit{a.dmg ? `, ${a.dmg}${a.dtype ? ` ${a.dtype}` : ""}` : ""}</span>
+            )}
+            {a.kind === "atk" && !oldSchool && (
               <button className="btn small primary" disabled={(a.rech && !a.ready) || (peek && !c.reaction) || (!peek && (atkLeft(c) <= 0 || atkNameLeft(c, a.n) <= 0))}
                 title={peek ? (c.reaction ? "Off-turn attack — spends this creature's reaction" : "Reaction already used this round") : atkLeft(c) <= 0 ? "No attacks left this turn — tap +1 above to grant one (or Undo a misclick)" : atkNameLeft(c, a.n) <= 0 ? `${a.n} has no uses left this turn (Multiattack caps it) — +1 or Undo if needed` : undefined}
                 onClick={() => (peek ? api.rollOppAttack(c.uid, i) : api.rollAttack(c.uid, i))}>
                 {peek ? "⚔ Opportunity attack" : "Attack"} {fmtMod(a.hit)}
               </button>
             )}
-            {a.kind === "save" && (
+            {a.kind === "save" && oldSchool && (
+              <span style={{ fontSize: 12, color: "var(--dim)", fontFamily: "var(--mono)" }} title="Old School Mode — the target rolls it at the table">DC {a.save?.dc} {a.save?.ability}{a.dmg ? `, ${a.dmg}${a.dtype ? ` ${a.dtype}` : ""}` : ""}</span>
+            )}
+            {a.kind === "save" && !oldSchool && (
               <button className="btn small primary" disabled={(a.rech && !a.ready) || peek || (!peek && replacesAttack(c, a) && atkLeft(c) <= 0)}
                 title={peek ? "Actions happen on the creature's own turn" : replacesAttack(c, a) && atkLeft(c) <= 0 ? "No attacks left to replace — this uses one of the Multiattack's attacks" : replacesAttack(c, a) ? "Replaces one of the Multiattack's attacks" : undefined}
                 onClick={() => api.useSaveAction(c.uid, i)}>
                 Use — DC {a.save?.dc} {a.save?.ability}{replacesAttack(c, a) ? " (⚔−1)" : ""}
               </button>
             )}
-            {a.kind === "save" && a.save?.dc && !replacesAttack(c, a) && (
+            {a.kind === "save" && !oldSchool && a.save?.dc && !replacesAttack(c, a) && (
               <button className="btn small cond" disabled={a.rech && !a.ready} title="Roll this save for multiple targets and apply damage"
                 onClick={() => api.openGroupSave({ name: `${c.name} — ${a.n}`, ability: a.save.ability, dc: a.save.dc, dmg: a.dmg || (a.d && (a.d.match(/(\d+d\d+(?:[+-]\d+)?)/) || [])[1]) || "", dtype: a.dtype || "", casterUid: c.uid, ...(spellCondFrom(a.d, "") || {}), rpt: /repeats the save/i.test(a.d || "") })}>
                 ⭗ Group
@@ -6652,9 +6672,7 @@ export default function App() {
   const [showLog, setShowLog] = useState(false);
   const [logCollapsed, setLogCollapsed] = useState(false);
   const logRef = useRef(null);
-  const botPad = state.mode === "combat"
-    ? "calc(92px + env(safe-area-inset-bottom, 0px))" // clears the fixed bottom turn bar
-    : "calc(24px + env(safe-area-inset-bottom, 0px))";
+  // botPad is computed further down, once the oldSchool setting is in scope (see below)
   const scrollLog = () => setTimeout(() => logRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 80);
   const openLog = () => { setLogCollapsed(false); setShowLog(true); scrollLog(); };
   const toggleLog = () => { if (showLog) setShowLog(false); else openLog(); };
@@ -6758,6 +6776,10 @@ export default function App() {
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
+  const [oldSchool, setOldSchoolState] = useState(false); // Old School Mode — app never rolls for monsters
+  const setOldSchool = (v) => { setOldSchoolState(v); stSet("dm5e:oldSchool", v ? 1 : 0); };
+  const [hpEntry, setHpEntry] = useState({}); // Old School quick-entry: { uid: { dmg, heal } } applied together on the Apply bar
+  const setEntry = (uid, field, val) => setHpEntry((m) => ({ ...m, [uid]: { dmg: "", heal: "", ...(m[uid] || {}), [field]: val } }));
   const [promptScore, setPromptScoreState] = useState(false); // ask for the exact score on +X ability items
   const setPromptScore = (v) => { setPromptScoreState(v); stSet("dm5e:promptScore", v ? 1 : 0); };
   const [encBalance, setEncBalanceState] = useState(false); // ⚖ auto-tune suggested monsters to the party — off by default, remembers your choice
@@ -6807,6 +6829,11 @@ export default function App() {
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
+  OLDSCHOOL.on = oldSchool;
+  const botPad = state.mode === "combat"
+    ? (oldSchool ? "calc(150px + env(safe-area-inset-bottom, 0px))" // clears the turn bar + the Old School Apply bar
+                 : "calc(92px + env(safe-area-inset-bottom, 0px))") // clears the fixed bottom turn bar
+    : "calc(24px + env(safe-area-inset-bottom, 0px))";
   TIES.mode = tieMode;
   FX.on = dmgFx;
   FX.all = dmgFxAll;
@@ -7025,6 +7052,7 @@ export default function App() {
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
+      setOldSchoolState(!!(await stGet("dm5e:oldSchool")));
       setPromptScoreState(!!(await stGet("dm5e:promptScore")));
       setEncBalanceState(!!(await stGet("dm5e:encBalance")));
       const tm = await stGet("dm5e:tieMode");
@@ -8131,8 +8159,8 @@ export default function App() {
   };
   const startCombat = () => {
     const cur = stateRef.current;
-    // monsters/allies without initiative (e.g. kept through "End combat") auto-roll
-    if (cur.combatants.some((c) => !c.dead && c.init == null && c.type === "monster")) {
+    // monsters without initiative auto-roll — EXCEPT in Old School Mode, where the DM enters them by hand
+    if (!OLDSCHOOL.on && cur.combatants.some((c) => !c.dead && c.init == null && c.type === "monster")) {
       mutate((d, L) => {
         d.combatants.forEach((c) => {
           if (!c.dead && c.init == null && c.type === "monster") {
@@ -8143,7 +8171,9 @@ export default function App() {
         });
       });
     }
-    if (cur.combatants.some((c) => !c.dead && c.init == null && c.type === "player")) { setModal({ type: "roll-init" }); return; }
+    // Old School: every combatant needs a hand-entered initiative; otherwise just the players
+    const needsInit = (c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (OLDSCHOOL.on || c.type === "player");
+    if (cur.combatants.some(needsInit)) { setModal({ type: "roll-init" }); return; }
     setModal({ type: "init-ties-check" });
   };
   useEffect(() => {
@@ -8282,6 +8312,27 @@ export default function App() {
       });
       if (set) L.push(`🌙 <b>Rest</b> — set HP on ${set} character${set === 1 ? "" : "s"}${healed ? `, ${healed} healed` : ""}.`);
     });
+  };
+  // Old School quick-entry: apply every row's pending damage (red) then healing (green) at once.
+  // A single net animation per creature: heal ✦ if it ended up higher, a damage flash if lower.
+  const applyHpEntries = () => {
+    const entries = hpEntry;
+    mutate((d, L, T) => {
+      let n = 0;
+      Object.entries(entries).forEach(([uid, e]) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c || c.maxHp == null) return;
+        const dmg = e?.dmg !== "" && e?.dmg != null && !isNaN(Number(e.dmg)) ? Math.max(0, Math.round(Number(e.dmg))) : 0;
+        const heal = e?.heal !== "" && e?.heal != null && !isNaN(Number(e.heal)) ? Math.max(0, Math.round(Number(e.heal))) : 0;
+        if (!dmg && !heal) return;
+        const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
+        if (dmg) applyDamage(c, dmg, null, L, T);
+        if (heal) applyHeal(c, heal, L);
+        n++;
+        holdGhost(c, snap, 600, c.hp > snap.hp ? "heal" : null); // heal sparkles if net-positive, else a damage flash
+      });
+      if (n) L.push(`🕯 Applied HP changes to ${n} combatant${n === 1 ? "" : "s"}.`);
+    });
+    setHpEntry({});
   };
   const removeRptCondition = (d, L, c, cd) => {
     c.conditions = c.conditions.filter((x) => x !== cd);
@@ -8645,6 +8696,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
+              <button onClick={(e) => { e.stopPropagation(); setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
@@ -8698,7 +8750,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`}>
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} />
             ))}
           </div>
         </>
@@ -8738,7 +8790,9 @@ export default function App() {
 
         {state.mode === "combat" && active && (
           <div ref={activeCardRef} className="activecard-anchor">
-            {active.type === "monster" ? <MonsterCard c={active} api={api} results={results} turnKey={`${state.round}:${state.activeUid}`} />
+            {oldSchool && active.type === "player" ? (
+              <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3></div>
+            ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} />
             : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} />
             : <EffectCard c={active} api={api} round={state.round} />}
           </div>
@@ -8783,6 +8837,13 @@ export default function App() {
       </div>
 
       {showTouches && <TouchViz />}
+      {oldSchool && state.mode === "combat" && order.some((c) => c.hp != null && c.type !== "effect") && (
+        <div className="osapplybar">
+          <button className="btn primary"
+            disabled={!Object.values(hpEntry).some((e) => (e?.dmg !== "" && e?.dmg != null && !isNaN(Number(e.dmg)) && Number(e.dmg) !== 0) || (e?.heal !== "" && e?.heal != null && !isNaN(Number(e.heal)) && Number(e.heal) !== 0))}
+            onClick={applyHpEntries}>✓ Apply HP changes</button>
+        </div>
+      )}
       {state.mode === "combat" && (
         <div className="turnbar">
           <span className="tb-round">R{state.round}</span>
@@ -8979,7 +9040,7 @@ export default function App() {
         </div>
       )}
       {modal?.type === "roll-init" && (
-        <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type === "player")}
+        <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (oldSchool || c.type === "player"))}
           onClose={() => setModal(null)}
           onStart={(vals) => {
             setModal(null);
@@ -9141,7 +9202,7 @@ export default function App() {
                 👁 Peeking — {pc.dead ? "dead" : dist == null ? "combat not running" : dist === 0 ? "acting NOW" : `acts in ${dist} turn${dist === 1 ? "" : "s"}`}
                 <button className="btn small ghost" style={{ marginLeft: "auto" }} onClick={() => setPeek(null)}>Close</button>
               </div>
-              {pc.type === "player" ? <PlayerCard c={pc} api={api} results={results} inCombat={state.mode === "combat"} /> : <MonsterCard c={pc} api={api} results={results} peek={pc.uid !== state.activeUid || state.mode !== "combat"} turnKey={`${state.round}:${state.activeUid}`} />}
+              {pc.type === "player" ? <PlayerCard c={pc} api={api} results={results} inCombat={state.mode === "combat"} /> : <MonsterCard c={pc} api={api} results={results} oldSchool={oldSchool} peek={pc.uid !== state.activeUid || state.mode !== "combat"} turnKey={`${state.round}:${state.activeUid}`} />}
             </div>
           </div>
         );
