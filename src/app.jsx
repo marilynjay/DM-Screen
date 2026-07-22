@@ -3704,6 +3704,7 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
 const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
 function PlayerCard({ c, api, results, inCombat }) {
   const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: CONDITIONS[cd.name] || null }));
+  const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions while incapacitated
   return (
     <div className="card torch">
       <h3>{c.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{c.side === "ally" ? "player / ally" : "npc"}</span></h3>
@@ -3740,7 +3741,10 @@ function PlayerCard({ c, api, results, inCombat }) {
         </div>
       )}
       {hints.length === 0 && !c.unconscious && <div className="trait" style={{ marginTop: 6 }}>No conditions. The floor is theirs.</div>}
-      {!c.dead && !c.unconscious && (
+      {!c.dead && !c.unconscious && incapCond && (
+        <div className="reminder" style={{ marginTop: 6, color: "var(--danger)" }}>🚫 <b>{incapCond}</b> — Incapacitated: no actions, bonus actions, or reactions until it ends.</div>
+      )}
+      {!c.dead && !c.unconscious && !incapCond && (
         <div className="sect">
           <div className="lbl">Actions{c.atkCount > 0 ? ` — attacked ${c.atkCount}×` : ""}</div>
           <div className="pcactions">
