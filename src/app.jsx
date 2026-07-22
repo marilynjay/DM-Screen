@@ -3962,7 +3962,6 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
         <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>
-        <button className="btn small" onClick={() => api.openUseItem(c.uid)}>🎒 Use item…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>
           Rolls: {c.advMode === "none" ? "normal" : c.advMode === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}
         </button>
