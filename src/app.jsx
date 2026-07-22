@@ -7698,6 +7698,16 @@ export default function App() {
       const st = stateRef.current;
       const c = st.combatants.find((x) => x.uid === uid);
       if (!c || !c.reaction) return;
+      // before combat there's no initiative — nudge the DM to start it, but let them take a surprise attack
+      if (st.mode !== "combat") { setModal({ type: "pre-combat-attack", uid, ai }); return; }
+      const opp = targetCands(st, c).filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
+      if (opp.some(targetWorth)) setModal({ type: "target-pick", uid, ai, opp: true });
+      else maybeManualAttack({ uid, ai, opp: true });
+    },
+    forceOppAttack: (uid, ai) => { // "Attack anyway" from the pre-combat prompt — skip the mode check
+      const st = stateRef.current;
+      const c = st.combatants.find((x) => x.uid === uid);
+      if (!c || !c.reaction) return;
       const opp = targetCands(st, c).filter((x) => (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
       if (opp.some(targetWorth)) setModal({ type: "target-pick", uid, ai, opp: true });
       else maybeManualAttack({ uid, ai, opp: true });
@@ -9136,6 +9146,19 @@ export default function App() {
           </div>
         );
       })()}
+      {modal?.type === "pre-combat-attack" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Combat hasn't started</h3>
+            <div className="trait" style={{ marginBottom: 10 }}>No initiative has been rolled yet. Start combat to roll for everyone, or take this now as an off-turn surprise attack.</div>
+            <div className="frow" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn" onClick={() => setModal(null)}>Cancel</button>
+              <button className="btn" onClick={() => { const { uid, ai } = modal; setPeek(null); setModal(null); api.forceOppAttack(uid, ai); }}>Attack anyway</button>
+              <button className="btn primary" onClick={() => { setPeek(null); setModal(null); startCombat(); }}>Start combat</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modal?.type === "target-pick" && (() => {
         const atkC = state.combatants.find((x) => x.uid === modal.uid);
         const a = atkC && atkC.actions[modal.ai];
