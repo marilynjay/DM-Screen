@@ -6778,6 +6778,8 @@ export default function App() {
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   const [oldSchool, setOldSchoolState] = useState(false); // Old School Mode — app never rolls for monsters
   const setOldSchool = (v) => { setOldSchoolState(v); stSet("dm5e:oldSchool", v ? 1 : 0); };
+  const [oldSchoolIntroSeen, setOldSchoolIntroSeenState] = useState(false); // has the one-time explainer been shown?
+  const markOldSchoolIntroSeen = () => { setOldSchoolIntroSeenState(true); stSet("dm5e:oldSchoolIntro", 1); };
   const [hpEntry, setHpEntry] = useState({}); // Old School quick-entry: { uid: { dmg, heal } } applied together on the Apply bar
   const setEntry = (uid, field, val) => setHpEntry((m) => ({ ...m, [uid]: { dmg: "", heal: "", ...(m[uid] || {}), [field]: val } }));
   const [promptScore, setPromptScoreState] = useState(false); // ask for the exact score on +X ability items
@@ -7053,6 +7055,7 @@ export default function App() {
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
       setOldSchoolState(!!(await stGet("dm5e:oldSchool")));
+      setOldSchoolIntroSeenState(!!(await stGet("dm5e:oldSchoolIntro")));
       setPromptScoreState(!!(await stGet("dm5e:promptScore")));
       setEncBalanceState(!!(await stGet("dm5e:encBalance")));
       const tm = await stGet("dm5e:tieMode");
@@ -8696,7 +8699,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
-              <button onClick={(e) => { e.stopPropagation(); setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
+              <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
@@ -9124,6 +9127,26 @@ export default function App() {
       )}
       {modal?.type === "rest" && restable.length > 0 && (
         <RestModal combatants={restable} onAccept={applyRest} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "oldschool-intro" && (
+        <div className="overlay" onClick={() => { markOldSchoolIntroSeen(); setModal(null); }}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>🕯 Old School Mode</h3>
+            <div className="trait" style={{ marginBottom: 8, lineHeight: 1.5 }}>Turns the app into a pure HP tracker — <b>you roll all the physical dice</b> and it never rolls for monsters. While it's on:</div>
+            <ul style={{ margin: "0 0 10px 18px", padding: 0, fontSize: 13, lineHeight: 1.6 }}>
+              <li>Monster attacks &amp; saves are <b>reference only</b> (to-hit, damage, DC) — no roll buttons.</li>
+              <li>You enter <b>everyone's initiative by hand</b> when combat starts.</li>
+              <li>Recharge and monster concentration checks become reminders for you to roll.</li>
+              <li>A player's turn card is just their name.</li>
+              <li>Every combatant's row gets a quick <span style={{ color: "var(--danger)" }}>damage</span> / <span style={{ color: "#6bbf7a" }}>heal</span> field, applied together from the <b>Apply</b> bar at the bottom.</li>
+            </ul>
+            <div className="trait" style={{ marginBottom: 10, color: "var(--faint)" }}>You can flip it on or off anytime from the ⋯ menu.</div>
+            <div className="frow" style={{ justifyContent: "flex-end", gap: 8 }}>
+              <button className="btn" onClick={() => { markOldSchoolIntroSeen(); setModal(null); }}>Not now</button>
+              <button className="btn primary" onClick={() => { markOldSchoolIntroSeen(); setOldSchool(true); setModal(null); }}>Turn it on</button>
+            </div>
+          </div>
+        </div>
       )}
       {modal?.type === "party-heal-check" && (
         <div className="overlay" onClick={() => setModal(null)}>
