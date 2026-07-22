@@ -1356,6 +1356,9 @@ const exhaustPen = (c) => 2 * exhaustLevel(c);
 // Slow: a Slowed creature has a −2 penalty to Dexterity saving throws (the condition also notes −2 AC etc.)
 const isSlowed = (c) => (c.conditions || []).some((cd) => cd.name === "Slowed");
 const slowSavePen = (c, ability) => (ability === "dex" && isSlowed(c) ? 2 : 0);
+const slowAcPen = (c) => (isSlowed(c) ? 2 : 0); // Slow: −2 AC
+// effective AC: base + reaction shield + cover − Slow penalty (null when the creature has no AC)
+const effAcOf = (c) => (c.ac == null ? null : c.ac + (c.acBoost || 0) + coverBonus(c) - slowAcPen(c));
 // A melee hit on a Paralyzed/Unconscious creature is a critical hit (RAW: within 5 ft)
 const HELPLESS_CONDS = ["Paralyzed", "Unconscious"];
 const meleeAutoCrit = (t, a) => !!(a && /Melee[^.]*Attack/i.test(a.d || "") && t && (t.conditions || []).some((cd) => HELPLESS_CONDS.includes(cd.name)));
@@ -2657,7 +2660,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   }, [menu]);
 
   const cov = coverBonus(c);
-  const effAc = c.ac != null ? c.ac + (c.acBoost || 0) + cov : null;
+  const effAc = effAcOf(c);
+  const slowAc = slowAcPen(c);
   const derived = condAdvVs(c);
   const manual = c.advVs || "none";
   const shown = manual !== "none" ? manual : derived ? derived.mode : "none";
@@ -2737,8 +2741,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       )}
 
       {effAc != null && (
-        <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
-          AC {effAc}{(c.acBoost || cov) ? "*" : ""}
+        <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
+          AC {effAc}{(c.acBoost || cov || slowAc) ? "*" : ""}
           {c.acReaction && (
             <span
               className={`shield ${c.acBoost ? "on" : ""}`}
@@ -2997,7 +3001,7 @@ function TargetPickModal({ attacker, action, list, la, opp, onResolve, onClose }
         onClick={() => (prone ? setProneFor(proneFor === t.uid ? null : t.uid) : pick(t))}>
         <b>{t.name}</b>
         <span className="ad">
-          {t.ac != null ? `AC ${t.ac + (t.acBoost || 0) + coverBonus(t)}` : "AC ?"}
+          {t.ac != null ? `AC ${effAcOf(t)}` : "AC ?"}
           {t.maxHp != null ? ` · HP ${t.hp}/${t.maxHp}` : ""}
           {t.unconscious ? " · down" : ""}
         </span>
@@ -3633,12 +3637,13 @@ function MonsterCard({ c, api, results, peek, turnKey }) {
   const [spellOpen, setSpellOpen] = useState(null); // `${rowKey}:${spellKey}` of expanded spell chip
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
   const cov = coverBonus(c);
-  const effAc = c.ac + (c.acBoost || 0) + cov;
+  const slowAc = slowAcPen(c);
+  const effAc = effAcOf(c);
   return (
     <div className="card torch">
       <h3>{c.name}{c.cr ? <span style={{ color: "var(--faint)", marginLeft: 8, fontSize: 11 }}>CR {c.cr}</span> : null}</h3>
       <div className="statline">
-        <b>AC</b> {effAc}{(c.acBoost || cov) ? ` (base ${c.ac}${cov ? `, +${cov} cover` : ""})` : ""} · <b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · <b>Speed</b> {c.spd}
+        <b>AC</b> {effAc}{(c.acBoost || cov || slowAc) ? ` (base ${c.ac}${cov ? `, +${cov} cover` : ""}${slowAc ? `, −${slowAc} Slow` : ""})` : ""} · <b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · <b>Speed</b> {c.spd}
         {c.resist?.length > 0 && <> · <b>Resist</b> {c.resist.join(", ")}</>}
         {c.immune?.length > 0 && <> · <b>Immune</b> {c.immune.join(", ")}</>}
         {c.vuln?.length > 0 && <> · <b>Vulnerable</b> {c.vuln.join(", ")}</>}
@@ -3824,7 +3829,7 @@ function PlayerCard({ c, api, results, inCombat }) {
       )}
       <div className="statline">
         {c.hp != null && <><b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · </>}
-        {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0)} · </>}
+        {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0) - slowAcPen(c)}{slowAcPen(c) ? <span style={{ color: "var(--faint)", fontSize: 11 }}> (−2 Slow)</span> : null} · </>}
         <b>Initiative</b> {c.init ?? "—"}
         {c.concentration && <> · <b>Concentrating:</b> {c.concentration}</>}
       </div>
@@ -4695,7 +4700,7 @@ function ManualRollModal({ c, a, t, onConfirm, onClose }) {
   const dmgSpec = diceSpec(a.dmg);
   const extraSpec = a.extra && !extraNeedsAdv(a) ? diceSpec(a.extra) : null;
   const crit = d20v === 20;
-  const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const effAc = t && t.ac != null ? effAcOf(t) : null;
   const miss = d20v != null && effAc != null && d20v !== 20 && (d20v === 1 || d20v + (a.hit || 0) < effAc);
   const need = [];
   if (d20v != null && !miss) {
@@ -5713,13 +5718,13 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
   // spell attacks carry their own damage type (Fire Bolt → fire); weapons default to the player's last type
   const [dtype, setDtype] = useState(spellAtk ? (presetDtype || "") : (c.lastDtype || ""));
   const t = picked ? state.combatants.find((x) => x.uid === picked) : null;
-  const effAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const effAc = t && t.ac != null ? effAcOf(t) : null;
   const helplessCond = t && (t.conditions || []).find((cd) => ["Paralyzed", "Unconscious"].includes(cd.name))?.name; // melee hit auto-crits
   const targetRow = (x) => (
     <div key={x.uid} className="gs-target" style={{ cursor: "pointer" }} onClick={() => { if (armed()) { setPicked(x.uid); setPhase("resolve"); } }}>
       <b>{x.name}</b>
       <span className="ad">
-        {x.ac != null ? `AC ${x.ac + (x.acBoost || 0) + coverBonus(x)}` : "AC ?"}
+        {x.ac != null ? `AC ${effAcOf(x)}` : "AC ?"}
         {x.maxHp != null ? ` · HP ${x.hp}/${x.maxHp}` : ""}
         {vsState(x) === "dis" ? " · vs DIS" : vsState(x) === "adv" ? " · vs ADV" : ""}
       </span>
@@ -6049,7 +6054,7 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
   const healTargets = state.combatants.filter((x) => !x.dead && x.maxHp != null && (x.uid === c.uid || x.side === c.side));
   const enemies = state.combatants.filter((x) => !x.dead && x.type !== "effect" && x.type !== "object" && x.uid !== c.uid && (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
   const t = atar ? state.combatants.find((x) => x.uid === atar) : null;
-  const tAc = t && t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+  const tAc = t && t.ac != null ? effAcOf(t) : null;
   const term1 = (n) => n.replace(/[^a-z ]/gi, "").trim().split(" ")[0].toLowerCase();
   const amtRow = (label, formula, val, setVal) => (
     <div className="frow" style={{ gap: 6 }}>
@@ -6110,7 +6115,7 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
             <div className="frow" style={{ gap: 6 }}><label style={{ minWidth: 0 }}>Target</label>
               <select className="sbook-search" style={{ width: "auto", margin: 0, flex: 1 }} value={atar} onChange={(e) => setAtar(e.target.value)}>
                 <option value="">— choose —</option>
-                {enemies.map((x) => <option key={x.uid} value={x.uid}>{x.name}{x.ac != null ? ` (AC ${x.ac + (x.acBoost || 0) + coverBonus(x)})` : ""}</option>)}
+                {enemies.map((x) => <option key={x.uid} value={x.uid}>{x.name}{x.ac != null ? ` (AC ${effAcOf(x)})` : ""}</option>)}
               </select></div>
             {atar && aphase === "pick" && (
               <>
@@ -6182,7 +6187,7 @@ function CharacterSheetModal({ c, api, onSpellbook, onClose }) {
         <h3>🎭 {c.name}</h3>
         <div className="statline" style={{ fontSize: 13 }}>
           {c.hp != null && <><b>HP</b> {c.hp}/{c.maxHp} · </>}
-          {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0)} · </>}
+          {c.ac != null && <><b>AC</b> {c.ac + (c.acBoost || 0) - slowAcPen(c)}{slowAcPen(c) ? <span style={{ color: "var(--faint)", fontSize: 11 }}> (−2 Slow)</span> : null} · </>}
           <b>Init</b> {c.init ?? "—"}
           {c.concentration && <> · <b>Conc:</b> {c.concentration}</>}
         </div>
@@ -6869,7 +6874,7 @@ export default function App() {
       if (atk.fumble) chips.push({ t: "nat 1…", k: "fumble" });
       let effAc = null, isHit = null;
       if (t) {
-        effAc = t.ac != null ? t.ac + (t.acBoost || 0) + coverBonus(t) : null;
+        effAc = t.ac != null ? effAcOf(t) : null;
         if (effAc != null) isHit = atk.crit || (!atk.fumble && atk.total >= effAc);
         if (isHit != null) chips.push({ t: `${!isHit && opts.reactedBy ? `${opts.reactedBy}! ` : ""}${isHit ? "HIT" : "MISS"} — ${t.name} AC ${effAc}`, k: isHit ? "sgood" : "sbad" });
         // tracked-HP targets get the hit/miss verdict row below instead; this ask-chip
