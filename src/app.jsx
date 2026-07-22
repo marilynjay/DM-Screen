@@ -1333,7 +1333,7 @@ function condOwnAdv(c) {
   const aura = selfAdvTrait(c);
   if (aura) { adv = true; froms.push(aura); }
   for (const cd of c.conditions || []) {
-    const v = ADV_HINT[cd.name];
+    const v = ADV_HINT[cd.name] || cd.ownAdv; // cd.ownAdv: a buff item can grant advantage on own rolls
     if (v === "adv" && !froms.includes(cd.name)) { adv = true; froms.push(cd.name); }
     if (v === "dis" && !froms.includes(cd.name)) { dis = true; froms.push(cd.name); }
   }
@@ -2034,8 +2034,10 @@ function CondIcon({ name, onTap, plain }) {
 }
 
 function CondBadge({ cond, onTap }) {
+  const known = !!CONDITION_ICONS[cond.name];
   return (
-    <span className="cond" title={`${CONDITIONS[cond.name] || "Custom effect"} (tap for details)`} onClick={onTap}>
+    <span className="cond" title={`${CONDITIONS[cond.name] || (cond.boon ? "Boon" : "Custom effect")} (tap for details)`} onClick={onTap}>
+      {cond.boon && !known && <span className="condicon">✨</span>}
       <CondIcon name={cond.name} plain />{cond.name}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
     </span>
   );
@@ -4991,16 +4993,18 @@ const ITEM_KINDS = [
   ["weapon", "⚔ Weapon", "Becomes an attack on whoever holds it, using their stats."],
   ["potion", "🧪 Potion / consumable", "One use, then it's gone. Can heal."],
   ["thrown", "💥 Thrown / grenade", "One use — throw it for damage, maybe a condition or an area burst."],
+  ["boon", "✨ Boon / self-buff", "One use — temp HP, advantage on your rolls, or a condition on yourself for a few rounds."],
   ["wand", "✨ Charged item", "Tracks charges; describe what a charge does."],
   ["armor", "🛡 Armor / shield", "Grants an AC bonus while equipped."],
   ["other", "📜 Trinket / other", "Descriptive item — no mechanics."],
 ];
-// Conditions a thrown item can impart (the cover pseudo-conditions aren't relevant here).
+// Conditions a thrown / boon item can impart (the cover pseudo-conditions aren't relevant here).
 const THROW_CONDS = Object.keys(CONDITIONS).filter((n) => !/Cover/.test(n));
-const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "", cond: "", aoe: false };
+const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "", cond: "", aoe: false, bthp: "", badv: false, bdur: "" };
 function itemKindOf(it) {
   if (it.wpn) return "weapon";
   if (it.thrown) return "thrown";
+  if (it.boon) return "boon";
   if (it.acB != null || it.armor) return "armor";
   if (it.heal || (it.c && it.ch == null)) return "potion";
   if (it.ch != null) return "wand";
@@ -5012,7 +5016,8 @@ function itemToForm(it) {
     dmg: it.wpn?.dmg || it.thrown?.dmg || "1d6", dtype: it.wpn?.dtype || it.thrown?.dtype || "slashing",
     fin: !!it.wpn?.fin, rng: !!it.wpn?.rng, ls: !!it.wpn?.ls, b: String(it.wpn?.b || 0),
     heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
-    cond: it.thrown?.cond || "", aoe: !!it.thrown?.aoe,
+    cond: it.thrown?.cond || it.boon?.cond || "", aoe: !!it.thrown?.aoe,
+    bthp: it.boon?.thp || "", badv: !!it.boon?.adv, bdur: it.boon?.dur != null ? String(it.boon.dur) : "",
   };
 }
 function formToItem(f) {
@@ -5030,6 +5035,15 @@ function formToItem(f) {
     it.thrown = { dmg: f.dmg.trim() || "1d6", dtype: f.dtype };
     if (f.cond) it.thrown.cond = f.cond;
     if (f.aoe) it.thrown.aoe = 1;
+    it.c = 1; // consumed on use
+  } else if (f.kind === "boon") {
+    const boon = {};
+    if (f.bthp.trim()) boon.thp = f.bthp.trim();
+    if (f.badv) boon.adv = 1;
+    if (f.cond) boon.cond = f.cond;
+    const durN = f.bdur.trim() !== "" && !isNaN(parseInt(f.bdur, 10)) ? Math.max(1, parseInt(f.bdur, 10)) : null;
+    if (durN != null) boon.dur = durN;
+    it.boon = boon;
     it.c = 1; // consumed on use
   } else if (f.kind === "potion") {
     if (f.heal.trim()) it.heal = f.heal.trim();
@@ -5162,6 +5176,25 @@ function LootGiveModal({ c, customItems = [], onSaveCustomItem, onDeleteCustomIt
                   <label style={{ minWidth: 0 }} title="Hits everyone in an area — opens the group-save / AoE screen when used"><input type="checkbox" checked={form.aoe} onChange={(e) => setF("aoe", e.target.checked)} /> 💥 Area burst (save for each target)</label>
                 </div>
                 <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use. When used it rolls damage against a target (or, for an area burst, opens the group-save screen). A condition applies on a hit or failed save.</div>
+              </>)}
+              {form.kind === "boon" && (<>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Temp HP</label>
+                  <input type="text" placeholder="e.g. 10 or 2d4+2" style={{ width: 120, flex: "none" }} value={form.bthp} onChange={(e) => setF("bthp", e.target.value)} />
+                </div>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }} title="Grants advantage on the user's own attack rolls and saving throws while it lasts"><input type="checkbox" checked={form.badv} onChange={(e) => setF("badv", e.target.checked)} /> ✨ Advantage on your attacks &amp; saves</label>
+                </div>
+                <div className="frow" style={{ flexWrap: "wrap" }}>
+                  <label style={{ minWidth: 0 }}>Condition</label>
+                  <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — a condition applied to yourself (e.g. Invisible)">
+                    <option value="">none</option>
+                    {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
+                  </select>
+                  <label style={{ minWidth: 0 }}>Rounds</label>
+                  <input type="number" min={1} placeholder="—" style={{ width: 56 }} value={form.bdur} onChange={(e) => setF("bdur", e.target.value)} title="How long the advantage / condition lasts, in rounds. Blank = until removed." />
+                </div>
+                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use, applied to whoever uses it. Advantage and the condition tick down each round and drop off on their own; temp HP has no timer. Leave rounds blank for an effect you'll end manually.</div>
               </>)}
               {form.kind === "potion" && (<>
                 <div className="frow" style={{ flexWrap: "wrap" }}>
@@ -5701,8 +5734,9 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
   const [pot, setPot] = useState(null); const [pf, setPf] = useState(""); const [pamt, setPamt] = useState(""); const [ptar, setPtar] = useState(c.uid);
   const [alch, setAlch] = useState(null); const [af, setAf] = useState(""); const [adt, setAdt] = useState(""); const [atar, setAtar] = useState(""); const [aphase, setAphase] = useState("pick"); const [aamt, setAamt] = useState("");
   const [oNote, setONote] = useState("");
-  // DM-made consumables that a player might reach for: thrown/grenades, custom potions, plain trinkets
-  const usableCustom = (customItems || []).filter((it) => it.thrown || it.heal || it.c || (!it.wpn && it.acB == null && it.ch == null));
+  const [boon, setBoon] = useState(null); const [bthp, setBthp] = useState("");
+  // DM-made consumables that a player might reach for: thrown/grenades, boons, custom potions, plain trinkets
+  const usableCustom = (customItems || []).filter((it) => it.thrown || it.boon || it.heal || it.c || (!it.wpn && it.acB == null && it.ch == null));
   const useCustomItem = (it) => {
     if (it.thrown && it.thrown.aoe) {
       onAoe({ name: it.n, dmg: it.thrown.dmg, dtype: it.thrown.dtype, half: true, casterUid: c.uid,
@@ -5710,9 +5744,11 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
       return;
     }
     if (it.thrown) { setAlch({ n: it.n, f: it.thrown.dmg, dt: it.thrown.dtype, cond: it.thrown.cond || null, custom: false }); setAf(it.thrown.dmg); setAdt(it.thrown.dtype); if (isMonster) setAamt(String(rollFormula(it.thrown.dmg || "0").total)); setAphase("pick"); setCat("alch"); return; }
+    if (it.boon) { setBoon(it); setBthp(it.boon.thp ? (isMonster ? String(rollFormula(it.boon.thp).total) : "") : ""); setCat("boon"); return; }
     if (it.heal) { setPot({ n: it.n, f: it.heal }); setPf(it.heal); if (isMonster) setPamt(String(rollFormula(it.heal).total)); setCat("potion"); return; }
     setONote(it.n); // plain trinket — log it
   };
+  const boonSummary = (b) => [b.thp ? `${b.thp} temp HP` : null, b.adv ? "advantage on your rolls" : null, b.cond || null, (b.adv || b.cond) && b.dur ? `${b.dur} rd` : null].filter(Boolean).join(" · ");
   const healTargets = state.combatants.filter((x) => !x.dead && x.maxHp != null && (x.uid === c.uid || x.side === c.side));
   const enemies = state.combatants.filter((x) => !x.dead && x.type !== "effect" && x.type !== "object" && x.uid !== c.uid && (c.side === "ally" ? x.side !== "ally" : x.side === "ally"));
   const t = atar ? state.combatants.find((x) => x.uid === atar) : null;
@@ -5730,7 +5766,7 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>🎒 {c.name} uses an item</h3>
-        {cat && <button className="btn small ghost" style={{ marginBottom: 6 }} onClick={() => { setCat(null); setPot(null); setAlch(null); setAphase("pick"); }}>← item types</button>}
+        {cat && <button className="btn small ghost" style={{ marginBottom: 6 }} onClick={() => { setCat(null); setPot(null); setAlch(null); setBoon(null); setAphase("pick"); }}>← item types</button>}
         {!cat && (
           <div className="pcactions">
             <button className="btn" onClick={() => setCat("potion")}>🧪 Healing potion</button>
@@ -5799,6 +5835,17 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
             )}
           </>
         ))}
+        {cat === "boon" && boon && (
+          <>
+            <div className="statline" style={{ fontSize: 13 }}><b>{boon.n}</b></div>
+            <div className="trait" style={{ fontSize: 12, color: "var(--faint)", margin: "2px 0 8px" }}>Applied to {c.name}: {boonSummary(boon.boon) || "no effect set"}.</div>
+            {boon.boon.thp && amtRow("Temp HP", boon.boon.thp, bthp, setBthp)}
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn primary" disabled={!!boon.boon.thp && bthp === ""}
+                onClick={() => { api.itemBoon(c.uid, { ...boon.boon, thpAmt: bthp }, boon.n, [term1(boon.n)]); onClose(); }}>Use on {c.name}</button>
+            </div>
+          </>
+        )}
         {cat === "other" && (
           <>
             {usableCustom.length > 0 && (
@@ -5808,7 +5855,7 @@ function UseItemModal({ c, state, api, customItems = [], onScroll, onAoe, onClos
                   {usableCustom.map((it) => (
                     <button key={it.n} className="btn" style={{ textAlign: "left" }} onClick={() => { if (armed()) useCustomItem(it); }}>
                       {it.n}
-                      <span className="cr">{it.thrown ? `${it.thrown.dmg} ${it.thrown.dtype}${it.thrown.cond ? ` +${it.thrown.cond}` : ""}${it.thrown.aoe ? " · area" : ""}` : it.heal ? `heals ${it.heal}` : rarityLabel(it)}</span>
+                      <span className="cr">{it.thrown ? `${it.thrown.dmg} ${it.thrown.dtype}${it.thrown.cond ? ` +${it.thrown.cond}` : ""}${it.thrown.aoe ? " · area" : ""}` : it.boon ? (boonSummary(it.boon) || "buff") : it.heal ? `heals ${it.heal}` : rarityLabel(it)}</span>
                     </button>
                   ))}
                 </div>
@@ -6738,6 +6785,24 @@ export default function App() {
     itemLog: (uid, note, terms) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       L.push(`<b>${c.name}</b> uses <b>${note || "an item"}</b>.`);
+      consumeLootInDraft(c, terms, L);
+    }),
+    itemBoon: (uid, boon, itemName, terms) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      const bits = [];
+      if (boon.thp) {
+        const amt = Math.max(0, Math.round(Number(boon.thpAmt) || rollFormula(boon.thp).total || 0));
+        if (amt > 0) { grantTempHp(c, amt, L); bits.push(`${amt} temp HP`); }
+      }
+      // advantage and/or a condition ride on one self-condition so it shows as a single chip that auto-expires
+      const condName = boon.cond || (boon.adv ? itemName : null);
+      if (condName) {
+        const existing = (c.conditions || []).find((cd) => cd.name === condName);
+        if (existing) { existing.rounds = boon.dur || null; if (boon.adv) existing.ownAdv = "adv"; existing.boon = 1; }
+        else c.conditions.push({ name: condName, rounds: boon.dur || null, ...(boon.adv ? { ownAdv: "adv" } : {}), boon: 1 });
+        bits.push(`${condName}${boon.adv ? " (advantage)" : ""}${boon.dur ? ` for ${boon.dur} rd` : ""}`);
+      }
+      L.push(`<b>${c.name}</b> uses <b>${itemName}</b>${bits.length ? ` — ${bits.join(", ")}` : ""}.`);
       consumeLootInDraft(c, terms, L);
     }),
     castUtility: (uid, name, conc) => mutate((d, L) => {
