@@ -1517,6 +1517,27 @@ function conMod(c) { return c.saves?.con ?? c.mods?.con ?? 0; }
 function saveMod(c, ab) { const k = ab.toLowerCase(); return c.saves?.[k] ?? c.mods?.[k] ?? 0; }
 // ability-check modifier (no save-proficiency) — used for group checks
 function checkMod(c, ab) { return c.mods?.[ab.toLowerCase()] ?? 0; }
+// ability score ↔ modifier, and helpers for modeling magic-item ability changes
+const scoreToMod = (score) => Math.floor((score - 10) / 2);
+// bump the flat +N in a damage formula ("2d6+4" by +1 → "2d6+5"; "1d8" by +1 → "1d8+1")
+function adjustDmgFlat(dmg, delta) {
+  if (!dmg || !delta) return dmg;
+  const m = String(dmg).match(/^([0-9d+\s-]*?d\d+(?:\s*\+\s*\d+d\d+)*)\s*([+-]\s*\d+)?\s*$/i);
+  if (!m) return dmg;
+  const flat = m[2] ? parseInt(m[2].replace(/\s/g, ""), 10) : 0;
+  const nf = flat + delta;
+  return m[1].replace(/\s/g, "") + (nf ? (nf > 0 ? `+${nf}` : `${nf}`) : "");
+}
+// which weapon attacks scale with an ability (so a STR/DEX item can bump their hit & damage).
+// Bestiary attacks encode range in `d`: melee/thrown say "reach", pure ranged say "range".
+function attackUsesAbility(a, ability) {
+  const d = a.d || "";
+  const reach = /reach/i.test(d) || /Melee/i.test(d);
+  const range = /range/i.test(d) || /Ranged/i.test(d);
+  if (ability === "str") return reach; // melee & thrown weapons use STR
+  if (ability === "dex") return (range && !reach) || /finesse/i.test(d); // pure ranged / finesse
+  return false;
+}
 // passive Insight: explicit c.pi if set, else 10 + WIS mod when we know it, else null (nothing to show)
 function passiveInsight(c) { return c.pi != null ? c.pi : (c.mods?.wis != null ? 10 + c.mods.wis : null); }
 
@@ -2918,6 +2939,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {c.type === "player" && <button onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>}
             {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAbilBoost(c.uid)}>💪 Ability item…</button>}
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
@@ -5214,6 +5236,88 @@ function PromptModal({ title, fields, submitLabel, onSubmit, onClose, extraButto
   );
 }
 
+function AbilBoostModal({ c, promptScore, onApply, onRemove, onClose }) {
+  const [ability, setAbility] = useState("str");
+  const [mode, setMode] = useState("set"); // "set" fixed score · "add" +X to score
+  const [value, setValue] = useState("");
+  const [curScore, setCurScore] = useState("");
+  const [label, setLabel] = useState("");
+  const abils = ["str", "dex", "con", "int", "wis", "cha"];
+  const curMod = c.mods?.[ability] ?? 0;
+  const v = parseInt(value, 10);
+  const cs = parseInt(curScore, 10);
+  let newMod = null;
+  if (!isNaN(v)) {
+    if (mode === "set") newMod = scoreToMod(v);
+    else if (promptScore) { if (!isNaN(cs)) newMod = scoreToMod(cs + v); }
+    else newMod = curMod + Math.floor(v / 2);
+  }
+  const canApply = mode === "set" ? !isNaN(v) : (!isNaN(v) && (!promptScore || !isNaN(cs)));
+  const bumpsAtk = newMod != null && newMod !== curMod && (c.actions || []).some((a) => a.kind === "atk" && attackUsesAbility(a, ability));
+  const adjList = c.abilAdj || [];
+  const apply = () => {
+    if (!canApply) return;
+    onApply({ ability, mode, value: v, curScore: (mode === "add" && promptScore && !isNaN(cs)) ? cs : null, label });
+    onClose();
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>💪 Ability item — {c.name}</h3>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>Which ability?</div>
+        <div className="pickgrid">
+          {abils.map((ab) => (
+            <button key={ab} className={`lvlchip ${ability === ab ? "on" : ""}`} onClick={() => setAbility(ab)}>
+              {ab.toUpperCase()} {fmtMod(c.mods?.[ab] ?? 0)}
+            </button>
+          ))}
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>What does the item do?</div>
+        <button className={`btn ${mode === "set" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("set")}>
+          Set the score to a fixed value{mode === "set" ? " ✓" : ""}<br />
+          <span style={{ fontSize: 11, color: mode === "set" ? "inherit" : "var(--faint)" }}>Belt of Giant Strength → STR 25, Amulet of Health → CON 19…</span>
+        </button>
+        <button className={`btn ${mode === "add" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("add")}>
+          +X to the score{mode === "add" ? " ✓" : ""}<br />
+          <span style={{ fontSize: 11, color: mode === "add" ? "inherit" : "var(--faint)" }}>Manual of Gainful Exercise (+2 STR), Tome of Understanding…</span>
+        </button>
+        <div className="frow" style={{ marginTop: 6 }}>
+          <label>{mode === "set" ? "Score" : "+X"}</label>
+          <input type="number" inputMode="numeric" placeholder={mode === "set" ? "25" : "2"} value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+        </div>
+        {mode === "add" && promptScore && (
+          <div className="frow"><label>Current score</label><input type="number" inputMode="numeric" placeholder="e.g. 16" value={curScore} onChange={(e) => setCurScore(e.target.value)} /></div>
+        )}
+        {mode === "add" && !promptScore && (
+          <div className="trait" style={{ marginBottom: 6 }}>Assuming an even base score: the modifier rises by ⌊X/2⌋ (a +1 does nothing; +2 gives +1). Turn on “Ask for the exact score” in 🎲 Dice &amp; animations to type the real score instead.</div>
+        )}
+        <div className="frow"><label>Item name</label><input type="text" placeholder="optional" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
+        {newMod != null && (
+          <div className="trait" style={{ marginBottom: 6 }}>
+            {ability.toUpperCase()} modifier {fmtMod(curMod)} → <b>{fmtMod(newMod)}</b>
+            {newMod === curMod ? " (no change to the modifier)" : (bumpsAtk ? ` · ${ability.toUpperCase()} weapon attacks ${fmtMod(newMod - curMod)} to hit & damage` : "")}
+          </div>
+        )}
+        {adjList.length > 0 && (
+          <>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Active ability items</div>
+            {adjList.map((a) => (
+              <div key={a.id} className="frow" style={{ alignItems: "center" }}>
+                <span style={{ flex: 1 }}>{a.label} <span style={{ color: "var(--faint)" }}>({a.ability.toUpperCase()} {fmtMod(a.modDelta)})</span></span>
+                <button className="btn small warn" onClick={() => onRemove(a.id)}>Remove</button>
+              </div>
+            ))}
+          </>
+        )}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!canApply} onClick={apply}>Apply</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DefensesModal({ c, onSave, onClose }) {
   const [res, setRes] = useState((c.resist || []).join(", "));
   const [imm, setImm] = useState((c.immune || []).join(", "));
@@ -6564,6 +6668,8 @@ export default function App() {
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
+  const [promptScore, setPromptScoreState] = useState(false); // ask for the exact score on +X ability items
+  const setPromptScore = (v) => { setPromptScoreState(v); stSet("dm5e:promptScore", v ? 1 : 0); };
   const [tieMode, setTieModeState] = useState("players"); // players | dex | monsters | ask
   const setTieMode = (v) => { setTieModeState(v); stSet("dm5e:tieMode", v); };
   const [dmgFx, setDmgFxState] = useState(true);
@@ -6800,6 +6906,7 @@ export default function App() {
       const asp = await stGet("dm5e:animSpeed");
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
+      setPromptScoreState(!!(await stGet("dm5e:promptScore")));
       const tm = await stGet("dm5e:tieMode");
       if (tm && ["players", "dex", "monsters", "ask"].includes(tm)) setTieModeState(tm);
       else { const pwt = await stGet("dm5e:playersWinTies"); if (pwt != null) setTieModeState(pwt ? "players" : "dex"); } // migrate the old boolean
@@ -7190,6 +7297,44 @@ export default function App() {
     },
     openSpellbook: (uid) => setModal({ type: "spellbook", uid }),
     openCharacter: (uid) => setModal({ type: "character", uid }),
+    openAbilBoost: (uid) => setModal({ type: "abil-boost", uid }),
+    applyAbilBoost: (uid, { ability, mode, value, curScore, label }) => {
+      mutate((d, L) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+        const curMod = c.mods?.[ability] ?? 0;
+        let newMod;
+        if (mode === "set") newMod = scoreToMod(value);                         // Belt of Giant Strength → STR 25
+        else if (curScore != null) newMod = scoreToMod(curScore + value);       // exact: DM gave the current score
+        else newMod = curMod + Math.floor(value / 2);                            // +X, assume base score is even → +⌊X/2⌋
+        const modDelta = newMod - curMod;
+        const atkChanges = [];
+        (c.actions || []).forEach((a, ai) => {
+          if (a.kind === "atk" && modDelta && attackUsesAbility(a, ability)) {
+            atkChanges.push({ ai, dmgBefore: a.dmg, hitBefore: a.hit });
+            if (a.hit != null) a.hit += modDelta;
+            a.dmg = adjustDmgFlat(a.dmg, modDelta);
+          }
+        });
+        const saveBefore = c.saves?.[ability];
+        if (saveBefore != null && modDelta) { c.saves = { ...c.saves }; c.saves[ability] = saveBefore + modDelta; }
+        c.mods = { ...(c.mods || {}) }; c.mods[ability] = newMod;
+        const lbl = label && label.trim() ? label.trim() : (mode === "set" ? `${ability.toUpperCase()} ${value}` : `+${value} ${ability.toUpperCase()}`);
+        c.abilAdj = [...(c.abilAdj || []), { id: newUid(), ability, modDelta, atkChanges, saveBefore: saveBefore != null ? saveBefore : null, label: lbl }];
+        L.push(`<b>${c.name}</b> — <b>${lbl}</b>: ${ability.toUpperCase()} modifier ${fmtMod(curMod)} → ${fmtMod(newMod)}${atkChanges.length ? `, ${ability.toUpperCase()} weapon attacks ${fmtMod(modDelta)}` : ""}.`);
+      });
+      persistMember(stateRef.current.combatants.find((x) => x.uid === uid)?.memberId, {}); // (players: mods live on the combatant; no member field to sync)
+    },
+    removeAbilBoost: (uid, id) => {
+      mutate((d, L) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+        const adj = (c.abilAdj || []).find((a) => a.id === id); if (!adj) return;
+        c.mods = { ...(c.mods || {}) }; c.mods[adj.ability] = (c.mods[adj.ability] ?? 0) - adj.modDelta;
+        (adj.atkChanges || []).forEach((ch) => { const a = c.actions?.[ch.ai]; if (a) { a.hit = ch.hitBefore; a.dmg = ch.dmgBefore; } });
+        if (adj.saveBefore != null && c.saves) { c.saves = { ...c.saves }; c.saves[adj.ability] = adj.saveBefore; }
+        c.abilAdj = (c.abilAdj || []).filter((a) => a.id !== id);
+        L.push(`<b>${c.name}</b> — removed <b>${adj.label}</b> (${adj.ability.toUpperCase()} modifier back to ${fmtMod(c.mods[adj.ability] ?? 0)}).`);
+      });
+    },
     setCharStat: (uid, key, value) => {
       const c = stateRef.current.combatants.find((x) => x.uid === uid); if (!c) return;
       const num = value === "" || value == null || isNaN(Number(value)) ? null : Number(value);
@@ -8664,6 +8809,12 @@ export default function App() {
                 {label}{animSpeed === k ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: animSpeed === k ? "inherit" : "var(--faint)" }}>{hint}</span>
               </button>
             ))}
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Ability-score items</div>
+            <button className={`btn ${promptScore ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              onClick={() => setPromptScore(!promptScore)}>
+              💪 Ask for the exact score on “+X” items{promptScore ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: promptScore ? "inherit" : "var(--faint)" }}>Off: a “+X to a score” item assumes the base score is even, so the modifier rises by ⌊X/2⌋ (a +1 does nothing, +2 gives +1…). On: you’re prompted to type the creature’s current score so the new modifier is exact. Items that set a score to a fixed value (Belt of Giant Strength, Amulet of Health…) are always exact either way.</span>
+            </button>
             <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
               <button className="btn" onClick={() => setModal(null)}>Done</button>
             </div>
@@ -8698,6 +8849,12 @@ export default function App() {
             });
             setModal(null);
           }} />
+      )}
+      {modal?.type === "abil-boost" && modalC && (
+        <AbilBoostModal c={modalC} promptScore={promptScore}
+          onClose={() => setModal(null)}
+          onApply={(spec) => api.applyAbilBoost(modal.uid, spec)}
+          onRemove={(id) => api.removeAbilBoost(modal.uid, id)} />
       )}
       {modal?.type === "addattack" && modalC && (
         <AddAttackModal c={modalC} onClose={() => setModal(null)}
