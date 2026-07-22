@@ -669,6 +669,7 @@ const CONDITIONS = {
   Suffocating: "Out of breath: gains 1 Exhaustion level at the end of each of its turns until it can breathe.",
   Hiding: "Counts as Invisible: its attacks have ADV; attacks vs it have DIS. Ends when it attacks, casts with a verbal component, makes noise, or is found.",
   Silenced: "In a Silence field: Deafened and can't cast spells with a Verbal (V) component. Apply to everyone inside the area.",
+  Slowed: "Speed halved; −2 AC and −2 DEX saves; no Reactions; one action or bonus action (not both) and only one attack per turn; somatic spells may fail (25%). Repeats the WIS save each turn to end.",
   "Half Cover": "+2 to AC and DEX saving throws.",
   "Three-Quarters Cover": "+5 to AC and DEX saving throws.",
   "Total Cover": "Can't be targeted directly by an attack or spell.",
@@ -680,7 +681,7 @@ const CONDITION_ICONS = {
   Grappled: "🤼", Incapacitated: "🚫", Invisible: "🫥", Paralyzed: "⚡",
   Petrified: "🗿", Poisoned: "🤢", Prone: "svg:prone", Restrained: "🪢",
   Stunned: "😵‍💫", Unconscious: "🚫", Exhaustion: "🪫", Burning: "🔥", Silenced: "🤫",
-  Suffocating: "🫁", Hiding: "🥷",
+  Suffocating: "🫁", Hiding: "🥷", Slowed: "🐌",
   "Half Cover": "🌗", "Three-Quarters Cover": "🌘", "Total Cover": "🌑",
 };
 function coverBonus(c) {
@@ -1352,6 +1353,9 @@ const saveAdv = (c, ability) => combineAdv(ownAdv(c), (ability === "dex" && (c.c
 // Exhaustion (2024): −2 per level to every d20 Test
 const exhaustLevel = (c) => { const cd = (c.conditions || []).find((x) => x.name === "Exhaustion"); return cd ? (cd.level || 1) : 0; };
 const exhaustPen = (c) => 2 * exhaustLevel(c);
+// Slow: a Slowed creature has a −2 penalty to Dexterity saving throws (the condition also notes −2 AC etc.)
+const isSlowed = (c) => (c.conditions || []).some((cd) => cd.name === "Slowed");
+const slowSavePen = (c, ability) => (ability === "dex" && isSlowed(c) ? 2 : 0);
 // A melee hit on a Paralyzed/Unconscious creature is a critical hit (RAW: within 5 ft)
 const HELPLESS_CONDS = ["Paralyzed", "Unconscious"];
 const meleeAutoCrit = (t, a) => !!(a && /Melee[^.]*Attack/i.test(a.d || "") && t && (t.conditions || []).some((cd) => HELPLESS_CONDS.includes(cd.name)));
@@ -1756,6 +1760,16 @@ const ZONE_COND_SPELLS = { silence: { cond: "Silenced", also: "Deafened" } };
 // No-save spells that grant a condition to a chosen creature (or self) — cast them via the
 // buff target picker so the condition is actually applied (and linked to concentration).
 const BUFF_COND_SPELLS = { invisibility: "Invisible", "greater invisibility": "Invisible", mislead: "Invisible", sequester: "Invisible" };
+// Save-for-effect spells that apply a tracked condition on a FAILED save, where the condition name
+// isn't spelled out as "has the X condition" (so spellCondFrom can't find it). rpt = repeat save to end.
+const SAVE_COND_SPELLS = { slow: { cond: "Slowed", rpt: true } };
+// The condition part of a spell's group-save preset: an explicit SAVE_COND_SPELLS entry wins,
+// otherwise fall back to whatever spellCondFrom parses from the text.
+function spellCondPreset(key, text, du) {
+  const sc = SAVE_COND_SPELLS[key];
+  if (sc) return { cond: sc.cond, condR: /Concentration/i.test(du || "") ? 10 : null, rpt: !!sc.rpt };
+  return spellCondFrom(text, du) || {};
+}
 function spellSaveDmg(text, ratio) {
   const TYPES = ["acid","bludgeoning","cold","fire","force","lightning","necrotic","piercing","poison","psychic","radiant","slashing","thunder"];
   let dice = null, dtype = "";
@@ -3236,7 +3250,7 @@ function GroupSaveModal({ list, preset, resolved, onClose, onResolve, onPlayerRe
           {resolved.pending && resolved.pending.map((p) => (
             <div key={p.uid} className="gs-row" onClick={(e) => e.stopPropagation()}>
               <b>{p.name}</b>
-              <span className="ad">reports their roll…</span>
+              <span className="ad">reports their roll…{p.slowed ? <span style={{ color: "var(--gold)" }}> 🐌 −2 from Slow</span> : null}</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 <button className="btn small cond" onClick={() => onPlayerResult(p.uid, true)}>✓ {resolved.ctx?.check ? "passed" : "saved"}</button>
                 <button className="btn small" onClick={() => onPlayerResult(p.uid, false)}>✗ failed</button>
@@ -3515,7 +3529,7 @@ function SpellInfo({ k, c, api, laUid, laLocked, turnKey }) {
             <button className="btn small primary" style={{ marginLeft: 8 }}
               disabled={laUid ? (laLocked || c.legendary?.rem <= 0) : !!econBlock}
               title={laUid && laLocked ? "Legendary action already used this turn" : laUid ? "Resolving spends a legendary action" : econBlock ? `${econBlock} — Undo or tap +1 to override` : ownTurn ? (c.spellStyle === "replace" ? "Casting replaces one attack" : "Casting uses this creature's action") : undefined}
-              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), ...(k === "command" ? {} : (spellCondFrom(s.d, s.du) || {})), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(spellSaveAbilities(s.d).length > 1 ? { multiSave: spellSaveAbilities(s.d) } : {}), ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
+              onClick={() => { const sd = spellSaveDmg(s.d, c.spellDmgRatio); api.openGroupSave({ name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(), dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true, dc: c.spellDC, single: singleTargetText(s.d), casterUid: c.uid, laUid: laUid || null, noDmg: !/damage/i.test(s.d), ...(k === "command" ? {} : spellCondPreset(k, s.d, s.du)), cmdPick: k === "command", rpt: /repeats the save/i.test(s.d), rptNote: /line of sight/i.test(s.d) ? "only if it can\u2019t see the caster" : null, spellCastUid: !laUid && ownTurn ? c.uid : null, ...(spellSaveAbilities(s.d).length > 1 ? { multiSave: spellSaveAbilities(s.d) } : {}), ...(/Concentration/i.test(s.du) ? { concSrc: c.uid, concCast: s.n } : {}) }); }}>
               ⭗ Roll this save{laUid ? " (spends LA)" : ""}
             </button>
           )}
@@ -5855,7 +5869,7 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
       name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
       dc: dc === "" ? null : Number(dc), single: singleTargetText(s.d), casterUid: c.uid,
-      noDmg: !/damage/i.test(s.d), ...(spellCondFrom(s.d, s.du) || {}),
+      noDmg: !/damage/i.test(s.d), ...spellCondPreset(pick, s.d, s.du),
       ...(multiSave.length > 1 ? { multiSave } : {}),
       ...(conc ? { concSrc: c.uid, concCast: s.n } : {}),
     });
@@ -7204,9 +7218,10 @@ export default function App() {
         const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
         const cd = c.conditions.find((x) => x.name === condName && x.rpt); if (!cd) return;
         const cov = cd.rpt.ab === "dex" ? coverBonus(c) : 0;
-        const r = d20(saveMod(c, cd.rpt.ab) + cov - exhaustPen(c), saveAdv(c, cd.rpt.ab));
+        const slowPen = slowSavePen(c, cd.rpt.ab); // Slow: −2 to DEX saves
+        const r = d20(saveMod(c, cd.rpt.ab) + cov - exhaustPen(c) - slowPen, saveAdv(c, cd.rpt.ab));
         const ok = r.total >= cd.rpt.dc;
-        L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name}): ${r.text} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
+        L.push(`<b>${c.name}</b> repeats the ${cd.rpt.ab.toUpperCase()} save vs DC ${cd.rpt.dc} (${cd.spell || cd.name})${slowPen ? " (−2 Slow)" : ""}: ${r.text} — <b>${ok ? "SUCCESS" : "FAIL"}</b>`);
         cd.rptDone = `${d.round}:${d.activeUid}`;
         if (ok) removeRptCondition(d, L, c, cd);
         const both = r.adv !== "none";
@@ -7917,7 +7932,7 @@ export default function App() {
       targets.forEach((uid) => {
         const c = d.combatants.find((x) => x.uid === uid); if (!c || c.dead) return;
         if (!noSave && c.type === "player" && !dmRoll) {
-          pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null });
+          pending.push({ uid: c.uid, name: c.name, untracked: c.maxHp == null, slowed: !check && ability === "dex" && isSlowed(c) });
           return;
         }
         const snap = { hp: c.hp, thp: c.thp, dead: c.dead, unconscious: c.unconscious, stable: c.stable, id: Math.random() };
@@ -7938,7 +7953,8 @@ export default function App() {
           return;
         }
         const cov = !check && ability === "dex" ? coverBonus(c) : 0;
-        const mod = (check ? checkMod(c, ability) : saveMod(c, ability)) + cov - exhaustPen(c); // Exhaustion −2/level
+        const slowPen = check ? 0 : slowSavePen(c, ability); // Slow: −2 to DEX saves (not ability checks)
+        const mod = (check ? checkMod(c, ability) : saveMod(c, ability)) + cov - exhaustPen(c) - slowPen; // Exhaustion −2/level
         const forced = !check && saveAutoFails(c, ability); // Paralyzed/Stunned/etc. auto-fail STR & DEX saves (saves only)
         const r = d20(mod, check ? "none" : saveAdv(c, ability)); // Restrained → DIS on DEX saves
         const ok = forced ? false : r.total >= dc;
@@ -7953,7 +7969,7 @@ export default function App() {
           note = (note ? note + " " : "") + `+${cond}`;
           L.push(`<b>${c.name}</b> gains <b>${cond}</b>${condR ? ` (${condR} rd)` : ""} from the failed save.`);
         }
-        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} ${check ? "check" : "save"} ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
+        L.push(`<b>${c.name}</b> ${ability.toUpperCase()} ${check ? "check" : "save"} ${forced ? "auto-fails (incapacitated)" : `${r.text} vs DC ${dc}`}${slowPen ? " (−2 Slow)" : ""} — <b>${ok ? "SUCCESS" : "FAIL"}</b>${amt != null ? `, takes ${amt}` : ""}`);
         const both = r.adv !== "none";
         const dice = both
           ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
@@ -7992,11 +8008,12 @@ export default function App() {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const cov = ab === "dex" ? coverBonus(c) : 0;
       const forced = saveAutoFails(c, ab);
-      const mod = saveMod(c, ab) + cov - exhaustPen(c);
+      const slowPen = slowSavePen(c, ab); // Slow: −2 to DEX saves
+      const mod = saveMod(c, ab) + cov - exhaustPen(c) - slowPen;
       const r = d20(mod, saveAdv(c, ab));
       const passed = dc ? (forced ? false : r.total >= dc) : null;
       const dcTxt = dc ? ` vs DC ${dc} — <b>${passed ? "SUCCESS" : "FAIL"}</b>${forced ? " (auto-fails)" : ""}` : "";
-      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${cov ? ` (incl. +${cov} cover)` : ""}${dcTxt}`);
+      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${cov ? ` (incl. +${cov} cover)` : ""}${slowPen ? " (−2 Slow)" : ""}${dcTxt}`);
       const both = r.adv !== "none";
       const dice = both
         ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
