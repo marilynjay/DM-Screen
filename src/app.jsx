@@ -3728,7 +3728,7 @@ function PlayerCard({ c, api, results, inCombat }) {
             <button className="btn" onClick={() => api.openUseItem(c.uid)}>🎒 Use item</button>
             <button className="btn" disabled={c.dodging} onClick={() => api.dodge(c.uid)}>🛡 Dodge</button>
             <button className="btn" onClick={() => api.dash(c.uid)}>💨 Dash</button>
-            <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Readied" : "Ready"}</button>
+            <button className="btn" disabled={c.readied} onClick={() => api.readyAction(c.uid)}>⏳ {c.readied ? "Action readied" : "Ready action"}</button>
           </div>
         </div>
       )}
