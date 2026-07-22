@@ -230,6 +230,17 @@ input[type=number]{width:64px}
 .osfield{width:42px;text-align:center;padding:4px 2px;font-size:16px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);-webkit-appearance:none;appearance:none}
 .osfield.osdmg{border-color:var(--danger);color:var(--danger);-webkit-text-fill-color:var(--danger);caret-color:var(--danger)}
 .osfield.osheal{border-color:#6bbf7a;color:#6bbf7a;-webkit-text-fill-color:#6bbf7a;caret-color:#6bbf7a}
+.dgn-overlay{position:fixed;inset:0;z-index:70;background:var(--ink);display:flex;flex-direction:column}
+.dgn-top{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
+.dgn-top input.nm{flex:1;min-width:0;font-family:var(--disp);font-size:16px;background:transparent;border:none;color:var(--text);-webkit-text-fill-color:var(--text)}
+.dgn-canvas{flex:1;position:relative;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
+.dgn-hex{fill:transparent;stroke:var(--line2);stroke-width:1}
+.dgn-zoom{position:absolute;right:10px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px}
+.dgn-zoom button{width:42px;height:42px;font-size:20px;border-radius:10px;background:var(--panel);border:1px solid var(--line2);color:var(--text)}
+.dgn-hint{position:absolute;left:10px;top:10px;font-size:11px;color:var(--faint);background:rgba(0,0,0,.45);padding:4px 8px;border-radius:6px;pointer-events:none}
+.dgn-swatch{width:30px;height:30px;border-radius:6px;border:2px solid var(--line2);cursor:pointer;padding:0}
+.dgn-swatch.on{border-color:var(--gold)}
+.dgn-ta{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;padding:6px 8px;resize:vertical;margin-bottom:6px}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 .turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -6736,6 +6747,127 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
   );
 }
 
+/* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
+const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
+const DGN_SHAPES = [["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"]];
+const HALL_ORIENT = [["h", "— Horizontal"], ["v", "❘ Vertical"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
+const HEX_SIZE = 46; // pointy-top hex radius (world units)
+const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
+const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) => {
+  const a = (Math.PI / 180) * (60 * i - 30);
+  return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`;
+}).join(" ");
+
+function RoomShape({ room, cx, cy }) {
+  const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
+  if (room.shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
+  if (room.shape === "hall") {
+    const w = s * 1.55, h = s * 0.5, rot = { h: 0, v: 90, d1: -45, d2: 45 }[room.orient || "h"];
+    return <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={h / 2} fill={col} stroke={stroke} strokeWidth="1.5" transform={`rotate(${rot} ${cx} ${cy})`} />;
+  }
+  const side = s * 1.18; // square, shrunk to sit inside the hex
+  return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} rx={6} fill={col} stroke={stroke} strokeWidth="1.5" />;
+}
+
+function RoomEditor({ room, onChange, onDelete, onClose }) {
+  const set = (patch) => onChange({ ...room, ...patch });
+  const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
+  const n = room.notes || {};
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Room</h3>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px" }}>Shape</div>
+        <div className="pickgrid">
+          {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${room.shape === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
+        </div>
+        {room.shape === "hall" && (
+          <div className="pickgrid" style={{ marginTop: 4 }}>
+            {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
+          </div>
+        )}
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Background colour</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Room description</div>
+        <textarea className="dgn-ta" rows={3} value={n.desc || ""} onChange={(e) => setNote("desc", e.target.value)} placeholder="What's in here…" />
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>Loot</div>
+        <textarea className="dgn-ta" rows={2} value={n.loot || ""} onChange={(e) => setNote("loot", e.target.value)} placeholder="Treasure, items…" />
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>NPCs</div>
+        <textarea className="dgn-ta" rows={2} value={n.npcs || ""} onChange={(e) => setNote("npcs", e.target.value)} placeholder="Allies, denizens… (encounters come in Phase 2)" />
+        <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
+          <button className="btn small danger" onClick={onDelete}>Delete room</button>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DungeonBuilder({ dungeon, onSave, onClose }) {
+  const [dg, setDg] = useState(dungeon);
+  const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
+  const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
+  const [editKey, setEditKey] = useState(null);
+  const [view, setView] = useState({ x: 0, y: 0, z: 1 });
+  const wrapRef = useRef(null);
+  const [size, setSize] = useState({ w: 360, h: 520 });
+  const drag = useRef(null);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const upd = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    upd();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(upd) : null;
+    if (ro) ro.observe(el); else window.addEventListener("resize", upd);
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener("resize", upd); };
+  }, []);
+  const rooms = dg.rooms || {};
+  const RANGE = 8; // logical hex extent; the canvas pans/zooms over it
+  const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "square", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
+  const grid = useMemo(() => {
+    const out = [];
+    for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
+      const { x, y } = hexToPix(q, r), key = `${q},${r}`, room = rooms[key];
+      out.push(
+        <g key={key} style={{ cursor: "pointer" }} onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
+          <polygon className="dgn-hex" points={hexCorners(x, y)} />
+          {room && <RoomShape room={room} cx={x} cy={y} />}
+        </g>
+      );
+    }
+    return out;
+  }, [rooms]); // eslint-disable-line react-hooks/exhaustive-deps
+  const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
+  const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
+  const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
+  const zoom = (f) => setView((v) => ({ ...v, z: Math.max(0.5, Math.min(2.4, v.z * f)) }));
+  return (
+    <div className="dgn-overlay">
+      <div className="dgn-top">
+        <button className="btn small" onClick={onClose}>✕ Close</button>
+        <input className="nm" value={dg.name || ""} placeholder="Dungeon name…" onChange={(e) => commit((prev) => ({ ...prev, name: e.target.value }))} />
+      </div>
+      <div className="dgn-canvas" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+        <div className="dgn-hint">Tap a hex to add a room · tap a room to edit · drag to pan</div>
+        <svg width={size.w} height={size.h}>
+          <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}</g>
+        </svg>
+        <div className="dgn-zoom">
+          <button onClick={() => zoom(1.25)}>＋</button>
+          <button onClick={() => zoom(1 / 1.25)}>－</button>
+        </div>
+      </div>
+      {editKey && rooms[editKey] && (
+        <RoomEditor room={rooms[editKey]}
+          onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
+          onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
+          onClose={() => setEditKey(null)} />
+      )}
+    </div>
+  );
+}
+
 /* ================= App ================= */
 
 export default function App() {
@@ -6922,6 +7054,9 @@ export default function App() {
   const [activePartyId, setActivePartyIdState] = useState(null);
   const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
   const activeRoster = parties.find((p) => p.id === activePartyId) || parties[0] || null;
+  const [dungeons, setDungeonsState] = useState([]); // saved dungeons (hex-grid maps of rooms)
+  const saveDungeons = (list) => { setDungeonsState(list); stSet("dm5e:dungeons", list); };
+  const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const savePartiesAll = (list, activeId) => {
     setPartiesState(list); stSet("dm5e:parties", list);
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
@@ -6983,6 +7118,7 @@ export default function App() {
   const itemsRef = useRef(myItems); itemsRef.current = myItems;
   const partyRef = useRef(party); partyRef.current = party;
   const partiesRef = useRef(parties); partiesRef.current = parties;
+  const dungeonsRef = useRef(dungeons); dungeonsRef.current = dungeons;
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
   const redoRef = useRef([]);
@@ -7166,6 +7302,8 @@ export default function App() {
       if (migrated) stSet("dm5e:parties", withIds); // stabilize member ids so spellbooks stay linked across sessions
       const ap = await stGet("dm5e:activeParty");
       if (ap) setActivePartyIdState(ap);
+      const dg = await stGet("dm5e:dungeons");
+      if (Array.isArray(dg)) setDungeonsState(dg.filter((x) => x && x.id));
       setPartyBoot(true);
       // backup-reminder stamps; first-seen anchors the grace period for new installs
       let first = await stGet("dm5e:firstSeen");
@@ -8647,7 +8785,7 @@ export default function App() {
     const now = Date.now(); // producing an export counts as a backup — quiets the periodic reminder
     setBkStamps((s) => ({ ...(s || { first: now }), last: now }));
     stSet("dm5e:lastBackup", now);
-    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, parties: partiesRef.current, slots, groups };
+    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, parties: partiesRef.current, dungeons: dungeonsRef.current, slots, groups };
   };
   const importAll = async (obj) => {
     // whoever restores a backup already knows about backups — never show them the nudge
@@ -8672,6 +8810,15 @@ export default function App() {
         r.parties = (r.parties || 0) + 1;
       });
       savePartiesAll(merged, activePartyId ?? merged[0].id);
+    }
+    if (Array.isArray(obj.dungeons) && obj.dungeons.length) {
+      const merged = [...dungeonsRef.current];
+      obj.dungeons.filter((d) => d && d.id).forEach((d) => {
+        const at = merged.findIndex((x) => x.id === d.id);
+        if (at >= 0) merged[at] = d; else merged.push(d);
+        r.dungeons = (r.dungeons || 0) + 1;
+      });
+      saveDungeons(merged);
     }
     return r;
   };
@@ -8775,6 +8922,7 @@ export default function App() {
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
+              <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
@@ -9181,6 +9329,35 @@ export default function App() {
         <MonsterItemsModal c={modalC} api={api}
           onGive={() => setModal({ type: "loot-give", uid: modal.uid })}
           onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "dungeons" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>🗺 Dungeon Builder</h3>
+            <div className="trait" style={{ marginBottom: 8 }}>Build a hex map of rooms — shapes, colours, and notes. (Loading a dungeon into play comes next.)</div>
+            {dungeons.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No dungeons yet.</div>}
+            {dungeons.map((d) => {
+              const n = Object.keys(d.rooms || {}).length;
+              return (
+                <div key={d.id} className="gs-row" style={{ alignItems: "center" }}>
+                  <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
+                  <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
+                  <button className="btn small" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>Edit</button>
+                  <button className="btn small danger" title="Delete this dungeon" onClick={() => saveDungeons(dungeons.filter((x) => x.id !== d.id))}>✕</button>
+                </div>
+              );
+            })}
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+              <button className="btn" onClick={() => setModal(null)}>Close</button>
+              <button className="btn primary" onClick={() => { const id = newUid(); saveDungeons([...dungeons, { id, name: "", rooms: {} }]); setDungeonEditId(id); setModal(null); }}>＋ New dungeon</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)}
+          onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
+          onClose={() => setDungeonEditId(null)} />
       )}
       {modal?.type === "item-compendium" && (
         <LootGiveModal compendium customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)} />
