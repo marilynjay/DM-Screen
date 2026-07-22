@@ -1702,6 +1702,10 @@ function suggestEncounter({ biome, level, size, difficulty, template, balanced, 
   return { picks, budget: balanced ? null : Math.round(budget), spent: balanced ? null : spent, note };
 }
 
+// Whether a spell has a Verbal component — derived from the components field (cp),
+// which already encodes "V, S, M …" for every spell. Used to snap a hidden caster
+// out of Hiding (a verbal spell gives you away), and available for Silence later.
+const spellHasVerbal = (s) => /\bV\b/.test(s?.cp || "");
 function spellSaveDmg(text, ratio) {
   const TYPES = ["acid","bludgeoning","cold","fire","force","lightning","necrotic","piercing","poison","psychic","radiant","slashing","thunder"];
   let dice = null, dtype = "";
@@ -5652,9 +5656,11 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
   const isAttack = s ? /spell attack/i.test(s.d) : false;
   const conc = s ? /Concentration/i.test(s.du || "") : false;
   const sd = s ? spellSaveDmg(s.d, 1) : null;
+  const verbal = s ? spellHasVerbal(s) : false; // a verbal spell reveals a hidden caster
   const learn = () => { if (!noLearn) api.learnSpell(c.uid, pick); };
   const castSave = () => {
     commit(); learn(); consumeScroll();
+    if (verbal) api.revealCaster(c.uid);
     api.openGroupSave({
       name: `${c.name} — ${s.n}`, ability: saveAb.slice(0, 3).toLowerCase(),
       dmg: sd ? sd.dmg : "", dtype: sd ? sd.dtype : "", half: sd ? sd.half : true,
@@ -5711,8 +5717,8 @@ function PlayerCastModal({ c, api, fromItem, onBack, onClose }) {
               {saveAb
                 ? <button className="btn primary" onClick={castSave}>⭗ Resolve {saveAb.slice(0, 3).toUpperCase()} save{sd ? ` — ${sd.dmg} ${sd.dtype}` : ""}</button>
                 : isAttack
-                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : ""); }}>⚔ Spell attack — you roll to hit</button>
-                : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
+                ? <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castSpellAttack(c.uid, s.n, conc, sd ? sd.dtype : "", verbal); }}>⚔ Spell attack — you roll to hit</button>
+                : <button className="btn primary" onClick={() => { commit(); learn(); consumeScroll(); api.castUtility(c.uid, s.n, conc, verbal); onClose(); }}>✓ Cast{conc ? " & concentrate" : ""}</button>}
             </div>
             {saveAb && dc === "" && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 6 }}>No DC set — enter it on the next screen, or above to remember it for {c.name}.</div>}
             {conc && c.concentration && c.concentration !== s.n && <div className="trait" style={{ fontSize: 11.5, color: "var(--danger)", marginTop: 6 }}>⚠ Replaces concentration on {c.concentration}.</div>}
@@ -6816,13 +6822,15 @@ export default function App() {
       L.push(`<b>${c.name}</b> uses <b>${itemName}</b>${bits.length ? ` — ${bits.join(", ")}` : ""}.`);
       consumeLootInDraft(c, terms, L);
     }),
-    castUtility: (uid, name, conc) => mutate((d, L) => {
+    revealCaster: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) revealHidden(c, L); }),
+    castUtility: (uid, name, conc, verbal) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       L.push(`<b>${c.name}</b> casts <b>${name}</b>${conc ? " (concentrating)" : ""}.`);
       if (conc) c.concentration = name;
+      if (verbal) revealHidden(c, L);
     }),
-    castSpellAttack: (uid, name, conc, dtype) => {
-      mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; L.push(`<b>${c.name}</b> casts <b>${name}</b> — spell attack${conc ? " (concentrating)" : ""}.`); if (conc) c.concentration = name; });
+    castSpellAttack: (uid, name, conc, dtype, verbal) => {
+      mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; L.push(`<b>${c.name}</b> casts <b>${name}</b> — spell attack${conc ? " (concentrating)" : ""}.`); if (conc) c.concentration = name; if (verbal) revealHidden(c, L); });
       setModal({ type: "player-attack", uid, spellAtk: true, dtype: dtype || "", spellName: name });
     },
     openHide: (uid) => setModal({ type: "hide-check", uid }),
