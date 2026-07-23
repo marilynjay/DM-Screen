@@ -7070,12 +7070,15 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
-          {bare && showLabels && (
-            <g style={{ cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); removeRoom(key); }}>
-              <circle cx={x} cy={y} r={HEX_SIZE * 0.3} fill="rgba(0,0,0,.5)" stroke="var(--gold)" strokeWidth="1.5" />
-              <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={HEX_SIZE * 0.34} fill="#fff" style={{ pointerEvents: "none" }}>✕</text>
-            </g>
-          )}
+          {bare && showLabels && (() => {
+            const bx = x + HEX_SIZE * 0.42, by = y - HEX_SIZE * 0.46; // upper-right corner, clear of the tap-to-open centre
+            return (
+              <g style={{ cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); removeRoom(key); }}>
+                <circle cx={bx} cy={by} r={HEX_SIZE * 0.22} fill="rgba(0,0,0,.55)" stroke="var(--gold)" strokeWidth="1.5" />
+                <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" fontSize={HEX_SIZE * 0.26} fill="#fff" style={{ pointerEvents: "none" }}>✕</text>
+              </g>
+            );
+          })()}
         </g>
       );
     }
