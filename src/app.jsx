@@ -6117,6 +6117,88 @@ function NoteReadModal({ item, onClose }) {
   );
 }
 
+// Per-party DM Notebook — light campaign notetaking (NPCs, locations, plot, misc).
+// Each tab holds entries of { id, name, tag, sections:[{id,title,body}] }; saved on the active party.
+// Reuses the dungeon note SectionsEditor / asSections (both hoisted below).
+const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
+function DMNotebookModal({ party, onSave, onClose }) {
+  const [tab, setTab] = useState("npcs");
+  const [draft, setDraft] = useState(null); // entry being edited: { id|null, name, tag, sections }
+  const [open, setOpen] = useState({}); // expanded entries in the read view
+  const nb = (party && party.notebook) || {};
+  const [tabKey, tabLabel, , singular] = NB_TABS.find(([k]) => k === tab);
+  const entries = Array.isArray(nb[tabKey]) ? nb[tabKey] : [];
+  const commit = (nextEntries) => onSave({ ...nb, [tabKey]: nextEntries });
+  const startNew = () => setDraft({ id: null, name: "", tag: "", sections: asSections("") });
+  const startEdit = (e) => setDraft({ id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections) });
+  const saveDraft = () => {
+    const clean = {
+      id: draft.id || newUid(),
+      name: (draft.name || "").trim() || `Untitled ${singular}`,
+      tag: (draft.tag || "").trim(),
+      sections: (draft.sections || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body),
+    };
+    commit(entries.some((e) => e.id === clean.id) ? entries.map((e) => (e.id === clean.id ? clean : e)) : [...entries, clean]);
+    setDraft(null);
+  };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modalhd"><h3>📓 DM Notebook{party?.name ? ` — ${party.name}` : ""}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
+        {!party ? <div className="trait">Load or create a party first — the notebook is saved with the active party.</div> : (<>
+          <div className="tabs" style={{ marginBottom: 8 }}>
+            {NB_TABS.map(([k, lbl, icon]) => (
+              <button key={k} className="btn small" style={tab === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
+                onClick={() => { setTab(k); setDraft(null); }}>{icon} {lbl}{(nb[k] || []).length ? ` ${(nb[k] || []).length}` : ""}</button>
+            ))}
+          </div>
+          {draft ? (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px" }}>
+              <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{draft.id ? `Edit ${singular}` : `New ${singular}`}</div>
+              <div className="frow"><input type="text" placeholder={`${singular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus /></div>
+              <div className="frow"><input type="text" placeholder="Tag — optional (e.g. quest-giver, tavern, rumor)" style={{ flex: 1 }} value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} /></div>
+              <SectionsEditor value={draft.sections} onChange={(secs) => setDraft({ ...draft, sections: secs })} />
+              <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+                <button className="btn small" onClick={() => setDraft(null)}>Cancel</button>
+                <button className="btn small primary" onClick={saveDraft}>{draft.id ? "Save changes" : `Save ${singular}`}</button>
+              </div>
+            </div>
+          ) : (<>
+            <div style={{ maxHeight: 360, overflowY: "auto" }}>
+              {entries.length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No {tabLabel.toLowerCase()} yet.</div>}
+              {entries.map((e) => {
+                const secs = (e.sections || []).filter((s) => (s.title || "").trim() || (s.body || "").trim());
+                const isOpen = !!open[e.id];
+                return (
+                  <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
+                    <div className="frow" style={{ alignItems: "center" }}>
+                      <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}
+                      </span>
+                      <button className="btn small ghost" title="Edit" onClick={() => startEdit(e)}>✎</button>
+                      <button className="btn small ghost warn" title="Delete" onClick={() => commit(entries.filter((x) => x.id !== e.id))}>✕</button>
+                    </div>
+                    {isOpen && secs.map((s, i) => (
+                      <div key={i} style={{ margin: "6px 0 2px 22px" }}>
+                        {(s.title || "").trim() && <div style={{ fontWeight: 700, color: "var(--gold)", fontSize: 13, marginBottom: 2 }}>{s.title}</div>}
+                        {(s.body || "").trim() && <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.4 }}>{s.body}</div>}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="frow" style={{ marginTop: 8 }}><button className="btn small" onClick={startNew}>＋ New {singular}</button></div>
+            <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Saved with the active party across sessions. Keep it light — names, tags, and a few sections of notes.</div>
+          </>)}
+        </>)}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
+      </div>
+    </div>
+  );
+}
+
 function PartyInventoryModal({ party, onMove, onRemove, onClose }) {
   const [reading, setReading] = useState(null);
   const members = (party?.members || []).filter((m) => (m.name || "").trim());
@@ -9120,6 +9202,11 @@ export default function App() {
     const list = cur.map((p) => ({ ...p, members: p.members.map((m) => (m.id === memberId ? (changed = true, { ...m, ...patch }) : m)) }));
     if (changed) savePartiesAll(list, activePartyId);
   };
+  // DM Notebook is stored on the active party (per-party), so it travels with the campaign.
+  const saveNotebook = (nb) => {
+    if (!activePartyId) return;
+    savePartiesAll(partiesRef.current.map((p) => (p.id === activePartyId ? { ...p, notebook: nb } : p)), activePartyId);
+  };
   // save from the setup card: targetId updates that party, null remembers a new one
   const savePartyRoster = (roster, targetId = null) => {
     const id = targetId ?? newUid();
@@ -11137,6 +11224,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
+              <button onClick={() => setModal({ type: "notebook" })}>📓 DM Notebook…</button>
               <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
               <button onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
@@ -11615,6 +11703,9 @@ export default function App() {
       )}
       {modal?.type === "party-inventory" && (
         <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "notebook" && (
+        <DMNotebookModal party={activeRoster} onSave={saveNotebook} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
