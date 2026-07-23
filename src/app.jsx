@@ -6857,6 +6857,11 @@ const DGN_TEXTURES = [
   ["sand", "Sand"], ["lava", "Lava"], ["slime", "Poison slime"], ["blood", "Blood-stained"], ["web", "Cobwebs"],
   ["metal", "Metal grate"], ["runes", "Magic runes"], ["stars", "Starfield / void"], ["mist", "Mist / fog"],
 ];
+// Room features — a single decorative prop drawn in the centre of a room, over the floor.
+const DGN_FEATURES = [
+  ["none", "None"], ["pool", "Pool"], ["fountain", "Fountain"], ["pillar", "Pillar"], ["brazier", "Brazier"],
+  ["altar", "Altar"], ["statue", "Statue"], ["chest", "Chest"], ["stairs", "Stairs"], ["circle", "Magic circle"], ["skeletons", "Skeletons"],
+];
 function TextureDefs() {
   return (
     <>
@@ -6998,6 +7003,89 @@ function RoomLabel({ room, cx, cy }) {
   );
 }
 
+// A single decorative prop drawn in the centre of a room (over the floor, under the labels).
+function RoomFeature({ room, cx, cy }) {
+  const f = room && room.feature; if (!f || f === "none") return null;
+  const s = HEX_SIZE;
+  const wrap = (children) => <g style={{ pointerEvents: "none" }}>{children}</g>;
+  if (f === "pool" || f === "fountain") {
+    return wrap(<>
+      <ellipse cx={cx} cy={cy} rx={s * 0.52} ry={s * 0.36} fill="#2f6ea3" stroke="#8fc0e6" strokeWidth="2" />
+      <path d={`M ${cx - s * 0.3} ${cy + s * 0.12} q ${s * 0.15} ${-s * 0.07} ${s * 0.3} 0`} fill="none" stroke="rgba(255,255,255,.4)" strokeWidth="1.3" />
+      {f === "fountain" && <>
+        <circle cx={cx} cy={cy} r={s * 0.16} fill="#9fbfd8" stroke="#5a86a8" strokeWidth="1.5" />
+        <line x1={cx} y1={cy} x2={cx} y2={cy - s * 0.42} stroke="#cfe4f4" strokeWidth="2" />
+        <circle cx={cx} cy={cy - s * 0.44} r="2" fill="#e6f2fb" />
+        <path d={`M ${cx - s * 0.15} ${cy - s * 0.28} q ${s * 0.15} ${-s * 0.16} ${s * 0.3} 0`} fill="none" stroke="rgba(207,228,244,.7)" strokeWidth="1.4" />
+      </>}
+    </>);
+  }
+  if (f === "pillar") {
+    return wrap(<>
+      <circle cx={cx} cy={cy} r={s * 0.3} fill="#6b6b74" stroke="#33333a" strokeWidth="2" />
+      <circle cx={cx} cy={cy} r={s * 0.18} fill="none" stroke="rgba(255,255,255,.2)" strokeWidth="1.5" />
+    </>);
+  }
+  if (f === "brazier") {
+    return wrap(<>
+      <ellipse cx={cx} cy={cy + s * 0.12} rx={s * 0.26} ry={s * 0.1} fill="#42424a" stroke="#26262c" strokeWidth="1.4" />
+      <path d={`M ${cx} ${cy + s * 0.08} q ${-s * 0.15} ${-s * 0.16} 0 ${-s * 0.38} q ${s * 0.15} ${s * 0.22} 0 ${s * 0.38}`} fill="#ff8a1e" />
+      <path d={`M ${cx} ${cy + s * 0.04} q ${-s * 0.08} ${-s * 0.1} 0 ${-s * 0.24} q ${s * 0.08} ${s * 0.13} 0 ${s * 0.24}`} fill="#ffd24a" />
+    </>);
+  }
+  if (f === "altar") {
+    return wrap(<>
+      <rect x={cx - s * 0.34} y={cy - s * 0.2} width={s * 0.68} height={s * 0.4} rx="4" fill="#5a5560" stroke="#333038" strokeWidth="2" />
+      <rect x={cx - s * 0.34} y={cy - s * 0.2} width={s * 0.68} height={s * 0.11} rx="4" fill="rgba(255,255,255,.09)" />
+      <path d={`M ${cx} ${cy - s * 0.09} v ${s * 0.2} M ${cx - s * 0.08} ${cy} h ${s * 0.16}`} stroke="rgba(230,210,160,.85)" strokeWidth="1.7" />
+    </>);
+  }
+  if (f === "statue") {
+    return wrap(<>
+      <ellipse cx={cx} cy={cy + s * 0.3} rx={s * 0.28} ry={s * 0.1} fill="#4a4650" stroke="#2f2c34" strokeWidth="1.5" />
+      <path d={`M ${cx - s * 0.13} ${cy + s * 0.22} q ${s * 0.13} ${-s * 0.42} ${s * 0.26} 0 z`} fill="#7a7682" stroke="#4a4650" strokeWidth="1" />
+      <circle cx={cx} cy={cy - s * 0.24} r={s * 0.11} fill="#7a7682" stroke="#4a4650" strokeWidth="1" />
+    </>);
+  }
+  if (f === "chest") {
+    return wrap(<>
+      <rect x={cx - s * 0.28} y={cy - s * 0.04} width={s * 0.56} height={s * 0.28} rx="3" fill="#6e4a2a" stroke="#3a2716" strokeWidth="2" />
+      <rect x={cx - s * 0.28} y={cy - s * 0.22} width={s * 0.56} height={s * 0.2} rx="4" fill="#7d5730" stroke="#3a2716" strokeWidth="2" />
+      <line x1={cx - s * 0.28} y1={cy - s * 0.02} x2={cx + s * 0.28} y2={cy - s * 0.02} stroke="#3a2716" strokeWidth="1.4" />
+      <rect x={cx - s * 0.045} y={cy - s * 0.09} width={s * 0.09} height={s * 0.13} rx="1.5" fill="#e8c76a" stroke="#6a5220" strokeWidth="1" />
+    </>);
+  }
+  if (f === "stairs") {
+    return wrap(<>
+      <rect x={cx - s * 0.32} y={cy - s * 0.32} width={s * 0.64} height={s * 0.64} rx="3" fill="#43434b" stroke="#2a2a30" strokeWidth="1.5" />
+      {[0, 1, 2, 3, 4].map((i) => <line key={i} x1={cx - s * 0.26} y1={cy - s * 0.24 + i * s * 0.12} x2={cx + s * 0.26} y2={cy - s * 0.24 + i * s * 0.12} stroke="rgba(255,255,255,.3)" strokeWidth="1.5" />)}
+    </>);
+  }
+  if (f === "circle") {
+    const ring = (rad, op, w) => <circle cx={cx} cy={cy} r={s * rad} fill="none" stroke={`rgba(150,190,255,${op})`} strokeWidth={w} />;
+    return wrap(<>
+      {ring(0.5, 0.7, 1.6)}{ring(0.34, 0.5, 1.2)}
+      {[0, 60, 120, 180, 240, 300].map((a) => { const rr = (a * Math.PI) / 180; return <line key={a} x1={cx + s * 0.34 * Math.cos(rr)} y1={cy + s * 0.34 * Math.sin(rr)} x2={cx + s * 0.5 * Math.cos(rr)} y2={cy + s * 0.5 * Math.sin(rr)} stroke="rgba(150,190,255,.5)" strokeWidth="1" />; })}
+      <circle cx={cx} cy={cy} r={s * 0.12} fill="rgba(150,190,255,.16)" stroke="rgba(185,212,255,.85)" strokeWidth="1.2" />
+    </>);
+  }
+  if (f === "skeletons") {
+    return wrap(<>
+      <g stroke="#d9d4c4" strokeWidth="2.4" strokeLinecap="round">
+        <line x1={cx - s * 0.06} y1={cy + s * 0.04} x2={cx + s * 0.3} y2={cy + s * 0.28} />
+        <line x1={cx + s * 0.3} y1={cy + s * 0.04} x2={cx - s * 0.06} y2={cy + s * 0.28} />
+      </g>
+      <g fill="#eae5d6"><circle cx={cx - s * 0.06} cy={cy + s * 0.04} r="2" /><circle cx={cx + s * 0.3} cy={cy + s * 0.28} r="2" /><circle cx={cx + s * 0.3} cy={cy + s * 0.04} r="2" /><circle cx={cx - s * 0.06} cy={cy + s * 0.28} r="2" /></g>
+      <g transform={`rotate(-14 ${cx - s * 0.18} ${cy - s * 0.06})`}>
+        <circle cx={cx - s * 0.18} cy={cy - s * 0.06} r={s * 0.12} fill="#d9d4c4" stroke="#8a8470" strokeWidth="1" />
+        <circle cx={cx - s * 0.22} cy={cy - s * 0.07} r="1.7" fill="#3a382e" /><circle cx={cx - s * 0.14} cy={cy - s * 0.07} r="1.7" fill="#3a382e" />
+        <path d={`M ${cx - s * 0.2} ${cy} h ${s * 0.04}`} stroke="#8a8470" strokeWidth="1" />
+      </g>
+    </>);
+  }
+  return null;
+}
+
 // A note field is a list of collapsible sections {id, title, body, collapsed}. A plain string
 // (older data, or a simple one-liner) is treated as a single untitled section.
 function asSections(v) {
@@ -7053,6 +7141,7 @@ function roomTouched(r) {
   if (r.shape && r.shape !== "hex") return true;
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (r.texture && r.texture !== "none") return true;
+  if (r.feature && r.feature !== "none") return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
   if (Array.isArray(r.fields) && r.fields.some((f) => (f.label || "").trim())) return true;
@@ -7188,11 +7277,25 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               </button>
             ))}
           </div>
-          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture</span></span>
+          <span className="dgn-flabel">Feature <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— a prop in the room's centre</span></span>
+          <div className="dgn-texpick">
+            {DGN_FEATURES.map(([id, label]) => (
+              <button key={id} className={`dgn-texbtn ${(room.feature || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ feature: id })}>
+                <svg width="38" height="38" viewBox="-46 -46 92 92">
+                  <rect x="-46" y="-46" width="92" height="92" fill="#20222b" />
+                  {id !== "none"
+                    ? <RoomFeature room={{ feature: id }} cx={0} cy={0} />
+                    : <line x1="-30" y1="30" x2="30" y2="-30" stroke="rgba(255,255,255,.3)" strokeWidth="4" />}
+                </svg>
+              </button>
+            ))}
+          </div>
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               <defs><TextureDefs /></defs>
               <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
+              <RoomFeature room={room} cx={0} cy={0} />
             </svg>
           </div>
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
@@ -7348,6 +7451,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
+          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {bare && showLabels && (() => {
             const bx = x + HEX_SIZE * 0.42, by = y - HEX_SIZE * 0.46; // upper-right corner, clear of the tap-to-open centre
@@ -7464,6 +7568,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
         <g key={key} style={{ cursor: room ? "pointer" : "default" }} onClick={() => { if (drag.current && drag.current.moved) return; setSel(room ? key : null); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={`p-${key}`} />}
+          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {key === sel && <polygon points={hexCorners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
         </g>
