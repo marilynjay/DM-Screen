@@ -6770,6 +6770,16 @@ const ROOM_ICON_MAX = 3; // how many icons a single hex may show
 const DNAME_MAX = 12;     // display-name character cap (must stay legible on a hex)
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
+// inverse of hexToPix with cube rounding → the (q,r) of the hex containing a world point
+const pixToHex = (wx, wy) => {
+  const rf = wy / (HEX_SIZE * 1.5);
+  const qf = wx / (HEX_SIZE * Math.sqrt(3)) - rf / 2;
+  let x = qf, z = rf, y = -x - z;
+  let rx = Math.round(x), ry = Math.round(y), rz = Math.round(z);
+  const dx = Math.abs(rx - x), dy = Math.abs(ry - y), dz = Math.abs(rz - z);
+  if (dx > dy && dx > dz) rx = -ry - rz; else if (dy > dz) ry = -rx - rz; else rz = -rx - ry;
+  return { q: rx, r: rz };
+};
 const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) => {
   const a = (Math.PI / 180) * (60 * i - 30);
   return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`;
@@ -7031,25 +7041,60 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
     return Math.max(8, ext + 2);
   }, [rooms]);
   const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
+  const removeRoom = (key) => commit((prev) => { const nr = { ...prev.rooms }; delete nr[key]; return { ...prev, rooms: nr }; });
+  const [ghost, setGhost] = useState(null); // {srcKey, tq, tr} while dragging a room to a new hex
   // icons + display name are only legible when zoomed in; hide them once the map is zoomed out
   const showLabels = view.z >= 0.8;
+  // pressing on a room begins a room-drag; pressing empty space falls through to canvas panning
+  const hexDown = (key, e) => { if (rooms[key]) drag.current = { mode: "room", key, sx: e.clientX, sy: e.clientY, moved: false, tq: null, tr: null }; };
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
       const { x, y } = hexToPix(q, r), key = `${q},${r}`, room = rooms[key];
+      const bare = room && !roomTouched(room); // an untouched room can be deleted with one tap of its ✕
       out.push(
-        <g key={key} style={{ cursor: "pointer" }} onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
+        <g key={key} style={{ cursor: "pointer" }} onPointerDown={(e) => hexDown(key, e)}
+          onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
+          {bare && showLabels && (
+            <g style={{ cursor: "pointer" }} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); removeRoom(key); }}>
+              <circle cx={x} cy={y} r={HEX_SIZE * 0.3} fill="rgba(0,0,0,.5)" stroke="var(--gold)" strokeWidth="1.5" />
+              <text x={x} y={y} textAnchor="middle" dominantBaseline="central" fontSize={HEX_SIZE * 0.34} fill="#fff" style={{ pointerEvents: "none" }}>✕</text>
+            </g>
+          )}
         </g>
       );
     }
     return out;
   }, [rooms, RANGE, showLabels]); // eslint-disable-line react-hooks/exhaustive-deps
-  const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
-  const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
-  const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
+  const clientToHex = (clientX, clientY) => {
+    const el = wrapRef.current; if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    const wx = (clientX - rect.left - (size.w / 2 + view.x)) / view.z;
+    const wy = (clientY - rect.top - (size.h / 2 + view.y)) / view.z;
+    return pixToHex(wx, wy);
+  };
+  const onDown = (e) => { if (drag.current && drag.current.mode === "room") return; drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
+  const onMove = (e) => {
+    const d = drag.current; if (!d) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true;
+    if (!d.moved) return;
+    if (d.mode === "pan") { setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); return; }
+    const t = clientToHex(e.clientX, e.clientY);
+    if (t) { d.tq = t.q; d.tr = t.r; setGhost({ srcKey: d.key, tq: t.q, tr: t.r }); }
+  };
+  const onUp = () => {
+    const d = drag.current;
+    if (d && d.mode === "room" && d.moved && d.tq != null) {
+      const tkey = `${d.tq},${d.tr}`;
+      if (tkey !== d.key && !rooms[tkey]) commit((prev) => { const nr = { ...prev.rooms }; nr[tkey] = nr[d.key]; delete nr[d.key]; return { ...prev, rooms: nr }; });
+    }
+    setGhost(null);
+    setTimeout(() => { drag.current = null; }, 0);
+  };
   const zoom = (f) => setView((v) => ({ ...v, z: Math.max(0.5, Math.min(2.4, v.z * f)) }));
   return (
     <div className="dgn-overlay">
@@ -7058,9 +7103,23 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
         <input className="nm" value={dg.name || ""} placeholder="Dungeon name…" onChange={(e) => commit((prev) => ({ ...prev, name: e.target.value }))} />
       </div>
       <div className="dgn-canvas" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
-        <div className="dgn-hint">Tap a hex to add a room · tap a room to edit · drag to pan</div>
+        <div className="dgn-hint">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
         <svg width={size.w} height={size.h}>
-          <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}</g>
+          <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>
+            {grid}
+            {ghost && (() => {
+              const gsrc = rooms[ghost.srcKey]; if (!gsrc) return null;
+              const { x, y } = hexToPix(ghost.tq, ghost.tr);
+              const tkey = `${ghost.tq},${ghost.tr}`;
+              const blocked = tkey !== ghost.srcKey && !!rooms[tkey];
+              return (
+                <g style={{ pointerEvents: "none" }}>
+                  {!blocked && <g opacity="0.55"><RoomShape room={gsrc} cx={x} cy={y} hexKey="dgnghost" /></g>}
+                  <polygon points={hexCorners(x, y)} fill={blocked ? "rgba(224,85,85,.18)" : "none"} stroke={blocked ? "#e05555" : "var(--gold)"} strokeWidth="2.5" />
+                </g>
+              );
+            })()}
+          </g>
         </svg>
         <div className="dgn-zoom">
           <button onClick={() => zoom(1.25)}>＋</button>
