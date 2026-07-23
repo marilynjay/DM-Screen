@@ -1,4 +1,4 @@
-# DM Combat Screen
+# Combatkeeper
 
 A phone-first D&D 5e (2024 rules / SRD 5.2.1) combat tracker for Dungeon Masters, built as a single-file React app. Initiative tracking, full SRD bestiary (330 monsters) and spell compendium (339 spells), targeted attacks with auto-damage, group saves with per-creature rolls, conditions with concentration linkage and repeat saves, legendary & lair actions, attack/spell action-economy enforcement, encounter suggestion and balancing.
 

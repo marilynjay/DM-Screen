@@ -5,7 +5,7 @@ import ENCOUNTER_POOLS from "./data/encounterPools.js";
 import LAIR_THEMES from "./data/lairThemes.js";
 
 /* ============================================================
-   DM COMBAT SCREEN — D&D 5e (2024 / SRD 5.2 compatible)
+   COMBATKEEPER — D&D 5e (2024 / SRD 5.2 compatible)
    ============================================================ */
 
 const CSS = `
@@ -4837,7 +4837,7 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
     const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `dm-screen-backup-${obj.exported.slice(0, 10)}.json`;
+    a.href = url; a.download = `combatkeeper-backup-${obj.exported.slice(0, 10)}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${(obj.items || []).length} item${(obj.items || []).length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}.`);
@@ -4848,7 +4848,7 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
     if (!file) return;
     try {
       const obj = JSON.parse(await file.text());
-      if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup file.");
+      if (obj.app !== "dm5e") throw new Error("Not a Combatkeeper backup file.");
       const r = await onImportAll(obj);
       setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.items || 0} items, ${r.slots} encounters, ${r.groups} groups (merged into what's here).`);
       refresh();
@@ -4943,7 +4943,7 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
                 <button className="btn small primary" disabled={!bkText.trim()} onClick={async () => {
                   try {
                     const obj = JSON.parse(bkText);
-                    if (obj.app !== "dm5e") throw new Error("Not a DM Screen backup.");
+                    if (obj.app !== "dm5e") throw new Error("Not a Combatkeeper backup.");
                     const r = await onImportAll(obj);
                     setBkMsg(`Imported: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups.`);
                     setBkText(""); refresh();

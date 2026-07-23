@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["apple-touch-icon.png"],
       manifest: {
-        name: "DM Combat Screen",
-        short_name: "DM Screen",
+        name: "Combatkeeper",
+        short_name: "Combatkeeper",
         description: "D&D 5e combat tracker for in-person tables",
         theme_color: "#1b1722",
         background_color: "#1b1722",
