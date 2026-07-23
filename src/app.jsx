@@ -2187,6 +2187,14 @@ function xpToCr(xp) {
   for (const step of CR_STEPS) if (Math.abs(step[2] - xp) < Math.abs(best[2] - xp)) best = step;
   return best; // [label, num, xp]
 }
+// XP value of a monster's CR (exact label match, else nearest numeric CR).
+function crXp(cr) {
+  const s = String(cr ?? "").trim();
+  const hit = CR_STEPS.find(([l]) => l === s);
+  if (hit) return hit[2];
+  const n = crToNum(cr);
+  return CR_STEPS.reduce((b, st) => (Math.abs(st[1] - n) < Math.abs(b[1] - n) ? st : b), CR_STEPS[0])[2];
+}
 const avgOfFormula = (f) => {
   const s = String(f ?? "").replace(/\s/g, "");
   if (/^-?\d+$/.test(s)) return parseInt(s, 10);
@@ -7327,7 +7335,7 @@ function roomTouched(r) {
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
+function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], party = { size: 4, level: 3, difficulty: "moderate" }, monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
@@ -7353,6 +7361,28 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], m
   const toggleSide = (name) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, side: (m.side === "ally" ? "enemy" : "ally") } : m)) });
   const monMatches = monQ && monQ.trim().length >= 1
     ? monsterList.filter((m) => m.name.toLowerCase().includes(monQ.trim().toLowerCase())).slice(0, 24) : [];
+  // encounter balancer — weigh this room's foes against the party's XP budget (DMG bands)
+  const [balSize, setBalSize] = useState(String(party.size || 4));
+  const [balLvl, setBalLvl] = useState(String(party.level || 3));
+  const [balIx, setBalIx] = useState(party.difficulty === "low" ? 0 : party.difficulty === "high" ? 2 : 1);
+  const foes = (enc.mons || []).filter((m) => m.side !== "ally");
+  const encXp = foes.reduce((a, m) => { const sb = monsterList.find((b) => b.name === m.n); return a + (sb ? crXp(sb.cr) * (Number(m.c) || 0) : 0); }, 0);
+  const pSize = Math.max(1, Number(balSize) || party.size || 4), pLvl = Math.min(20, Math.max(1, Number(balLvl) || party.level || 3));
+  const bands = XP_BUDGET[pLvl] || XP_BUDGET[3];
+  const budgetFor = (ix) => bands[ix] * pSize;
+  const verdict = () => {
+    if (!encXp) return { label: "—", color: "var(--faint)" };
+    if (encXp < budgetFor(0) * 0.5) return { label: "Trivial", color: "var(--faint)" };
+    if (encXp <= budgetFor(0)) return { label: "Low", color: "var(--ok)" };
+    if (encXp <= budgetFor(1)) return { label: "Moderate", color: "var(--gold)" };
+    if (encXp <= budgetFor(2)) return { label: "High", color: "#e6913a" };
+    return { label: "Deadly", color: "var(--danger)" };
+  };
+  const balanceCounts = () => {
+    if (!encXp) return;
+    const ratio = budgetFor(balIx) / encXp;
+    setEnc({ mons: (enc.mons || []).map((m) => (m.side === "ally" ? m : { ...m, c: Math.max(1, Math.round((Number(m.c) || 1) * ratio)) })) });
+  };
   // room loot — treasure the party can find and collect
   const loot = Array.isArray(room.loot) ? room.loot : [];
   const addLoot = (it) => set({ loot: [...loot, JSON.parse(JSON.stringify(it))] });
@@ -7643,6 +7673,33 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], m
                     </button>))}</div>}
             </div>
           )}
+          {foes.length > 0 && (() => {
+            const v = verdict(), IX = ["Low", "Moderate", "High"];
+            return (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+                <div className="dgn-flabel" style={{ margin: "0 0 5px" }}>⚖ Balance to party</div>
+                <div className="frow" style={{ gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                  <span className="ad" style={{ fontSize: 12 }}>Party</span>
+                  <input type="number" min="1" value={balSize} onChange={(e) => setBalSize(e.target.value)} style={{ width: 46 }} title="Party size" />
+                  <span className="ad" style={{ fontSize: 12 }}>× Lv</span>
+                  <input type="number" min="1" max="20" value={balLvl} onChange={(e) => setBalLvl(e.target.value)} style={{ width: 46 }} title="Party level" />
+                  <span style={{ flex: 1 }} />
+                  {[["Low", 0], ["Mod", 1], ["High", 2]].map(([lbl, ix]) => (
+                    <button key={ix} className={`lvlchip ${balIx === ix ? "on" : ""}`} title="Target difficulty" onClick={() => setBalIx(ix)}>{lbl}</button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 12 }}>
+                  This room ≈ <b>{encXp.toLocaleString()} XP</b> — <span style={{ color: v.color, fontWeight: 700 }}>{v.label}</span> for {pSize} × level {pLvl}
+                </div>
+                <div style={{ height: 8, background: "var(--raised)", borderRadius: 4, overflow: "hidden", margin: "5px 0", position: "relative" }}>
+                  <div style={{ height: "100%", width: `${Math.min(100, (encXp / (budgetFor(2) * 1.4)) * 100)}%`, background: v.color, transition: "width .2s" }} />
+                </div>
+                <div className="ad" style={{ fontSize: 11, marginBottom: 6 }}>Bands: Low {budgetFor(0).toLocaleString()} · Mod {budgetFor(1).toLocaleString()} · High {budgetFor(2).toLocaleString()} XP</div>
+                <button className="btn small" onClick={balanceCounts}>⚖ Scale foe counts to {IX[balIx]}</button>
+                <div className="ad" style={{ fontSize: 11, marginTop: 4 }}>Adjusts how many of each foe to hit the target band — DMG guidelines, not gospel.</div>
+              </div>
+            );
+          })()}
           {noteField("encnotes", "Encounter Notes")}
         </>)}
 
@@ -7696,7 +7753,7 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], m
   );
 }
 
-function DungeonBuilder({ dungeon, allDungeons = [], customMonsters, customItems, onSave, onClose }) {
+function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, customItems, onSave, onClose }) {
   const [dg, setDg] = useState(dungeon);
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
@@ -7835,7 +7892,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], customMonsters, customItems
         const linkRooms = Object.entries(rooms).filter(([k]) => k !== editKey).map(([k, rm]) => ({ key: k, label: roomLabelText(rm) || `Room ${k}` }));
         const linkDungeons = allDungeons.filter((d) => d.id !== dungeon.id && Object.keys(d.rooms || {}).length).map((d) => ({ id: d.id, name: (d.name || "").trim() || "Untitled dungeon" }));
         return (
-          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
+          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} party={party} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
             onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
             onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
             onClose={() => setEditKey(null)} />
@@ -10600,7 +10657,7 @@ export default function App() {
         </div>
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
-        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} customMonsters={myBestiary} customItems={myItems}
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} party={party} customMonsters={myBestiary} customItems={myItems}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
