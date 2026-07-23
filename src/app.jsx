@@ -362,8 +362,12 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .savestrip .chip{font-size:13px;padding:3px 8px}
 .chip.sgood{border-color:rgba(127,191,142,.6);color:#9fd3ab;background:rgba(127,191,142,.08)}
 .chip.sbad{border-color:rgba(224,100,90,.6);color:#e8a49c;background:rgba(224,100,90,.08)}
-.atkbudget{margin-left:8px;font-family:var(--mono);font-size:10.5px;color:var(--gold);letter-spacing:.5px}
+.atkbudget{margin-left:8px;font-family:var(--mono);font-size:13px;color:var(--gold);letter-spacing:.5px;vertical-align:middle}
 .atkbudget .btn.tiny{font-size:9px;padding:0 5px;margin-left:5px;line-height:1.5}
+.actlbl{font-size:12.5px}
+.actlbl .actword{color:var(--gold)}
+.actlbl.spent{opacity:.55;text-decoration:line-through}
+.actlbl.spent .actword,.actlbl.spent .atkbudget{color:var(--faint)}
 .usepips{font-size:9px;letter-spacing:1.5px;color:var(--gold);white-space:nowrap;margin-right:2px}
 .usepips .off{color:var(--line2)}
 .usepips.spent{opacity:.55}
@@ -3853,13 +3857,21 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
       {c.legendary && <div className="reminder" style={{ marginTop: 8 }}>👑 Legendary actions: {c.legendary.rem}/{c.legendary.max} available (spend between other creatures' turns)</div>}
 
       <div className="sect">
-        <div className="lbl">Actions
-          {!peek && atkMaxOf(c) > 0 && (
-            <span className="atkbudget" title={`Attack rolls left this turn (Multiattack allows ${atkMaxOf(c)}). Grant an extra one from the roster ⋮ menu.`}>
-              ⚔ {Math.max(atkLeft(c), 0)}/{atkMaxOf(c)}
-            </span>
-          )}
-        </div>
+        {(() => {
+          const hasBudget = !peek && atkMaxOf(c) > 0;
+          const left = Math.max(atkLeft(c), 0);
+          const spent = hasBudget && left <= 0; // all attacks used this turn → grey + strike the header
+          return (
+            <div className={`lbl actlbl${spent ? " spent" : ""}`}>
+              <span className={hasBudget ? "actword" : undefined}>Actions</span>
+              {hasBudget && (
+                <span className="atkbudget" title={`Attack rolls left this turn (Multiattack allows ${atkMaxOf(c)}). Grant an extra one from the roster ⋮ menu.`}>
+                  ⚔ {left}/{atkMaxOf(c)}{spent ? " · spent" : ""}
+                </span>
+              )}
+            </div>
+          );
+        })()}
         {incapCond ? (
           <div className="reminder" style={{ color: "var(--danger)" }}>🚫 <b>{incapCond}</b> — Incapacitated: no actions, bonus actions, or reactions until it ends.</div>
         ) : c.actions.map((a, i) => (
