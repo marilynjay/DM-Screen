@@ -6805,9 +6805,11 @@ function RoomShape({ room, cx, cy, hexKey }) {
     // A curved corridor between two edges 2 apart (passes over the flat between them). "curve" is a
     // gentle arc; "wcurve" is a broad, near-semicircular sweep across the hex.
     const th = s * 0.42;
-    const Pa = { x: cx + s * 0.433, y: cy - s * 0.75 }; // upper-right edge midpoint (300°)
-    const Pb = { x: cx + s * 0.433, y: cy + s * 0.75 }; // lower-right edge midpoint (60°)
-    const C = { x: cx + s * (shape === "wcurve" ? 0.44 : 0.60), y: cy }; // nearer the chord → deeper bulge
+    // wide curve is scooted toward the right of the hex; the hex clip trims whatever runs past an edge
+    const dx = shape === "wcurve" ? s * 0.42 : 0;
+    const Pa = { x: cx + s * 0.433 + dx, y: cy - s * 0.75 }; // upper-right edge midpoint (300°)
+    const Pb = { x: cx + s * 0.433 + dx, y: cy + s * 0.75 }; // lower-right edge midpoint (60°)
+    const C = { x: cx + s * (shape === "wcurve" ? 0.44 : 0.60) + dx, y: cy }; // nearer the chord → deeper bulge
     const r = Math.hypot(Pa.x - C.x, Pa.y - C.y), ro = r + th / 2, ri = r - th / 2;
     const ang = (p) => Math.atan2(p.y - C.y, p.x - C.x), aA = ang(Pa), aB = ang(Pb);
     const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
