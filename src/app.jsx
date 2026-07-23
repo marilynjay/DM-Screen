@@ -267,6 +267,10 @@ input[type=number]{width:64px}
 .dgn-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--faint);font-family:var(--disp);font-size:13px;letter-spacing:.02em;padding:8px 4px;cursor:pointer}
 .dgn-tab.on{color:var(--gold);border-bottom-color:var(--gold)}
 .dgn-iconpick{display:flex;flex-wrap:wrap;gap:5px}
+.dgn-texpick{display:flex;flex-wrap:wrap;gap:5px}
+.dgn-texbtn{width:40px;height:40px;padding:0;border:1px solid var(--line2);border-radius:8px;overflow:hidden;cursor:pointer;background:none;line-height:0}
+.dgn-texbtn.on{border-color:var(--gold)}
+.dgn-texbtn svg{display:block}
 .dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
 .dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
@@ -6841,75 +6845,113 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
   return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`;
 }).join(" ");
 
+// Room background textures — all procedural SVG (no image assets). Each is a <pattern> filled as a
+// semi-transparent detail layer over the room's colour, so colour + texture compose. Turbulence-based
+// ones (stone/marble/dirt/mud/mist) put a filtered rect inside the pattern.
+const DGN_TEXTURES = [
+  ["none", "None"], ["brick", "Brick"], ["cobble", "Cobblestone"], ["wood", "Wood planks"], ["tile", "Tile"],
+  ["stone", "Stone"], ["marble", "Marble"], ["dirt", "Dirt / cave"], ["gravel", "Gravel"], ["mud", "Mud / bog"],
+  ["grass", "Grass / moss"], ["fungus", "Fungus"], ["water", "Water"], ["ice", "Ice"], ["snow", "Snow"],
+  ["sand", "Sand"], ["lava", "Lava"], ["slime", "Poison slime"], ["blood", "Blood-stained"], ["web", "Cobwebs"],
+  ["metal", "Metal grate"], ["runes", "Magic runes"], ["stars", "Starfield / void"], ["mist", "Mist / fog"],
+];
+function TextureDefs() {
+  return (
+    <>
+      <filter id="f-stone" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="4" seed="3" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .78 0 0 0 -.3" /></filter>
+      <filter id="f-marble" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency=".012 .04" numOctaves="5" seed="9" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  4.2 0 0 0 -2.2" /></filter>
+      <filter id="f-dirt" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>
+      <filter id="f-mud" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>
+      <filter id="f-mist" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>
+      <pattern id="tex-stone" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-stone)" /></pattern>
+      <pattern id="tex-marble" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-marble)" /></pattern>
+      <pattern id="tex-dirt" width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter="url(#f-dirt)" /></pattern>
+      <pattern id="tex-mud" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-mud)" /></pattern>
+      <pattern id="tex-mist" width="160" height="160" patternUnits="userSpaceOnUse"><rect width="160" height="160" filter="url(#f-mist)" /></pattern>
+      <pattern id="tex-brick" width="34" height="20" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.42)" strokeWidth="1.6" fill="none"><path d="M0 10H34M0 20H34M17 0V10M0 10V20M34 10V20" /></g><g stroke="rgba(255,255,255,.08)" strokeWidth="1" fill="none"><path d="M0 8.5H34M0 18.5H34" /></g></pattern>
+      <pattern id="tex-cobble" width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><ellipse cx="9" cy="9" rx="8.5" ry="7.5" /><ellipse cx="27" cy="12" rx="8" ry="8.5" /><ellipse cx="16" cy="27" rx="8.5" ry="7.5" /><ellipse cx="33" cy="30" rx="7" ry="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><ellipse cx="9" cy="8" rx="7.5" ry="6.5" /><ellipse cx="16" cy="26" rx="7.5" ry="6.5" /></g></pattern>
+      <pattern id="tex-wood" width="26" height="70" patternUnits="userSpaceOnUse"><path d="M0 0V70M26 0V70" stroke="rgba(0,0,0,.38)" strokeWidth="1.6" /><path d="M7 4q6 14 0 28q-6 14 0 30" stroke="rgba(0,0,0,.16)" fill="none" /><path d="M17 2q5 16 0 32q-5 14 0 30" stroke="rgba(0,0,0,.12)" fill="none" /><line x1="0" y1="34" x2="26" y2="34" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" /></pattern>
+      <pattern id="tex-tile" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgba(255,255,255,.06)" /><rect x="20" y="20" width="20" height="20" fill="rgba(255,255,255,.06)" /><path d="M0 20H40M20 0V40M0 0H40M0 40H40M40 0V40" stroke="rgba(0,0,0,.3)" strokeWidth="1" fill="none" /></pattern>
+      <pattern id="tex-grass" width="26" height="26" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.3" fill="none"><path d="M6 21l-2-8M6 21l0-9M6 21l2-8" /><path d="M17 24l-2-7M17 24l0-8M17 24l2-7" /><path d="M22 13l-1-6M22 13l1-6" /></g><g stroke="rgba(255,255,255,.16)" strokeWidth="1" fill="none"><path d="M6 21l0-9M17 24l0-8" /></g></pattern>
+      <pattern id="tex-water" width="44" height="15" patternUnits="userSpaceOnUse"><path d="M0 7q11-6 22 0t22 0" fill="none" stroke="rgba(255,255,255,.2)" strokeWidth="1.5" /><path d="M0 13q11-6 22 0t22 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.3" /></pattern>
+      <pattern id="tex-lava" width="50" height="50" patternUnits="userSpaceOnUse"><g stroke="#ff7a1a" strokeWidth="2.2" fill="none" opacity=".9"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /><path d="M37 50L32 34L43 30" /></g><g stroke="#ffd24a" strokeWidth=".9" fill="none" opacity=".8"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /></g></pattern>
+      <pattern id="tex-ice" width="54" height="54" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.32)" strokeWidth="1.3" fill="none"><path d="M27 27L10 8M27 27L48 14M27 27L14 50M27 27L44 48M27 27L52 32M27 27L6 34" /></g></pattern>
+      <pattern id="tex-sand" width="40" height="18" patternUnits="userSpaceOnUse"><path d="M0 12q10-8 20 0t20 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.4" /><path d="M0 10q10-8 20 0t20 0" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" /></pattern>
+      <pattern id="tex-web" width="64" height="64" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.24)" strokeWidth="1" fill="none"><path d="M0 0L64 64M0 32L64 32M32 0V64M0 64L64 0" /><circle cx="32" cy="32" r="11" /><circle cx="32" cy="32" r="22" /></g></pattern>
+      <pattern id="tex-gravel" width="30" height="30" patternUnits="userSpaceOnUse"><g fill="rgba(0,0,0,.3)"><path d="M4 5l4 1-1 4-4-1z" /><path d="M15 3l3 3-3 2-2-3z" /><path d="M22 12l4 2-2 3-3-2z" /><path d="M7 18l3 1-1 3-3-1z" /><path d="M17 20l3 2-2 2-2-2z" /><path d="M25 23l2 3-3 1-1-2z" /></g><g fill="rgba(255,255,255,.08)"><path d="M4 4l4 1-1 3-3-1z" /><path d="M22 11l3 2-2 2z" /></g></pattern>
+      <pattern id="tex-metal" width="28" height="28" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.35)" strokeWidth="1.5" fill="none"><path d="M0 0H28M0 28H28M0 0V28M28 0V28" /></g><g stroke="rgba(255,255,255,.09)" strokeWidth="1" fill="none"><path d="M0 1.5H28M1.5 0V28" /></g><g fill="rgba(255,255,255,.14)"><circle cx="0" cy="0" r="1.7" /><circle cx="28" cy="0" r="1.7" /><circle cx="0" cy="28" r="1.7" /><circle cx="28" cy="28" r="1.7" /></g></pattern>
+      <pattern id="tex-snow" width="26" height="26" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.55)"><circle cx="5" cy="6" r="1.5" /><circle cx="16" cy="4" r="1" /><circle cx="21" cy="13" r="1.7" /><circle cx="10" cy="15" r="1.2" /><circle cx="3" cy="20" r="1" /><circle cx="15" cy="22" r="1.5" /></g></pattern>
+      <pattern id="tex-slime" width="34" height="34" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(120,220,90,.42)" strokeWidth="1.3"><circle cx="8" cy="9" r="5" /><circle cx="24" cy="14" r="6" /><circle cx="14" cy="26" r="5.5" /></g><g fill="rgba(180,255,140,.3)"><circle cx="6" cy="7" r="1.6" /><circle cx="22" cy="12" r="1.8" /><circle cx="12" cy="24" r="1.5" /></g></pattern>
+      <pattern id="tex-blood" width="46" height="46" patternUnits="userSpaceOnUse"><g fill="rgba(122,15,15,.5)"><circle cx="10" cy="12" r="4" /><circle cx="14" cy="16" r="1.5" /><circle cx="30" cy="8" r="2.5" /><circle cx="34" cy="26" r="5" /><circle cx="38" cy="31" r="1.8" /><circle cx="16" cy="34" r="3" /><circle cx="12" cy="38" r="1.2" /></g></pattern>
+      <pattern id="tex-runes" width="60" height="60" patternUnits="userSpaceOnUse"><g stroke="rgba(150,190,255,.42)" strokeWidth="1.4" fill="none"><path d="M10 14v-8m0 4h6m0-4v8" /><circle cx="44" cy="16" r="6" /><path d="M44 10v12" /><path d="M14 44l6 6m0-6l-6 6" /><path d="M40 42h10m-5 0v10" /></g></pattern>
+      <pattern id="tex-stars" width="50" height="50" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.72)"><circle cx="8" cy="10" r="1" /><circle cx="30" cy="6" r="1.5" /><circle cx="44" cy="18" r="1" /><circle cx="18" cy="26" r="1.2" /><circle cx="38" cy="34" r="1" /><circle cx="6" cy="40" r="1.4" /><circle cx="26" cy="44" r="1" /></g><g fill="rgba(180,200,255,.5)"><circle cx="14" cy="16" r=".7" /><circle cx="46" cy="42" r=".8" /></g></pattern>
+      <pattern id="tex-fungus" width="42" height="42" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.2" fill="none"><path d="M9 30v-7M26 34v-8M34 18v-6" /></g><g fill="rgba(220,160,180,.4)" stroke="rgba(0,0,0,.2)" strokeWidth="1"><path d="M4 23a5 3.5 0 0 1 10 0z" /><path d="M20 26a6 4 0 0 1 12 0z" /><path d="M29 12a4 3 0 0 1 9 0z" /></g></pattern>
+    </>
+  );
+}
+
 function RoomShape({ room, cx, cy, hexKey }) {
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
-  // Clip a corridor shape to its hex cell so nothing pokes past the edges. All corridor
-  // rotations are 60° multiples, and the hexagon is invariant under those, so clipping in the
-  // unrotated frame is exact.
+  const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}` : null;
+  // Clip corridor shapes to their hex cell; all corridor rotations are 60° multiples (hex is invariant).
   const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
-  const clipped = (node, rot = 0) => (
+  const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
+  const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
+  // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
+  // then again with the texture pattern layered on top (transparent detail over the colour).
+  const draw = (fill, stk) => {
+    if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={fill} stroke={stk} strokeWidth="1.5" />;
+    if (shape === "square") { const side = s * 1.18; return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={fill} stroke={stk} strokeWidth="1.5" />; }
+    if (shape === "hall") {
+      const th = s * 0.42, L = Math.sqrt(3) * s;
+      const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
+      const conf = MAP[room.orient] || MAP.h;
+      return wrap(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={fill} stroke={stk} strokeWidth="1" />, conf.rot);
+    }
+    if (shape === "angle" || shape === "ytee") {
+      const th = s * 0.42, apo = (s * Math.sqrt(3)) / 2;
+      const arms = shape === "ytee" ? [0, 120, 240] : [300, 60];
+      const arm = (deg) => {
+        const a = (deg * Math.PI) / 180;
+        const mx = cx + (apo / 2) * Math.cos(a), my = cy + (apo / 2) * Math.sin(a);
+        return <rect key={deg} x={mx - apo / 2} y={my - th / 2} width={apo} height={th} fill={fill} stroke={stk} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
+      };
+      const rot = ((Number(room.orient) || 0) % 6) * 60;
+      return wrap(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={fill} /></g>, rot);
+    }
+    if (shape === "ccurve") {
+      const th = s * 0.42, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
+      const vAng = (-30 * Math.PI) / 180;
+      const vx = cx + s * Math.cos(vAng), vy = cy + s * Math.sin(vAng);
+      const a1 = (90 * Math.PI) / 180, a2 = (210 * Math.PI) / 180;
+      const P = (rad, a) => `${(vx + rad * Math.cos(a)).toFixed(1)},${(vy + rad * Math.sin(a)).toFixed(1)}`;
+      const d = `M ${P(ro, a1)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 1 ${P(ro, a2)} L ${P(ri, a2)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 0 ${P(ri, a1)} Z`;
+      const rot = ((Number(room.orient) || 0) % 6) * 60;
+      return wrap(<path d={d} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    }
+    if (shape === "curve" || shape === "wcurve") {
+      const th = s * 0.42;
+      const dx = shape === "wcurve" ? s * 0.42 : 0;
+      const Pa = { x: cx + s * 0.433 + dx, y: cy - s * 0.75 };
+      const Pb = { x: cx + s * 0.433 + dx, y: cy + s * 0.75 };
+      const C = { x: cx + s * (shape === "wcurve" ? 0.44 : 0.60) + dx, y: cy };
+      const r = Math.hypot(Pa.x - C.x, Pa.y - C.y), ro = r + th / 2, ri = r - th / 2;
+      const ang = (p) => Math.atan2(p.y - C.y, p.x - C.x), aA = ang(Pa), aB = ang(Pb);
+      const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
+      const d = `M ${pt(ro, aA)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${pt(ro, aB)} L ${pt(ri, aB)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${pt(ri, aA)} Z`;
+      const rot = ((Number(room.orient) || 0) % 6) * 60;
+      return wrap(<path d={d} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    }
+    return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={fill} stroke={stk} strokeWidth="1.5" />;
+  };
+  return (
     <>
-      <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>
-      <g clipPath={`url(#${clipId})`}>
-        {rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}
-      </g>
+      {needClip && <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>}
+      {draw(col, stroke)}
+      {texId && draw(`url(#${texId})`, "none")}
     </>
   );
-
-  if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
-  if (shape === "square") { // extra shape, shrunk inside the hex — sharp corners
-    const side = s * 1.18;
-    return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={col} stroke={stroke} strokeWidth="1.5" />;
-  }
-  if (shape === "hall") { // a straight tube spanning two opposite edges; diagonals run at the hex's own 60° slant
-    const th = s * 0.42, L = Math.sqrt(3) * s;
-    // rot 0 = flush horizontal; d1 ／ (lower-left↔upper-right) and d2 ＼ (upper-left↔lower-right) both at 60°
-    const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
-    const conf = MAP[room.orient] || MAP.h;
-    return clipped(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={col} stroke={stroke} strokeWidth="1" />, conf.rot);
-  }
-  if (shape === "angle" || shape === "ytee") {
-    // straight-tube junctions: "angle" is a two-armed bend joining two edges one flat apart;
-    // "ytee" is a three-way Y for diverging paths. Arms run from the hex centre out to edge midpoints.
-    const th = s * 0.42, apo = (s * Math.sqrt(3)) / 2; // centre → edge-midpoint distance
-    const arms = shape === "ytee" ? [0, 120, 240] : [300, 60];
-    const arm = (deg) => {
-      const a = (deg * Math.PI) / 180;
-      const mx = cx + (apo / 2) * Math.cos(a), my = cy + (apo / 2) * Math.sin(a);
-      return <rect key={deg} x={mx - apo / 2} y={my - th / 2} width={apo} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
-    };
-    const rot = ((Number(room.orient) || 0) % 6) * 60;
-    return clipped(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={col} /></g>, rot);
-  }
-  if (shape === "ccurve") { // a tight corner elbow arcing around one vertex, joining two adjacent edges
-    const th = s * 0.42, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
-    const vAng = (-30 * Math.PI) / 180; // vertex the arc wraps around (upper-right by default)
-    const vx = cx + s * Math.cos(vAng), vy = cy + s * Math.sin(vAng);
-    const a1 = (90 * Math.PI) / 180, a2 = (210 * Math.PI) / 180; // touches the right & upper-right edge midpoints
-    const P = (rad, a) => `${(vx + rad * Math.cos(a)).toFixed(1)},${(vy + rad * Math.sin(a)).toFixed(1)}`;
-    const d = `M ${P(ro, a1)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 1 ${P(ro, a2)} L ${P(ri, a2)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 0 ${P(ri, a1)} Z`;
-    const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per adjacent-edge pair
-    return clipped(<path d={d} fill={col} stroke={stroke} strokeWidth="1" />, rot);
-  }
-  if (shape === "curve" || shape === "wcurve") {
-    // A curved corridor between two edges 2 apart (passes over the flat between them). "curve" is a
-    // gentle arc; "wcurve" is a broad, near-semicircular sweep across the hex.
-    const th = s * 0.42;
-    // wide curve is scooted toward the right of the hex; the hex clip trims whatever runs past an edge
-    const dx = shape === "wcurve" ? s * 0.42 : 0;
-    const Pa = { x: cx + s * 0.433 + dx, y: cy - s * 0.75 }; // upper-right edge midpoint (300°)
-    const Pb = { x: cx + s * 0.433 + dx, y: cy + s * 0.75 }; // lower-right edge midpoint (60°)
-    const C = { x: cx + s * (shape === "wcurve" ? 0.44 : 0.60) + dx, y: cy }; // nearer the chord → deeper bulge
-    const r = Math.hypot(Pa.x - C.x, Pa.y - C.y), ro = r + th / 2, ri = r - th / 2;
-    const ang = (p) => Math.atan2(p.y - C.y, p.x - C.x), aA = ang(Pa), aB = ang(Pb);
-    const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
-    const d = `M ${pt(ro, aA)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${pt(ro, aB)} L ${pt(ri, aB)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${pt(ri, aA)} Z`;
-    const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per edge pair
-    return clipped(<path d={d} fill={col} stroke={stroke} strokeWidth="1" />, rot);
-  }
-  // hex (default) — the whole cell, filled
-  return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
 }
 
 // The at-a-glance overlay drawn on a hex: its icons (a row) and its short display name. Rendered
@@ -7007,6 +7049,7 @@ function roomTouched(r) {
   if (Array.isArray(r.icons) && r.icons.length) return true;
   if (r.shape && r.shape !== "hex") return true;
   if (r.color && r.color !== DGN_COLORS[0]) return true;
+  if (r.texture && r.texture !== "none") return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
   if (Array.isArray(r.fields) && r.fields.some((f) => (f.label || "").trim())) return true;
@@ -7127,6 +7170,20 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
           <span className="dgn-flabel">Background Colour</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
+          </div>
+          <span className="dgn-flabel">Texture <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— layered over the colour</span></span>
+          <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><TextureDefs /></defs></svg>
+          <div className="dgn-texpick">
+            {DGN_TEXTURES.map(([id, label]) => (
+              <button key={id} className={`dgn-texbtn ${(room.texture || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ texture: id })}>
+                <svg width="38" height="38" viewBox="0 0 38 38">
+                  <rect width="38" height="38" fill={room.color || DGN_COLORS[0]} />
+                  {id !== "none"
+                    ? <rect width="38" height="38" fill={`url(#tex-${id})`} />
+                    : <line x1="5" y1="33" x2="33" y2="5" stroke="rgba(255,255,255,.3)" strokeWidth="1.5" />}
+                </svg>
+              </button>
+            ))}
           </div>
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
           <div className="dgn-iconpick">
@@ -7332,6 +7389,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
       <div className="dgn-canvas" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
         <div className="dgn-hint">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
         <svg width={size.w} height={size.h}>
+          <defs><TextureDefs /></defs>
           <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>
             {grid}
             {ghost && (() => {
@@ -7424,6 +7482,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onSetLooted, onClose }
         <>
           <div className="dgn-dock-map" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
             <svg width={size.w} height={size.h}>
+              <defs><TextureDefs /></defs>
               <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}</g>
             </svg>
             <div className="dgn-zoom">
