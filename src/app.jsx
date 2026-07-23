@@ -1295,7 +1295,7 @@ function makeMonster(sb, state, opts = {}) {
   return m;
 }
 
-function makePlayer({ name, init, ac, side, hp, pp, pi, dex, spells, memberId, spellDC, mods }) {
+function makePlayer({ name, init, ac, side, hp, pp, pi, dex, spells, memberId, spellDC, mods, loot }) {
   const hpN = hp != null && hp !== "" ? Number(hp) : null;
   const initN = init == null || init === "" || isNaN(Number(init)) ? null : Number(init);
   const ppN = pp != null && pp !== "" ? Number(pp) : null;
@@ -1312,7 +1312,7 @@ function makePlayer({ name, init, ac, side, hp, pp, pi, dex, spells, memberId, s
     memberId: memberId || null, // links back to the stored party member so spellbook/DC edits survive across sessions
     dead: false, unconscious: false, ds: { s: 0, f: 0 }, stable: false,
     mods: modObj, saves: {},
-    resist: [], immune: [], vuln: [], loot: [],
+    resist: [], immune: [], vuln: [], loot: Array.isArray(loot) ? loot.map((x) => (typeof x === "string" ? x : { ...x })) : [],
     traits: [], actions: [], reactions: [], legendary: null, legRes: null, notes: "",
   };
 }
@@ -5895,7 +5895,50 @@ function MonsterItemsModal({ c, api, onGive, onClose }) {
   );
 }
 
-function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDeleteCustomItem, onSave, onAbilBoost, onClose }) {
+function PartyInventoryModal({ party, onMove, onRemove, onClose }) {
+  const members = (party?.members || []).filter((m) => (m.name || "").trim());
+  const others = (mid) => members.filter((m) => m.id !== mid);
+  const goldOf = (m) => (m.loot || []).reduce((s, it) => { const n = lootObj(it).n || ""; const mm = n.match(/(\d[\d,]*)\s*(?:gp|gold)\b/i); return s + (mm ? parseInt(mm[1].replace(/,/g, ""), 10) : 0); }, 0);
+  const totalGold = members.reduce((s, m) => s + goldOf(m), 0);
+  const totalItems = members.reduce((s, m) => s + (m.loot || []).length, 0);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modalhd"><h3>🎒 Party Inventory</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
+        {!party ? <div className="trait">Load or create a party first — inventory is tracked per party member and saved with the party.</div> : (<>
+          <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 8 }}>
+            {party.name ? <b>{party.name}</b> : "Your party"} · {totalItems} item{totalItems === 1 ? "" : "s"}{totalGold ? ` · ${totalGold.toLocaleString()} gp` : ""}. Saved with the party across sessions.
+          </div>
+          {members.length === 0 && <div className="trait">This party has no named members yet.</div>}
+          {members.map((m) => {
+            const bag = m.loot || [];
+            return (
+              <div key={m.id} style={{ marginBottom: 10 }}>
+                <div className="lbl" style={{ fontSize: 12, color: "var(--gold)", marginBottom: 2 }}>{m.name}{bag.length ? "" : " — empty"}</div>
+                {bag.map((raw, i) => { const it = lootObj(raw); return (
+                  <div className="targetline" key={i}>
+                    <span style={{ flex: 1 }}>{lootName(it)}{it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}{it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}</span>
+                    {others(m.id).length > 0 && (
+                      <select value="" title="Move to another member" onChange={(e) => { if (e.target.value) onMove(m.id, i, e.target.value); }} style={{ fontSize: 12, maxWidth: 110 }}>
+                        <option value="">→ move…</option>
+                        {others(m.id).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                      </select>
+                    )}
+                    <button className="btn small danger" title="Remove from the party" onClick={() => onRemove(m.id, i)}>✕</button>
+                  </div>
+                ); })}
+              </div>
+            );
+          })}
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Assign loot to players from dungeon rooms (the play panel) or a monster's 💰 loot — it lands in their bag and shows up here.</div>
+        </>)}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
+      </div>
+    </div>
+  );
+}
+
+function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign, onSaveCustomItem, onDeleteCustomItem, onSave, onAbilBoost, onClose }) {
   const [items, setItems] = useState(() => (c?.loot || []).map(lootObj));
   const [custom, setCustom] = useState("");
   const [browse, setBrowse] = useState(!!compendium); // the compendium is a browse-first view
@@ -5916,6 +5959,9 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
     setItems([...items, mine ? JSON.parse(JSON.stringify(mine)) : lookupItem(t) || { n: t }]);
     setCustom("");
   };
+  // hand an item from this (non-player) holder into a player's bag — moves it out of here
+  const canAssign = !compendium && c && c.type !== "player" && players.length > 0 && onAssign;
+  const giveTo = (i, playerUid) => { const item = items[i]; const reduced = items.filter((_, j) => j !== i); setItems(reduced); onAssign(reduced, item, playerUid); };
   const setF = (k, v) => setForm({ ...form, [k]: v });
   const saveForm = () => {
     const it = formToItem(form);
@@ -5936,6 +5982,12 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
                 {it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}
                 {it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}
               </span>
+              {canAssign && (
+                <select value="" title="Give this item to a player" onChange={(e) => { if (e.target.value) giveTo(i, e.target.value); }} style={{ fontSize: 12, maxWidth: 120 }}>
+                  <option value="">→ give to…</option>
+                  {players.map((p) => <option key={p.uid} value={p.uid}>{p.name}</option>)}
+                </select>
+              )}
               <button className="btn small danger" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button>
             </div>
           ))}
@@ -8124,7 +8176,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUpdateRoom, onLoadLevel, backName, onBack, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], onAssignLoot, onRun, onEdit, onUpdateRoom, onLoadLevel, backName, onBack, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -8298,10 +8350,18 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
                         {lootArr.map((it, i) => {
                           const got = gotOf(it);
                           return (
-                            <button key={i} className="dgn-loot-item" onClick={() => toggleItem(i)}>
-                              <span className="dgn-loot-check">{got ? "☑" : "☐"}</span>
-                              <span style={{ flex: 1, textDecoration: got ? "line-through" : "none", opacity: got ? 0.55 : 1 }}>{lootName(it)}</span>
-                            </button>
+                            <div key={i} className="frow" style={{ gap: 4, alignItems: "center" }}>
+                              <button className="dgn-loot-item" style={{ flex: 1 }} onClick={() => toggleItem(i)}>
+                                <span className="dgn-loot-check">{got ? "☑" : "☐"}</span>
+                                <span style={{ flex: 1, textDecoration: got ? "line-through" : "none", opacity: got ? 0.55 : 1 }}>{lootName(it)}</span>
+                              </button>
+                              {players.length > 0 && onAssignLoot && (
+                                <select value="" title="Give this to a player (also marks it collected)" onChange={(e) => { if (e.target.value) { onAssignLoot(it, e.target.value); if (!got) toggleItem(i); } }} style={{ fontSize: 12, maxWidth: 108 }}>
+                                  <option value="">→ to…</option>
+                                  {players.map((p) => <option key={p.uid} value={p.uid}>{p.name}</option>)}
+                                </select>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -8753,6 +8813,17 @@ export default function App() {
   const partyRef = useRef(party); partyRef.current = party;
   const partiesRef = useRef(parties); partiesRef.current = parties;
   const dungeonsRef = useRef(dungeons); dungeonsRef.current = dungeons;
+  // Persist each party-linked player's bag back onto its saved party member, so loot
+  // carries across sessions (mirrors how spellbooks/DCs already sync via memberId).
+  useEffect(() => {
+    const byId = {}; (partiesRef.current || []).forEach((p) => (p.members || []).forEach((m) => { byId[m.id] = m; }));
+    state.combatants.forEach((c) => {
+      if (c.type !== "player" || !c.memberId || !byId[c.memberId]) return;
+      const stored = byId[c.memberId].loot || [];
+      const bag = c.loot || [];
+      if (JSON.stringify(stored) !== JSON.stringify(bag)) persistMember(c.memberId, { loot: bag });
+    });
+  }, [state.combatants]); // eslint-disable-line react-hooks/exhaustive-deps
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
   const redoRef = useRef([]);
@@ -9662,6 +9733,50 @@ export default function App() {
     openAddAttack: (uid) => setModal({ type: "addattack", uid }),
     openLoot: (uid) => setModal({ type: "loot-give", uid }),
     openMonsterItems: (uid) => { setPeek(null); setModal({ type: "monster-items", uid }); },
+    // Copy an item into a player's bag (used for dungeon-room loot pickup — the room keeps the record).
+    giveItemToPlayer: (item, playerUid) => mutate((d, L, T) => {
+      const p = d.combatants.find((x) => x.uid === playerUid);
+      if (!p || !item) return;
+      p.loot = [...(p.loot || []), JSON.parse(JSON.stringify(item))];
+      if (item.wpn) syncWeaponAttacks(p, L);
+      L.push(`🎒 <b>${p.name}</b> picks up <b>${lootName(item)}</b>.`);
+      T.push({ kind: "good", text: `${lootName(item)} → ${p.name}'s bag` });
+    }),
+    // Move an item from one holder to a player's bag (used for monster-corpse loot).
+    moveItemToPlayer: (fromUid, srcLoot, item, playerUid) => mutate((d, L, T) => {
+      const src = d.combatants.find((x) => x.uid === fromUid);
+      const p = d.combatants.find((x) => x.uid === playerUid);
+      if (src) { src.loot = srcLoot; syncWeaponAttacks(src, L); }
+      if (p && item) { p.loot = [...(p.loot || []), JSON.parse(JSON.stringify(item))]; if (item.wpn) syncWeaponAttacks(p, L); }
+      if (p && item) { L.push(`🎒 <b>${p.name}</b> takes <b>${lootName(item)}</b>${src ? ` from ${src.name}` : ""}.`); T.push({ kind: "good", text: `${lootName(item)} → ${p.name}'s bag` }); }
+    }),
+    openPartyInventory: () => setModal({ type: "party-inventory" }),
+    // Party-inventory edits write to the stored party members (persistent) AND any live combatant.
+    partyInvMove: (fromMid, idx, toMid) => {
+      const cur = partiesRef.current; let moved = null;
+      const list = cur.map((p) => ({ ...p, members: (p.members || []).map((m) => {
+        if (m.id === fromMid) { const l = [...(m.loot || [])]; moved = l.splice(idx, 1)[0]; return { ...m, loot: l }; }
+        return m;
+      }) }));
+      if (moved == null) return;
+      const list2 = list.map((p) => ({ ...p, members: (p.members || []).map((m) => (m.id === toMid ? { ...m, loot: [...(m.loot || []), moved] } : m)) }));
+      savePartiesAll(list2, activePartyId);
+      mutate((d, L) => {
+        const src = d.combatants.find((x) => x.type === "player" && x.memberId === fromMid);
+        const dst = d.combatants.find((x) => x.type === "player" && x.memberId === toMid);
+        if (src) { const l = [...(src.loot || [])]; l.splice(idx, 1); src.loot = l; syncWeaponAttacks(src, L); }
+        if (dst) { dst.loot = [...(dst.loot || []), JSON.parse(JSON.stringify(moved))]; if (moved && moved.wpn) syncWeaponAttacks(dst, L); }
+      });
+    },
+    partyInvRemove: (mid, idx) => {
+      const cur = partiesRef.current;
+      const list = cur.map((p) => ({ ...p, members: (p.members || []).map((m) => {
+        if (m.id === mid) { const l = [...(m.loot || [])]; l.splice(idx, 1); return { ...m, loot: l }; }
+        return m;
+      }) }));
+      savePartiesAll(list, activePartyId);
+      mutate((d, L) => { const c = d.combatants.find((x) => x.type === "player" && x.memberId === mid); if (c) { const l = [...(c.loot || [])]; l.splice(idx, 1); c.loot = l; syncWeaponAttacks(c, L); } });
+    },
     openDeathSaves: (uid) => setModal({ type: "deathsaves", uid }),
     openCondInfo: (uid, condName) => setModal({ type: "cond-info", uid, condName }),
     openThp: (uid) => setModal({ type: "thp-edit", uid }),
@@ -10006,7 +10121,7 @@ export default function App() {
     if (!members.length) return;
     mutate((d, L) => {
       members.forEach((m) => {
-        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, pi: m.pi !== "" && m.pi != null ? m.pi : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m) });
+        const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, pi: m.pi !== "" && m.pi != null ? m.pi : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m), loot: m.loot });
         d.combatants.push(p);
       });
       L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
@@ -10689,6 +10804,7 @@ export default function App() {
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
+              <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
               <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
               <button onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
@@ -10771,6 +10887,8 @@ export default function App() {
         })()}
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
+            players={state.combatants.filter((x) => x.type === "player" && !x.dead)}
+            onAssignLoot={(item, playerUid) => api.giveItemToPlayer(item, playerUid)}
             onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
             onLoadLevel={descendToLevel}
             backName={dungeonNav.length ? ((dungeons.find((d) => d.id === dungeonNav[dungeonNav.length - 1]) || {}).name || "").trim() || "the level above" : null}
@@ -11149,6 +11267,8 @@ export default function App() {
       )}
       {modal?.type === "loot-give" && modalC && (
         <LootGiveModal c={modalC} customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)}
+          players={state.combatants.filter((x) => x.type === "player" && !x.dead)}
+          onAssign={(reducedItems, item, playerUid) => api.moveItemToPlayer(modal.uid, reducedItems, item, playerUid)}
           onAbilBoost={modalC.type !== "effect" && modalC.type !== "object" ? () => setModal({ type: "abil-boost", uid: modal.uid }) : undefined}
           onSave={(items) => {
             mutate((d, L) => {
@@ -11159,6 +11279,9 @@ export default function App() {
             });
             setModal(null);
           }} />
+      )}
+      {modal?.type === "party-inventory" && (
+        <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
