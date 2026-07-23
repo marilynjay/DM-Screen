@@ -259,6 +259,8 @@ input[type=number]{width:64px}
 .dgn-psec-hd{width:100%;text-align:left;background:none;border:none;color:var(--gold);font-size:12px;font-weight:700;padding:6px 0;cursor:pointer;display:flex;align-items:center;gap:6px}
 .dgn-psec-body{font-size:12px;color:var(--text);padding:0 0 8px 18px;white-space:pre-wrap}
 .dgn-psec-body .sub{color:var(--gold-2,var(--gold));font-weight:700}
+.dgn-psub-hd{width:100%;text-align:left;background:none;border:none;color:var(--gold-2,var(--gold));font-size:12px;font-weight:700;padding:2px 0 2px 18px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.dgn-psub-body{font-size:12px;color:var(--text);padding:0 0 6px 32px;white-space:pre-wrap}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-loot-chip{display:inline-block;background:var(--gold-soft);border:1px solid rgba(217,164,65,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
@@ -7643,6 +7645,22 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
   const [collapsed, setCollapsed] = useState(false);
   const [ran, setRan] = useState(null);      // room whose encounter was added during THIS selection (guards double-adds)
   const [openF, setOpenF] = useState({});    // which note fields are expanded in the room panel
+  const [openS, setOpenS] = useState({});    // which titled sub-sections (within a field) are expanded
+  // A titled sub-section starts from the DM's editor collapse choice, then follows any in-play toggle.
+  const subShown = (key, sec) => (key in openS ? openS[key] : !sec.collapsed);
+  const renderSecs = (fk, secs) => secs.map((s) => {
+    const title = (s.title || "").trim(), body = (s.body || "").trim();
+    if (!title) return <div key={s.id} className="dgn-psec-body">{body}</div>;
+    const key = `${fk}:${s.id}`, shown = subShown(key, s);
+    return (
+      <div key={s.id}>
+        <button className="dgn-psub-hd" onClick={() => setOpenS((o) => ({ ...o, [key]: !shown }))}>
+          <span className="dgn-fold">{shown ? "▾" : "▸"}</span>{title}
+        </button>
+        {shown && body && <div className="dgn-psub-body">{body}</div>}
+      </div>
+    );
+  });
   useEffect(() => { setRan(null); }, [sel]); // each time a room is (re)selected, allow one add again
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
@@ -7727,12 +7745,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
                       <button className="dgn-psec-hd" onClick={() => setOpenF((o) => ({ ...o, [k]: !o[k] }))}>
                         <span className="dgn-fold">{open ? "▾" : "▸"}</span>{label}
                       </button>
-                      {open && secs.map((s) => (
-                        <div key={s.id} className="dgn-psec-body">
-                          {(s.title || "").trim() && <div className="sub">{s.title.trim()}</div>}
-                          {(s.body || "").trim()}
-                        </div>
-                      ))}
+                      {open && renderSecs(k, secs)}
                     </div>
                   );
                 })}
@@ -7761,12 +7774,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
                       <button className="dgn-psec-hd" onClick={() => setOpenF((o) => ({ ...o, encnotes: !o.encnotes }))}>
                         <span className="dgn-fold">{open ? "▾" : "▸"}</span>Encounter Notes
                       </button>
-                      {open && secs.map((s) => (
-                        <div key={s.id} className="dgn-psec-body">
-                          {(s.title || "").trim() && <div className="sub">{s.title.trim()}</div>}
-                          {(s.body || "").trim()}
-                        </div>
-                      ))}
+                      {open && renderSecs("encnotes", secs)}
                     </div>
                   );
                 })()}
