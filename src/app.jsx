@@ -828,6 +828,14 @@ const BESTIARY_CATS = [
    fullBestiary() is the one lookup every consumer goes through. */
 const EXPANDED = { on: false, list: [], pools: {} };
 
+/* Rules edition: "2024" (SRD 5.2.1, the default bundle) or "2014" (SRD 5.1 — the
+   2014/"5th edition, 2016 printing" rules). The 2014 bestiary and spell compendium
+   are lazy-loaded and swapped in; Tome of Beasts layers on top of EITHER edition.
+   EDITION.v is assigned from the persisted setting during render; ALT holds the
+   lazily-imported 2014 stat blocks. */
+const EDITION = { v: "2024" };
+const ALT = { best2014: [], loaded2014: false };
+
 /* Curated playtest encounters, balanced for the two-hero test party (~2× level 5,
    moderate budget ≈1500 XP unless noted). 'showcase' is the bespoke scaled trio. */
 const PLAYTEST_ENCOUNTERS = [
@@ -840,7 +848,10 @@ const PLAYTEST_ENCOUNTERS = [
   { key: "dragon", name: "Young White Dragon", blurb: "Solo boss — cold breath, flight, and a bad attitude. Hard, expect blood.", list: [["Young White Dragon", 1]] },
   { key: "allgoblins", name: "All Goblins", blurb: "Goblin civil war — four warriors, two on each side, no players. Great for testing ally-side monsters.", noPlayers: true, list: [["Goblin Warrior", 2, null, "Enemy Goblin"], ["Goblin Warrior", 2, "ally", "Ally Goblin"]] },
 ];
-const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? BESTIARY.concat(EXPANDED.list) : BESTIARY);
+// The active base bestiary for the current edition (falls back to the 2024 bundle
+// until the 2014 data has finished lazy-loading, so lookups never see an empty list).
+const editionBase = () => (EDITION.v === "2014" && ALT.best2014.length ? ALT.best2014 : BESTIARY);
+const fullBestiary = () => (EXPANDED.on && EXPANDED.list.length ? editionBase().concat(EXPANDED.list) : editionBase());
 
 function bestiaryBadges(b) {
   const spd = b.spd || "";
@@ -1828,10 +1839,23 @@ function advHints(c, a) {
   return hints;
 }
 
-/* ---- SPELL COMPENDIUM: all 339 spells from SRD 5.2.1.
+/* ---- SPELL COMPENDIUM: all 339 spells from SRD 5.2.1 (2024). The 2014 SRD 5.1
+   compendium is lazy-loaded and swapped into SPELL_REF in place when the edition
+   changes, so every SPELL_REF[...] consumer sees the switch with no other churn.
    Keyed by lowercase name. Fields: n name, m level/school/classes, ct/rg/cp/du stat lines, d full text.
    spellRefsIn() lights up every spell named in any scanned text. ---- */
-const SPELL_MATCHER = new RegExp("\\b(" + Object.values(SPELL_REF).map((s) => s.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).sort((a, b) => b.length - a.length).join("|") + ")\\b", "g");
+const SPELLS_2024 = { ...SPELL_REF }; // snapshot the default (2024) compendium so we can restore it
+let SPELL_REF_2014 = null;            // lazily-imported 2014 compendium (null until first 2014 switch)
+const buildSpellMatcher = () => new RegExp("\\b(" + Object.values(SPELL_REF).map((s) => s.n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).sort((a, b) => b.length - a.length).join("|") + ")\\b", "g");
+let SPELL_MATCHER = buildSpellMatcher();
+// Swap the active spell compendium in place (keys deleted, then reassigned) so the
+// shared SPELL_REF object every consumer already closes over reflects the new edition.
+function applySpellEdition(ed) {
+  const src = ed === "2014" ? (SPELL_REF_2014 || SPELLS_2024) : SPELLS_2024;
+  for (const k of Object.keys(SPELL_REF)) delete SPELL_REF[k];
+  Object.assign(SPELL_REF, src);
+  SPELL_MATCHER = buildSpellMatcher();
+}
 function spellRefsIn(text, { requireCast = true } = {}) {
   if (!text) return [];
   if (requireCast && !/\bcasts?\b|\bSpellcasting\b/i.test(text)) return [];
@@ -5087,10 +5111,16 @@ function LicensesModal({ onClose }) {
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Licenses</h3>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>SRD 5.2.1</div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>SRD 5.2.1 (2024 rules)</div>
         <div className="trait">
           This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at
           https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License.
+        </div>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>SRD 5.1 (2014 rules)</div>
+        <div className="trait">
+          The optional 2014-rules compendium (monsters and spells, loaded when you switch to the 2014 edition) includes material from the
+          System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document.
+          The SRD 5.1 is licensed under the Creative Commons Attribution 4.0 International License.
         </div>
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Tome of Beasts (optional expanded bestiary)</div>
         {!tob ? <div className="trait">Loading…</div> : (<>
@@ -5126,6 +5156,36 @@ function InitTieSettingsModal({ mode, onSet, onClose }) {
             {mode === v ? "● " : "○ "}{label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
           </button>
         ))}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditionModal({ edition, ready, expandedOn, onSet, onClose }) {
+  const opts = [
+    ["2024", "2024 rules — SRD 5.2.1", "The current edition. 330 monsters and 339 spells, 2024 phrasing and rules (Bloodied, updated conditions, one-attack-swap spellcasting)."],
+    ["2014", "2014 rules — SRD 5.1", "The 5th-edition rules as printed 2014–2023. 334 monsters and 319 spells drawn from the 2014 SRD, with 2014 stat blocks, spell text, and rules handling."],
+  ];
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>📜 Rules edition</h3>
+        <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 8 }}>
+          Switch the whole compendium between editions. Monsters, spells, and edition-specific rules handling all change together. Your saved parties, encounters, and custom monsters are kept.
+        </div>
+        {opts.map(([v, label, hint]) => (
+          <button key={v} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(edition === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
+            {edition === v ? "● " : "○ "}{label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
+          </button>
+        ))}
+        {edition === "2014" && !ready && <div className="trait" style={{ marginTop: 6 }}>Loading the 2014 compendium…</div>}
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 10 }}>
+          <b>Tome of Beasts</b> layers on top of whichever edition you pick — toggle it independently from the Add-monster panel{expandedOn ? " (currently on)" : ""}.
+          <br />The encounter balancer always uses the 2024 XP budget math, in either edition.
+        </div>
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
@@ -8429,7 +8489,24 @@ export default function App() {
     });
     return () => { live = false; };
   }, [expandedOn]);
+  const [edition, setEditionState] = useState("2024"); // "2024" (SRD 5.2.1) or "2014" (SRD 5.1)
+  const [edReady, setEdReady] = useState(true); // 2024 is bundled — ready immediately
+  const setEdition = (v) => { setEditionState(v); stSet("dm5e:edition", v); };
+  useEffect(() => {
+    if (edition !== "2014") { applySpellEdition("2024"); setEdReady(true); return undefined; }
+    if (ALT.loaded2014 && SPELL_REF_2014) { applySpellEdition("2014"); setEdReady(true); return undefined; }
+    let live = true; setEdReady(false);
+    Promise.all([import("./data/bestiary2014.js"), import("./data/spells2014.js")]).then(([b, s]) => {
+      if (!live) return;
+      ALT.best2014 = b.default; ALT.loaded2014 = true;
+      SPELL_REF_2014 = s.default;
+      applySpellEdition("2014");
+      setEdReady(true);
+    });
+    return () => { live = false; };
+  }, [edition]);
   // assign during render so components created in this same pass read the fresh values
+  EDITION.v = edition;
   ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
@@ -8704,6 +8781,7 @@ export default function App() {
       if (spx != null) setSpellSfxState(!!spx); // whole-screen spell/breath effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
       setExpandedOnState(!!(await stGet("dm5e:expandedBestiary")));
+      if ((await stGet("dm5e:edition")) === "2014") setEditionState("2014"); // the edition effect lazy-loads + swaps the data
       let pl = await stGet("dm5e:parties");
       if (!Array.isArray(pl)) { // migrate the single-party era
         const legacy = await stGet("dm5e:partyRoster");
@@ -10430,6 +10508,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
+              <button onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
@@ -10588,6 +10667,7 @@ export default function App() {
           available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The
           SRD 5.2.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">Creative
           Commons Attribution 4.0 International License</a>.
+          {" "}The optional 2014 edition adds material from the <b>SRD 5.1</b> (Wizards of the Coast, CC-BY-4.0).
           {" "}Optional expanded bestiary content from <b>Tome of Beasts</b> © Kobold Press, used under the Open Game License v 1.0a —{" "}
           <a href="#licenses" onClick={(e) => { e.preventDefault(); setModal({ type: "licenses" }); }}>full licenses</a>.
           {" "}Attribution is always available in the <b>⋯ menu → Attribution &amp; licenses</b>.
@@ -10680,6 +10760,9 @@ export default function App() {
         <InitTieSettingsModal mode={tieMode} onSet={setTieMode} onClose={() => setModal(null)} />
       )}
       {modal?.type === "licenses" && <LicensesModal onClose={() => setModal(null)} />}
+      {modal?.type === "edition" && (
+        <EditionModal edition={edition} ready={edReady} expandedOn={expandedOn} onSet={setEdition} onClose={() => setModal(null)} />
+      )}
       {modal?.type === "playtest" && (
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>

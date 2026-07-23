@@ -58,6 +58,8 @@ The application code in this repository is © marilynjay, all rights reserved. N
 
 This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2.1 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
 
+The optional 2014-rules edition (`src/data/bestiary2014.js` and `src/data/spells2014.js`, lazy-loaded when the app is switched to the 2014 edition) includes material from the System Reference Document 5.1 ("SRD 5.1") by Wizards of the Coast LLC, available at https://dnd.wizards.com/resources/systems-reference-document. The SRD 5.1 is likewise licensed under the Creative Commons Attribution 4.0 International License. This data was converted from the community-maintained `5e-bits/5e-database` project.
+
 The optional expanded bestiary (`src/data/bestiaryTob.js`, lazy-loaded when enabled) contains open game content from Tome of Beasts, Copyright 2016, Open Design; used under the Open Game License v 1.0a, converted from the Open5e project's data (`tools/convert-tob.mjs` regenerates it). The full OGL text and Section 15 notice ship inside that module and display in the app's Licenses panel (footer → "full licenses").
 
 The same notices are displayed in the app's footer and must be preserved in both places.
