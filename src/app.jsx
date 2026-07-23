@@ -3184,6 +3184,8 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
             {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
+            {c.type === "monster" && !c.npc && <button onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>}
+            {c.npc && <button onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>}
             {c.npc ? (<>
               {c.side !== "neutral" && <button onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>}
               {c.side !== "ally" && <button onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>}
@@ -4552,7 +4554,10 @@ const NPC_PRESETS = [
 const blankNpcStats = () => ({ ac: 12, hp: 10, spd: "30 ft", atkN: 1, mods: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, attacks: [{ n: "", hit: 3, dmg: "1d6+1", dtype: "bludgeoning" }] });
 const presetToStats = (p, t) => ({ ac: p.ac[t], hp: p.hp[t], spd: p.spd, atkN: 1, mods: { ...p.mods }, attacks: [{ n: p.atk, hit: p.hit[t], dmg: p.dmg[t], dtype: p.dt }] });
 // Build a monster-shaped statblock from an NPC so the existing combat engine can run it.
+// A monster-backed NPC (npc.sb — e.g. a dragon saved as a duke) keeps its full statblock,
+// legendary/lair actions and all; otherwise we assemble a light block from the stats panel.
 function npcToSb(npc) {
+  if (npc.sb) return { ...JSON.parse(JSON.stringify(npc.sb)), name: npc.name || npc.sb.name, npc: true };
   const s = npc.stats || blankNpcStats();
   const atks = (s.attacks || []).filter((a) => (a.n || "").trim()).map((a) => ({ n: a.n.trim(), kind: "atk", hit: Number(a.hit) || 0, dmg: a.dmg || "1d4", dtype: a.dtype || "bludgeoning" }));
   const atkN = Math.max(1, Math.min(6, Number(s.atkN) || 1));
@@ -4728,7 +4733,7 @@ function FlavorText({ text }) {
   );
 }
 
-function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
+function StatblockView({ sb, count, rollHp, onAdd, onClone, onSaveAsNpc, onBack }) {
   const mods = sb.mods || {};
   return (
     <div>
@@ -4764,8 +4769,9 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
       {sb.bonus?.length ? (<div className="sect"><div className="lbl">Bonus Actions</div>{sb.bonus.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       {sb.reactions?.length ? (<div className="sect"><div className="lbl">Reactions</div>{sb.reactions.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       {sb.legendary ? (<div className="sect"><div className="lbl">Legendary Actions ({sb.legendary.count}/round)</div>{(sb.legendary.options || []).map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
-      <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+      <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
         <button className="btn" onClick={onBack}>← Back</button>
+        {onSaveAsNpc && <button className="btn" title="Save as an NPC in your DM Notebook — keeps this full statblock for later" onClick={() => onSaveAsNpc(sb)}>👤 Save as NPC</button>}
         <button className="btn" onClick={() => onClone(sb)}>⧉ Clone & tweak</button>
         <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add to combat{count > 1 ? ` ×${count}` : ""}</button>
       </div>
@@ -4775,7 +4781,7 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onBack }) {
 
 /* Compact confirm card for the add-monster flow: enough to recognize the pick,
    small enough to keep the table moving. */
-function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull }) {
+function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull, onSaveAsNpc }) {
   return (
     <div>
       <h3 style={{ marginTop: 4 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · ToB" : ""}</span></h3>
@@ -4791,8 +4797,9 @@ function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull }) {
       ))}
       {(sb.actions || []).length > 5 && <div className="trait" style={{ color: "var(--faint)" }}>+{sb.actions.length - 5} more action{sb.actions.length - 5 === 1 ? "" : "s"}…</div>}
       {sb.legendary && <div className="trait">👑 Legendary ({sb.legendary.count}/round)</div>}
-      <div className="frow" style={{ marginTop: 8 }}>
+      <div className="frow" style={{ marginTop: 8, flexWrap: "wrap" }}>
         <button className="btn small ghost" onClick={onFull}>Full statblock ▸</button>
+        {onSaveAsNpc && <button className="btn small ghost" title="Save as an NPC in your DM Notebook" onClick={() => onSaveAsNpc(sb)}>👤 Save as NPC</button>}
         <span style={{ flex: 1 }} />
         <button className="btn" onClick={onCancel}>Cancel</button>
         <button className="btn primary" onClick={() => onAdd(sb, count, rollHp)}>Add{count > 1 ? ` ×${count}` : ""}</button>
@@ -4801,7 +4808,7 @@ function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull }) {
   );
 }
 
-function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpanded, onAdd, onDeleteCustom, onImport, onEdit, onClone, onClose }) {
+function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpanded, onAdd, onDeleteCustom, onImport, onEdit, onClone, onSaveAsNpc, onClose }) {
   const [q, setQ] = useState("");
   const [count, setCount] = useState(1);
   const [rollHp, setRollHp] = useState(false);
@@ -4848,8 +4855,8 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        {detail ? <StatblockView sb={detail} count={count} rollHp={rollHp} onAdd={onAdd} onClone={onClone} onBack={() => setDetail(null)} />
-        : confirm ? <MiniStatCard sb={confirm} count={count} rollHp={rollHp} onAdd={onAdd} onCancel={() => setConfirm(null)} onFull={() => setDetail(confirm)} />
+        {detail ? <StatblockView sb={detail} count={count} rollHp={rollHp} onAdd={onAdd} onClone={onClone} onSaveAsNpc={onSaveAsNpc} onBack={() => setDetail(null)} />
+        : confirm ? <MiniStatCard sb={confirm} count={count} rollHp={rollHp} onAdd={onAdd} onCancel={() => setConfirm(null)} onFull={() => setDetail(confirm)} onSaveAsNpc={onSaveAsNpc} />
         : (<>
         <h3>{browse ? "🐉 Bestiary" : "Add from bestiary"}</h3>
         <div className="frow">
@@ -6219,7 +6226,7 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
 }
 
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
-function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard }) {
+function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, editNpcId }) {
   const [tab, setTab] = useState("npcs");
   const [draft, setDraft] = useState(null); // entry being edited: { tab, id|null, name, tag, sections, loc, parent }
   const [open, setOpen] = useState({}); // expanded rows / collapsed groups
@@ -6241,14 +6248,18 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard }) {
   const cleanSecs = (secs) => (secs || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body);
 
   const commitTab = (k, entries) => onSave({ ...nb, [k]: entries });
-  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null }); };
-  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, lastSide: e.lastSide || "" }); };
+  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [] }); };
+  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "" }); };
+  // Opened from a board NPC's "Edit in Notebook" — jump straight to that NPC's editor.
+  useEffect(() => { if (editNpcId) { const n = (nb.npcs || []).find((x) => x.id === editNpcId); if (n) { setTab("npcs"); startEdit(n, "npcs"); } } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saveDraft = () => {
     const t = draft.tab;
     const clean = { id: draft.id || newUid(), name: (draft.name || "").trim() || `Untitled ${singularOf(t)}`, tag: (draft.tag || "").trim(), sections: cleanSecs(draft.sections) };
     if (t === "npcs" && draft.loc) clean.loc = draft.loc;
-    if (t === "npcs" && draft.stats) clean.stats = draft.stats;
+    if (t === "npcs" && draft.stats && !draft.sb) clean.stats = draft.stats;
+    if (t === "npcs" && draft.sb) clean.sb = draft.sb;
     if (t === "npcs" && draft.lastSide) clean.lastSide = draft.lastSide;
+    if (t === "npcs" && Array.isArray(draft.loot) && draft.loot.length) clean.loot = draft.loot;
     if (t === "locations" && draft.parent) clean.parent = draft.parent;
     const arr = get(t);
     commitTab(t, arr.some((e) => e.id === clean.id) ? arr.map((e) => (e.id === clean.id ? clean : e)) : [...arr, clean]);
@@ -6283,7 +6294,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard }) {
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.stats && <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span>}</span>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
           {rowTab === "npcs" && onAddToBoard && <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
@@ -6393,7 +6404,15 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard }) {
                 </div>
               ) : <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>This place has buildings under it, so it stays a top-level location.</div>)}
               <SectionsEditor value={draft.sections} onChange={(secs) => setDraft({ ...draft, sections: secs })} />
-              {draft.tab === "npcs" && (draft.stats
+              {draft.tab === "npcs" && (draft.sb
+                ? (<div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+                    <div className="frow" style={{ alignItems: "center" }}>
+                      <span className="lbl" style={{ fontSize: 11, color: "var(--gold)", flex: 1 }}>{draft.sb.legendary ? "👑" : "⚔️"} Full statblock — {draft.sb.name}</span>
+                      <button className="btn tiny ghost warn" title="Drop the statblock — make this a social-only NPC" onClick={() => setDraft({ ...draft, sb: null })}>Remove</button>
+                    </div>
+                    <div className="trait" style={{ fontSize: 12 }}>AC {draft.sb.ac} · HP {draft.sb.hp}{draft.sb.cr ? ` · CR ${draft.sb.cr}` : ""}{draft.sb.legendary ? " · legendary" : ""}. Runs the whole creature when added to a fight.</div>
+                  </div>)
+                : draft.stats
                 ? <NpcStatsPanel stats={draft.stats} partyLevel={partyLevel} onChange={(s) => setDraft({ ...draft, stats: s })} onRemove={() => setDraft({ ...draft, stats: null })} />
                 : <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setDraft({ ...draft, stats: blankNpcStats() })}>⚔️ Add combat stats (optional)</button>
               )}
@@ -9466,6 +9485,17 @@ export default function App() {
     if (!activePartyId) return;
     savePartiesAll(partiesRef.current.map((p) => (p.id === activePartyId ? { ...p, notebook: nb } : p)), activePartyId);
   };
+  // Convert a statblock (from the bestiary or a roster monster) into a notebook NPC that keeps
+  // the full statblock — social by default, the whole creature when a fight breaks out.
+  const saveMonsterAsNpc = (sb) => {
+    const p = (partiesRef.current || []).find((x) => x.id === activePartyId);
+    if (!p) { pushToasts([{ kind: "bad", text: "Load or create a party first — NPCs are saved in its notebook." }]); return; }
+    const nb = p.notebook || {};
+    const npc = { id: newUid(), name: sb.name, tag: "", sections: [], sb: JSON.parse(JSON.stringify(sb)) };
+    delete npc.sb.npc; // stored as a statblock, npcToSb re-flags it
+    saveNotebook({ ...nb, npcs: [...(nb.npcs || []), npc] });
+    pushToasts([{ kind: "good", text: `"${sb.name}" saved as an NPC in your notebook.` }]);
+  };
   // save from the setup card: targetId updates that party, null remembers a new one
   const savePartyRoster = (roster, targetId = null) => {
     const id = targetId ?? newUid();
@@ -9499,6 +9529,19 @@ export default function App() {
       const bag = c.loot || [];
       if (JSON.stringify(stored) !== JSON.stringify(bag)) persistMember(c.memberId, { loot: bag });
     });
+  }, [state.combatants]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Persist a board NPC's bag back onto its notebook entry, so items it picks up survive the session.
+  useEffect(() => {
+    const p = (partiesRef.current || []).find((x) => x.id === activePartyId);
+    const nb = p?.notebook; if (!nb || !Array.isArray(nb.npcs)) return;
+    const byId = {}; nb.npcs.forEach((n) => { byId[n.id] = n; });
+    let changed = false, npcs = nb.npcs;
+    state.combatants.forEach((c) => {
+      if (!c.npcId || !byId[c.npcId]) return;
+      const bag = c.loot || [];
+      if (JSON.stringify(byId[c.npcId].loot || []) !== JSON.stringify(bag)) { changed = true; npcs = npcs.map((n) => (n.id === c.npcId ? { ...n, loot: bag } : n)); }
+    });
+    if (changed) saveNotebook({ ...nb, npcs });
   }, [state.combatants]); // eslint-disable-line react-hooks/exhaustive-deps
   const undoRef = useRef([]);
   const [undoN, setUndoN] = useState(0);
@@ -10494,11 +10537,23 @@ export default function App() {
       mutate((d, L, T) => {
         const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
         c.npc = true; c.npcId = npc.id;
+        if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
         d.combatants.push(c);
         const word = side === "ally" ? " as an ally" : side === "enemy" ? " as an enemy" : " (neutral)";
         L.push(`Added NPC <b>${c.name}</b>${word}.`);
         T.push({ kind: "good", text: `${c.name} added to the board.` });
       });
+    },
+    // Save a monster already on the board as a reusable notebook NPC (keeps its full statblock).
+    saveCombatantAsNpc: (uid) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid);
+      if (!c || c.type !== "monster") return;
+      saveMonsterAsNpc(statblockFromCombatant(c));
+    },
+    // Jump from a board NPC to its notebook entry so mid-session notes land somewhere permanent.
+    editNpcInNotebook: (uid) => {
+      const c = stateRef.current.combatants.find((x) => x.uid === uid);
+      if (c?.npcId) setModal({ type: "notebook", editNpcId: c.npcId });
     },
     equipItem: (uid, idx) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
@@ -11741,6 +11796,7 @@ export default function App() {
           onImport={(arr) => upsertBestiary(arr)}
           onEdit={(b) => setModal({ type: "custom", edit: b })}
           onClone={(b) => setModal({ type: "custom", from: b })}
+          onSaveAsNpc={(sb) => saveMonsterAsNpc(sb)}
           expanded={expandedOn} expandedReady={expReady} onToggleExpanded={setExpandedOn}
           onClose={() => setModal(null)} />
       )}
@@ -11997,7 +12053,7 @@ export default function App() {
         <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
       )}
       {modal?.type === "notebook" && (
-        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)} onClose={() => setModal(null)} />
+        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)} editNpcId={modal.editNpcId} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
