@@ -273,6 +273,14 @@ input[type=number]{width:64px}
 .dgn-texbtn{width:40px;height:40px;padding:0;border:1px solid var(--line2);border-radius:8px;overflow:hidden;cursor:pointer;background:none;line-height:0}
 .dgn-texbtn.on{border-color:var(--gold)}
 .dgn-texbtn svg{display:block}
+.dgn-texgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 4px;margin-top:2px}
+.dgn-texcell{display:flex;flex-direction:column;align-items:center;gap:3px}
+.dgn-texcell .dgn-texbtn{width:100%;height:auto;aspect-ratio:1}
+.dgn-texcell .dgn-texbtn svg{width:100%;height:100%}
+.dgn-texname{font-size:10px;line-height:1.15;text-align:center;color:var(--faint);word-break:break-word}
+.dgn-texcell.on .dgn-texname{color:var(--gold)}
+.dgn-collapse{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0;margin:12px 0 4px;cursor:pointer;text-align:left}
+.dgn-secsum{font-size:12px;color:var(--faint);font-weight:400;margin-left:auto}
 .dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
 .dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
@@ -7180,6 +7188,9 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
   const [monQ, setMonQ] = useState(null); // non-null = add-monster search open; holds the query
   const [lootQ, setLootQ] = useState(null); // non-null = add-item search open; holds the query
   const [lootCustom, setLootCustom] = useState("");
+  const [openSec, setOpenSec] = useState({}); // which collapsible appearance pickers are expanded (start collapsed)
+  const toggleSec = (k) => setOpenSec((o) => ({ ...o, [k]: !o[k] }));
+  const labelOf = (list, id, dflt) => (list.find(([v]) => v === (id || dflt)) || list[0])[1];
   const set = (patch) => onChange({ ...room, ...patch });
   const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
   const n = room.notes || {};
@@ -7286,33 +7297,51 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
           </div>
-          <span className="dgn-flabel">Texture <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— layered over the colour</span></span>
           <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><TextureDefs /></defs></svg>
-          <div className="dgn-texpick">
-            {DGN_TEXTURES.map(([id, label]) => (
-              <button key={id} className={`dgn-texbtn ${(room.texture || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ texture: id })}>
-                <svg width="38" height="38" viewBox="0 0 38 38">
-                  <rect width="38" height="38" fill={room.color || DGN_COLORS[0]} />
-                  {id !== "none"
-                    ? <rect width="38" height="38" fill={`url(#tex-${id})`} />
-                    : <line x1="5" y1="33" x2="33" y2="5" stroke="rgba(255,255,255,.3)" strokeWidth="1.5" />}
-                </svg>
-              </button>
-            ))}
-          </div>
-          <span className="dgn-flabel">Feature <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— a prop in the room's centre</span></span>
-          <div className="dgn-texpick">
-            {DGN_FEATURES.map(([id, label]) => (
-              <button key={id} className={`dgn-texbtn ${(room.feature || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ feature: id })}>
-                <svg width="38" height="38" viewBox="-46 -46 92 92">
-                  <rect x="-46" y="-46" width="92" height="92" fill="#20222b" />
-                  {id !== "none"
-                    ? <RoomFeature room={{ feature: id }} cx={0} cy={0} />
-                    : <line x1="-30" y1="30" x2="30" y2="-30" stroke="rgba(255,255,255,.3)" strokeWidth="4" />}
-                </svg>
-              </button>
-            ))}
-          </div>
+          <button className="dgn-collapse" onClick={() => toggleSec("tex")}>
+            <span className="dgn-fold">{openSec.tex ? "▾" : "▸"}</span>
+            <span className="dgn-flabel" style={{ margin: 0 }}>Texture</span>
+            <span className="dgn-secsum">{openSec.tex ? "layered over the colour" : labelOf(DGN_TEXTURES, room.texture, "none")}</span>
+          </button>
+          {openSec.tex && (
+            <div className="dgn-texgrid">
+              {DGN_TEXTURES.map(([id, label]) => (
+                <div key={id} className={`dgn-texcell ${(room.texture || "none") === id ? "on" : ""}`}>
+                  <button className={`dgn-texbtn ${(room.texture || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ texture: id })}>
+                    <svg width="38" height="38" viewBox="0 0 38 38">
+                      <rect width="38" height="38" fill={room.color || DGN_COLORS[0]} />
+                      {id !== "none"
+                        ? <rect width="38" height="38" fill={`url(#tex-${id})`} />
+                        : <line x1="5" y1="33" x2="33" y2="5" stroke="rgba(255,255,255,.3)" strokeWidth="1.5" />}
+                    </svg>
+                  </button>
+                  <span className="dgn-texname">{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="dgn-collapse" onClick={() => toggleSec("feat")}>
+            <span className="dgn-fold">{openSec.feat ? "▾" : "▸"}</span>
+            <span className="dgn-flabel" style={{ margin: 0 }}>Feature</span>
+            <span className="dgn-secsum">{openSec.feat ? "a prop in the room's centre" : labelOf(DGN_FEATURES, room.feature, "none")}</span>
+          </button>
+          {openSec.feat && (
+            <div className="dgn-texgrid">
+              {DGN_FEATURES.map(([id, label]) => (
+                <div key={id} className={`dgn-texcell ${(room.feature || "none") === id ? "on" : ""}`}>
+                  <button className={`dgn-texbtn ${(room.feature || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ feature: id })}>
+                    <svg width="38" height="38" viewBox="-46 -46 92 92">
+                      <rect x="-46" y="-46" width="92" height="92" fill="#20222b" />
+                      {id !== "none"
+                        ? <RoomFeature room={{ feature: id }} cx={0} cy={0} />
+                        : <line x1="-30" y1="30" x2="30" y2="-30" stroke="rgba(255,255,255,.3)" strokeWidth="4" />}
+                    </svg>
+                  </button>
+                  <span className="dgn-texname">{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           <span className="dgn-flabel">Doors <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap a hex edge to add a doorway</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "#14151c", borderRadius: 10 }}>
