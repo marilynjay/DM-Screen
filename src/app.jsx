@@ -7798,7 +7798,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], customMonsters, customItems
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUpdateRoom, onLoadLevel, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUpdateRoom, onLoadLevel, backName, onBack, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -7876,6 +7876,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
   return (
     <div className="dgn-dock">
       <div className="dgn-dock-hd">
+        {onBack && <button className="btn small ghost" title={`Back up to ${backName || "the previous level"}`} onClick={onBack}>◀ Up</button>}
         <span className="nm">🗺 {dungeon.name?.trim() || "Dungeon"}</span>
         <button className="btn small ghost" title="Edit this dungeon in the builder" onClick={onEdit}>✎ Edit</button>
         <button className="btn small ghost" onClick={() => setCollapsed(!collapsed)}>{collapsed ? "▼ Show map" : "▲ Hide map"}</button>
@@ -8181,6 +8182,18 @@ export default function App() {
   const saveDungeons = (list) => { setDungeonsState(list); stSet("dm5e:dungeons", list); };
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
+  const [dungeonNav, setDungeonNav] = useState([]); // stack of dungeon ids we descended FROM, for going back up a level
+  // load a dungeon fresh into the play panel (Play button / Load FAB) — resets the level-back history
+  const playDungeon = (id) => { setDungeonNav([]); setDungeonPlayId(id); };
+  // follow a level-exit link: remember the level we're leaving so we can climb back
+  const descendToLevel = (id) => { if (!dungeons.find((d) => d.id === id)) return; setDungeonNav((s) => [...s, dungeonPlayId]); setDungeonPlayId(id); };
+  // climb back to the most recent still-existing level we came from
+  const ascendLevel = () => {
+    const ns = [...dungeonNav]; let prev;
+    while (ns.length) { const c = ns.pop(); if (c && dungeons.find((d) => d.id === c)) { prev = c; break; } }
+    setDungeonNav(ns);
+    if (prev) setDungeonPlayId(prev);
+  };
   const [dgnDelId, setDgnDelId] = useState(null); // dungeon pending a delete confirmation, or null
   const savePartiesAll = (list, activeId) => {
     setPartiesState(list); stSet("dm5e:parties", list);
@@ -10141,7 +10154,10 @@ export default function App() {
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
             onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
-            onLoadLevel={(id) => { if (dungeons.find((d) => d.id === id)) setDungeonPlayId(id); }} onClose={() => setDungeonPlayId(null)} />
+            onLoadLevel={descendToLevel}
+            backName={dungeonNav.length ? ((dungeons.find((d) => d.id === dungeonNav[dungeonNav.length - 1]) || {}).name || "").trim() || "the level above" : null}
+            onBack={dungeonNav.length ? ascendLevel : null}
+            onClose={() => { setDungeonNav([]); setDungeonPlayId(null); }} />
         )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
@@ -10504,7 +10520,7 @@ export default function App() {
                 <div key={d.id} className="gs-row" style={{ alignItems: "center" }}>
                   <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
                   <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
-                  {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { setDungeonPlayId(d.id); setModal(null); }}>▶ Play</button>}
+                  {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { playDungeon(d.id); setModal(null); }}>▶ Play</button>}
                   <button className="btn small" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>Edit</button>
                   <button className="btn small danger" title="Delete this dungeon" onClick={() => setDgnDelId(d.id)}>✕</button>
                 </div>
