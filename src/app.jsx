@@ -2157,18 +2157,33 @@ function tickConditionsAtTurnEnd(c, logs) {
   });
 }
 
+// A creature surprised (2014 rules) loses its entire first turn. Outside Old School Mode
+// we skip its turn automatically; in Old School Mode the DM lands on it (a banner shows) and
+// ends the turn by hand. Only ever applies in round 1.
+const surpriseAutoSkip = (c, state) => !!c.surprised && state.round === 1 && !OLDSCHOOL.on;
+function clearSurprise(c, logs) { c.surprised = false; c.reaction = true; if (logs) logs.push(`😴 <b>${c.name}</b>'s surprised turn passes.`); }
+
 function advanceTurn(state, logs, toasts, dir = 1) {
   const order = sortOrder(state.combatants);
   if (order.length === 0) return;
   let idx = order.findIndex((c) => c.uid === state.activeUid);
   if (idx === -1) idx = 0;
-  if (dir === 1) tickConditionsAtTurnEnd(order[idx], logs);
+  if (dir === 1) {
+    tickConditionsAtTurnEnd(order[idx], logs);
+    if (order[idx] && order[idx].surprised && state.round === 1) clearSurprise(order[idx], logs); // Old School: the landed-on surprised turn has now passed
+  }
   for (let hop = 0; hop < order.length + 1; hop++) {
     idx += dir;
-    if (idx >= order.length) { idx = 0; if (dir === 1) { state.round += 1; logs.push(`— <b>Round ${state.round}</b> —`); } }
+    if (idx >= order.length) { idx = 0; if (dir === 1) { state.round += 1; logs.push(`— <b>Round ${state.round}</b> —`); if (state.round >= 2) order.forEach((x) => { if (x.surprised) clearSurprise(x); }); } }
     if (idx < 0) { idx = order.length - 1; state.round = Math.max(1, state.round - 1); }
     const c = order[idx];
     if (c.dead || c.type === "object") continue;
+    if (dir === 1 && surpriseAutoSkip(c, state)) { // surprised (2014) — loses its first turn
+      logs.push(`😴 <b>${c.name}</b> is surprised — loses its first turn.`);
+      toasts.push({ kind: "bad", text: `${c.name} is surprised — skips its first turn.` });
+      clearSurprise(c);
+      continue;
+    }
     state.activeUid = c.uid;
     if (dir === 1) {
       onTurnStart(c, state, logs, toasts);
@@ -5483,9 +5498,14 @@ function RestModal({ combatants, onAccept, onClose }) {
   );
 }
 
-function RollInitModal({ list, onStart, onClose }) {
+function RollInitModal({ list, full, edition, onStart, onClose }) {
   const [vals, setVals] = useState(() => Object.fromEntries(list.map((c) => [c.uid, ""])));
+  const [showSurprise, setShowSurprise] = useState(false);
+  const [surprised, setSurprised] = useState(() => new Set());
+  const roster = full || list;
+  const is2014 = edition === "2014";
   const ready = list.every((c) => String(vals[c.uid]).trim() !== "");
+  const toggle = (uid) => setSurprised((s) => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -5493,14 +5513,31 @@ function RollInitModal({ list, onStart, onClose }) {
         <div className="trait" style={{ marginBottom: 8 }}>Enter everyone's initiative as they call it out, then start.</div>
         {list.map((c, i) => (
           <div className="frow" key={c.uid}>
-            <label style={{ minWidth: 120 }}>{c.name}</label>
+            <label style={{ minWidth: 120 }}>{c.name}{surprised.has(c.uid) && !is2014 ? <span style={{ color: "var(--gold)", fontSize: 11 }}> · roll w/ disadv.</span> : null}</label>
             <input type="number" autoFocus={i === 0} value={vals[c.uid]}
               onChange={(e) => setVals({ ...vals, [c.uid]: e.target.value })} />
           </div>
         ))}
-        <div className="frow" style={{ justifyContent: "flex-end" }}>
+        {showSurprise && (
+          <div style={{ marginTop: 10, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 2 }}>😴 Who was surprised?</div>
+            <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginBottom: 6 }}>
+              {is2014
+                ? "2014 rules: a surprised creature loses its entire first turn and can't take reactions until then."
+                : "2024 rules: a surprised creature rolls initiative with disadvantage — monsters are re-rolled automatically; roll surprised heroes' dice with disadvantage."}
+            </div>
+            {roster.map((c) => (
+              <label key={c.uid} className="frow" style={{ gap: 8, margin: "2px 0", cursor: "pointer" }}>
+                <input type="checkbox" checked={surprised.has(c.uid)} onChange={() => toggle(c.uid)} />
+                <span>{c.name}<span style={{ color: "var(--faint)", fontSize: 11 }}> · {c.type === "player" ? "hero" : c.side === "ally" ? "ally" : "monster"}</span></span>
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="frow" style={{ justifyContent: "flex-end", alignItems: "center" }}>
+          <button className="btn small ghost" style={{ marginRight: "auto" }} onClick={() => setShowSurprise((v) => !v)} title="Mark any creatures caught off guard — handled per the active rules edition.">😴 Surprise{surprised.size ? ` (${surprised.size})` : ""}{showSurprise ? " ▲" : " ▾"}</button>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!ready} onClick={() => onStart(vals)}>Start combat</button>
+          <button className="btn primary" disabled={!ready} onClick={() => onStart(vals, [...surprised])}>Start combat</button>
         </div>
       </div>
     </div>
@@ -9867,8 +9904,19 @@ export default function App() {
   const reallyStart = () => mutate((d, L, T) => {
     if (d.combatants.length === 0) return;
     d.mode = "combat"; d.round = 1;
-    const first = sortOrder(d.combatants).find((c) => !c.dead && c.type !== "object");
-    if (first) { d.activeUid = first.uid; L.push(`— <b>Combat begins! Round 1</b> —`); onTurnStart(first, d, L, T); playBurnFx(d); L.push(`▶ <b>${first.name}</b>'s turn.`); }
+    const ordered = sortOrder(d.combatants).filter((c) => !c.dead && c.type !== "object");
+    let fi = 0;
+    // surprised creatures (2014, non-Old-School) at the top of the order lose their first turn
+    while (fi < ordered.length && surpriseAutoSkip(ordered[fi], d)) {
+      const s = ordered[fi];
+      L.push(`😴 <b>${s.name}</b> is surprised — loses its first turn.`);
+      T.push({ kind: "bad", text: `${s.name} is surprised — skips its first turn.` });
+      clearSurprise(s);
+      fi++;
+    }
+    if (fi >= ordered.length && ordered.length) { d.round = 2; fi = 0; L.push(`— <b>Everyone was surprised — Round 1 skipped.</b> —`); } // pathological: all surprised
+    const first = ordered[fi];
+    if (first) { d.activeUid = first.uid; L.push(`— <b>Combat begins! Round ${d.round}</b> —`); onTurnStart(first, d, L, T); playBurnFx(d); L.push(`▶ <b>${first.name}</b>'s turn.`); }
     // remember the start-of-combat state so "Reset combat" can rewind to it (cleared when combat ends)
     d.startSnap = { combatants: structuredClone(d.combatants), activeUid: d.activeUid, round: d.round };
   });
@@ -9925,7 +9973,7 @@ export default function App() {
       const kept = d.combatants.filter((c) => c.side === "ally" && c.type !== "effect");
       kept.forEach((c) => {
         c.init = null; c.initText = null; c.tb = 0; c.conditions = []; c.concentration = null;
-        c.reaction = true; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
+        c.reaction = true; c.surprised = false; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
       });
       d.combatants = kept;
       d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null;
@@ -10631,6 +10679,9 @@ export default function App() {
 
         {state.mode === "combat" && active && (
           <div ref={activeCardRef} className="activecard-anchor">
+            {active.surprised && state.round === 1 && (
+              <div className="reminder" style={{ marginBottom: 8 }}>😴 <b>{active.name} is surprised</b> — it loses this turn and can't act or take reactions. Tap <b>End turn</b> to pass.</div>
+            )}
             {oldSchool && active.type === "player" ? (
               <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3></div>
             ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} />
@@ -10889,13 +10940,33 @@ export default function App() {
       )}
       {modal?.type === "roll-init" && (
         <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (oldSchool || c.type === "player"))}
+          full={state.combatants.filter((c) => !c.dead && c.type !== "effect" && c.type !== "object")}
+          edition={edition}
           onClose={() => setModal(null)}
-          onStart={(vals) => {
+          onStart={(vals, surprisedUids) => {
             setModal(null);
-            mutate((d, L) => {
+            mutate((d, L, T) => {
               Object.entries(vals).forEach(([uid, v]) => {
                 const c = d.combatants.find((x) => x.uid === uid);
                 if (c) { c.init = parseInt(v, 10) || 0; L.push(`<b>${c.name}</b> initiative: ${c.init}`); }
+              });
+              (surprisedUids || []).forEach((uid) => {
+                const c = d.combatants.find((x) => x.uid === uid);
+                if (!c) return;
+                if (EDITION.v === "2014") {
+                  // 2014: a surprised creature loses its whole first turn and can't react until then
+                  c.surprised = true; c.reaction = false;
+                  L.push(`😴 <b>${c.name}</b> is surprised — will lose its first turn.`);
+                } else if (c.type === "monster" && !oldSchool) {
+                  // 2024: initiative with disadvantage. Re-roll the ones the app rolls (monsters) —
+                  // but not in Old School Mode, where the DM hand-enters every initiative.
+                  const r = d20(c.mods?.dex ?? 0, "dis");
+                  c.init = r.total; c.initText = `Initiative ${r.text}`;
+                  L.push(`😴 <b>${c.name}</b> is surprised — initiative re-rolled with disadvantage: ${r.text}`);
+                } else {
+                  // 2024 player/ally (or any hand-entered init in Old School): they roll their own die
+                  L.push(`😴 <b>${c.name}</b> is surprised — roll its initiative with disadvantage.`);
+                }
               });
             });
             setModal({ type: "init-ties-check" });
