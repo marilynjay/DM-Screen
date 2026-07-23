@@ -7311,6 +7311,15 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
             <span style={{ fontFamily: "var(--disp)", fontWeight: 700, color: "var(--gold)", fontSize: 15 }}>Cave edges</span>
             <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— rough, organic outline on any shape</span>
           </label>
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors</span></span>
+          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
+            <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
+              <defs><TextureDefs /></defs>
+              <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
+              <RoomFeature room={room} cx={0} cy={0} />
+              <RoomDoors room={room} cx={0} cy={0} />
+            </svg>
+          </div>
           <span className="dgn-flabel">Background Colour</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
@@ -7376,15 +7385,6 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
                   </g>
                 );
               })}
-            </svg>
-          </div>
-          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors</span></span>
-          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
-            <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
-              <defs><TextureDefs /></defs>
-              <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
-              <RoomFeature room={room} cx={0} cy={0} />
-              <RoomDoors room={room} cx={0} cy={0} />
             </svg>
           </div>
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
