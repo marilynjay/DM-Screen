@@ -6129,6 +6129,7 @@ function DMNotebookModal({ party, onSave, onClose }) {
   const [q, setQ] = useState(""); // NPC search
   const [locFilter, setLocFilter] = useState(""); // "" = all, id, or "__unfiled"
   const [newLoc, setNewLoc] = useState(null); // inline location creation from the NPC editor: {name, parent}
+  const [confirm, setConfirm] = useState(null); // pending delete confirmation: { text, onYes }
   const nb = (party && party.notebook) || {};
   const get = (k) => (Array.isArray(nb[k]) ? nb[k] : []);
   const npcs = get("npcs"), locations = get("locations");
@@ -6185,7 +6186,7 @@ function DMNotebookModal({ party, onSave, onClose }) {
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
           <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}</span>
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
-          <button className="btn small ghost warn" title="Delete" onClick={() => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id))}>✕</button>
+          <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
         </div>
         {isOpen && readSecs(secs)}
       </div>
@@ -6203,7 +6204,10 @@ function DMNotebookModal({ party, onSave, onClose }) {
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [loc.id]: !isOpen })} disabled={!hasDetail}>{!hasDetail ? "•" : isOpen ? "▾" : "▸"}</button>
           <span style={{ flex: 1, minWidth: 0 }}>{isChild && <span style={{ color: "var(--faint)" }}>› </span>}<b>{loc.name}</b>{loc.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {loc.tag}</span>}{roster.length > 0 && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {roster.length} 👤</span>}</span>
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(loc, "locations")}>✎</button>
-          <button className="btn small ghost warn" title="Delete" onClick={() => deleteLocation(loc.id)}>✕</button>
+          <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({
+            text: `Delete “${loc.name}”?${childrenOf(loc.id).length ? ` Its ${childrenOf(loc.id).length} building${childrenOf(loc.id).length === 1 ? "" : "s"} move up to top-level.` : ""}${roster.length ? ` ${roster.length} NPC${roster.length === 1 ? "" : "s"} placed here become Unfiled.` : ""} This can't be undone.`,
+            onYes: () => deleteLocation(loc.id),
+          })}>✕</button>
         </div>
         {isOpen && (<>
           {readSecs(secs)}
@@ -6242,6 +6246,7 @@ function DMNotebookModal({ party, onSave, onClose }) {
   const label = NB_TABS.find(([k]) => k === tab)[1];
 
   return (
+    <>
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modalhd"><h3>📓 DM Notebook{party?.name ? ` — ${party.name}` : ""}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
@@ -6341,6 +6346,11 @@ function DMNotebookModal({ party, onSave, onClose }) {
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
       </div>
     </div>
+    {confirm && (
+      <ConfirmModal text={confirm.text} confirmLabel="Delete"
+        onYes={() => { confirm.onYes(); setConfirm(null); }} onClose={() => setConfirm(null)} />
+    )}
+    </>
   );
 }
 
