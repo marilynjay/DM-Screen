@@ -7278,8 +7278,9 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
   const [collapsed, setCollapsed] = useState(false);
-  const [ran, setRan] = useState(null);      // key of a room just run, for a brief confirmation
+  const [ran, setRan] = useState(null);      // room whose encounter was added during THIS selection (guards double-adds)
   const [openF, setOpenF] = useState({});    // which note fields are expanded in the room panel
+  useEffect(() => { setRan(null); }, [sel]); // each time a room is (re)selected, allow one add again
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
   const drag = useRef(null);
@@ -7372,10 +7373,12 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
                       {encGroup && <span className="dgn-enc-mon">📦 {encGroup}</span>}
                     </div>
                     <div className="frow" style={{ marginBottom: 0 }}>
-                      <button className="btn small primary" disabled={inCombat} onClick={() => { onRun(room); setRan(sel); }}>⚔ Run encounter</button>
+                      <button className="btn small primary" disabled={inCombat || ran === sel} onClick={() => { onRun(room); setRan(sel); }}>
+                        {ran === sel ? "✓ Added to roster" : "＋ Add to roster"}
+                      </button>
                       {inCombat ? <span className="ad" style={{ fontSize: 11 }}>finish the current fight first</span>
-                        : ran === sel ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)" }}>✓ added — press Start combat above</span>
-                        : <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>drops these into the roster</span>}
+                        : ran === sel ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)" }}>on the roster — re-tap the room to add again</span>
+                        : <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>drops these into the roster; you press Start</span>}
                     </div>
                   </>
                 ) : <div className="trait" style={{ fontSize: 12, margin: "4px 0 0" }}>No encounter in this room.</div>}
