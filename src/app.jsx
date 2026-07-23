@@ -6878,7 +6878,6 @@ function TextureDefs() {
       <filter id="f-dirt" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>
       <filter id="f-mud" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>
       <filter id="f-mist" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>
-      <filter id="f-cave" x="-35%" y="-35%" width="170%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="7" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="15" xChannelSelector="R" yChannelSelector="G" /></filter>
       <pattern id="tex-stone" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-stone)" /></pattern>
       <pattern id="tex-marble" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-marble)" /></pattern>
       <pattern id="tex-dirt" width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter="url(#f-dirt)" /></pattern>
@@ -6912,6 +6911,10 @@ function RoomShape({ room, cx, cy, hexKey }) {
   const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}` : null;
   // Clip corridor shapes to their hex cell; all corridor rotations are 60° multiples (hex is invariant).
   const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
+  // Each cave room gets its own turbulence seed so no two rough outlines look alike; the filter is
+  // rendered inline per room (unique id) rather than shared, and the seed persists on the room.
+  const caveId = `dgncave-${String(hexKey).replace(/[^\w-]/g, "_")}`;
+  const caveSeed = Number.isFinite(room.caveSeed) ? room.caveSeed : 7;
   const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
   const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
   // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
@@ -6972,8 +6975,15 @@ function RoomShape({ room, cx, cy, hexKey }) {
   return (
     <>
       {needClip && <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>}
-      {/* the cave treatment displaces the whole room outline with turbulence for an organic, rough-hewn edge */}
-      <g filter={room.cave ? "url(#f-cave)" : undefined}>
+      {/* the cave treatment displaces the whole room outline with turbulence for an organic, rough-hewn
+          edge — a per-room seed keeps each cavern's roughness unique */}
+      {room.cave && (
+        <filter id={caveId} x="-35%" y="-35%" width="170%" height="170%">
+          <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed={caveSeed} result="n" />
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="15" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      )}
+      <g filter={room.cave ? `url(#${caveId})` : undefined}>
         {draw(col, stroke)}
         {texId && draw(`url(#${texId})`, "none")}
       </g>
@@ -7307,7 +7317,7 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
             </div>
           )}
           <label className="dgn-cave" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={!!room.cave} onChange={(e) => set({ cave: e.target.checked })} />
+            <input type="checkbox" checked={!!room.cave} onChange={(e) => set(e.target.checked ? { cave: true, caveSeed: Number.isFinite(room.caveSeed) ? room.caveSeed : Math.floor(Math.random() * 90) + 1 } : { cave: false })} />
             <span style={{ fontFamily: "var(--disp)", fontWeight: 700, color: "var(--gold)", fontSize: 15 }}>Cave edges</span>
             <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— rough, organic outline on any shape</span>
           </label>
