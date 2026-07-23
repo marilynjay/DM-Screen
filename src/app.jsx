@@ -4766,7 +4766,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
   );
 }
 
-function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSaveGroup, onAddGroup, onDeleteGroup, onExportAll, onImportAll, onClose }) {
+function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete, onSaveGroup, onAddGroup, onDeleteGroup, onExportAll, onImportAll, onClose }) {
   const [slots, setSlots] = useState(null);
   const [groups, setGroups] = useState(null);
   const [name, setName] = useState("");
@@ -4816,27 +4816,41 @@ function SlotsModal({ hasEnemies, initialShowBk, onSave, onLoad, onDelete, onSav
           <button className="btn small" disabled={!name.trim() || !hasEnemies} title={hasEnemies ? "Save just the enemy monsters, for reuse in later rooms" : "No enemy monsters to save"}
             onClick={async () => { await onSaveGroup(clean()); refresh(); setName(""); }}>Save monsters as group</button>
         </div>
-
-        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "10px 0 4px", letterSpacing: ".1em", textTransform: "uppercase" }}>Encounters (full snapshot)</div>
-        {slots === null && <div className="trait">Loading…</div>}
-        {slots && slots.length === 0 && <div className="trait">Nothing saved yet.</div>}
-        {slots && slots.map((s) => (
-          <div className="targetline" key={s}>
-            <span style={{ flex: 1 }}>{s.replace(/_/g, " ")}</span>
-            <button className="btn small" title="Replaces everything on screen" onClick={() => onLoad(s)}>Load</button>
-            <button className="btn small danger" onClick={async () => { await onDelete(s); refresh(); }}>✕</button>
+        {focus === "groups" && (
+          <div className="trait" style={{ marginTop: 6, color: "var(--gold)" }}>
+            💡 To save a monster group: add the enemies you want on screen, type a name above, then tap <b>Save monsters as group</b>. Saved groups can be dropped into any combat below (or referenced from a dungeon room).
           </div>
-        ))}
-
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "12px 0 4px", letterSpacing: ".1em", textTransform: "uppercase" }}>Monster groups (merge into current)</div>
-        {groups && groups.length === 0 && <div className="trait">No groups yet — prep a room's monsters, then save them as a group.</div>}
-        {groups && groups.map((s) => (
-          <div className="targetline" key={s}>
-            <span style={{ flex: 1 }}>{s.replace(/_/g, " ")}</span>
-            <button className="btn small primary" title="Adds these monsters to the current roster with fresh initiative" onClick={() => onAddGroup(s)}>Add to current</button>
-            <button className="btn small danger" onClick={async () => { await onDeleteGroup(s); refresh(); }}>✕</button>
-          </div>
-        ))}
+        )}
+        {(() => {
+          const slotsSection = (
+            <div key="slots">
+              <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "12px 0 4px", letterSpacing: ".1em", textTransform: "uppercase" }}>Encounters (full snapshot)</div>
+              {slots === null && <div className="trait">Loading…</div>}
+              {slots && slots.length === 0 && <div className="trait">Nothing saved yet.</div>}
+              {slots && slots.map((s) => (
+                <div className="targetline" key={s}>
+                  <span style={{ flex: 1 }}>{s.replace(/_/g, " ")}</span>
+                  <button className="btn small" title="Replaces everything on screen" onClick={() => onLoad(s)}>Load</button>
+                  <button className="btn small danger" onClick={async () => { await onDelete(s); refresh(); }}>✕</button>
+                </div>
+              ))}
+            </div>
+          );
+          const groupsSection = (
+            <div key="groups">
+              <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "12px 0 4px", letterSpacing: ".1em", textTransform: "uppercase" }}>Monster groups (merge into current)</div>
+              {groups && groups.length === 0 && <div className="trait">No groups yet — add the enemies you want on screen, then tap “Save monsters as group” above.</div>}
+              {groups && groups.map((s) => (
+                <div className="targetline" key={s}>
+                  <span style={{ flex: 1 }}>{s.replace(/_/g, " ")}</span>
+                  <button className="btn small primary" title="Adds these monsters to the current roster with fresh initiative" onClick={() => onAddGroup(s)}>Add to current</button>
+                  <button className="btn small danger" onClick={async () => { await onDeleteGroup(s); refresh(); }}>✕</button>
+                </div>
+              ))}
+            </div>
+          );
+          return focus === "groups" ? [groupsSection, slotsSection] : [slotsSection, groupsSection];
+        })()}
         <div className="trait" style={{ marginTop: 8, color: "var(--faint)" }}>
           Groups drop monsters on top of whatever's on screen — your surviving party included. Perfect for room-to-room dungeon crawls.
         </div>
@@ -9242,6 +9256,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
               <button onClick={() => setModal({ type: "player" })}>Player / ally…</button>
               <button onClick={() => setModal({ type: "suggest-enc" })}>🎲 Suggest encounter…</button>
+              <button onClick={() => setModal({ type: "slots", focus: "groups" })}>📦 Monster groups (save / add)…</button>
               <button onClick={addEffectPrompt}>Effect / lair actions…</button>
               <button onClick={() => setModal({ type: "object-prompt" })}>Object (pillar, door…)…</button>
               <button onClick={() => setModal({ type: "playtest" })} style={{ color: "var(--fx)" }}>🧪 Playtest encounters…</button>
@@ -9470,7 +9485,7 @@ export default function App() {
       )}
       {modal?.type === "slots" && (
         <SlotsModal hasEnemies={state.combatants.some((c) => c.type === "monster" && c.side === "enemy")}
-          initialShowBk={!!modal.showBackup}
+          initialShowBk={!!modal.showBackup} focus={modal.focus}
           onSave={saveSlot} onLoad={loadSlot} onDelete={deleteSlot}
           onSaveGroup={saveGroup} onAddGroup={addGroup} onDeleteGroup={deleteGroup}
           onExportAll={exportAll} onImportAll={importAll}
