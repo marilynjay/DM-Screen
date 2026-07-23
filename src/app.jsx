@@ -250,6 +250,9 @@ input[type=number]{width:64px}
 .dgn-ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dgn-ehead h3{margin:0}
 .dgn-xclose{background:none;border:none;color:var(--faint);font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
+.dgn-iconpick{display:flex;flex-wrap:wrap;gap:5px}
+.dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
+.dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 .turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -6761,6 +6764,10 @@ const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
+// At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
+const ROOM_ICONS = ["😈", "📜", "⭐️", "💰", "🙂", "💥", "🧨", "🍖", "💦", "🌿", "🔥", "🍄", "🪦", "💀", "🚪", "🗝️", "⚔️", "🔮", "🧪", "👑", "🕸️", "🗿", "🕳️", "💎"];
+const ROOM_ICON_MAX = 3; // how many icons a single hex may show
+const DNAME_MAX = 12;     // display-name character cap (must stay legible on a hex)
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
 const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) => {
@@ -6839,6 +6846,30 @@ function RoomShape({ room, cx, cy, hexKey }) {
   return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
 }
 
+// The at-a-glance overlay drawn on a hex: its icons (a row) and its short display name. Rendered
+// only when zoomed in enough to be legible (the builder gates this on zoom). Never eats clicks.
+function RoomLabel({ room, cx, cy }) {
+  const s = HEX_SIZE;
+  const icons = Array.isArray(room.icons) ? room.icons : [];
+  const dname = (room.dname || "").trim();
+  if (!icons.length && !dname) return null;
+  const iconSize = s * 0.4;
+  const nameSize = Math.min(s * 0.32, (s * 1.5) / (Math.max(dname.length, 5) * 0.58)); // shrink to fit the hex width
+  const iconY = dname ? cy - s * 0.16 : cy;
+  const nameY = icons.length ? cy + s * 0.34 : cy;
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {icons.length > 0 && (
+        <text x={cx} y={iconY} textAnchor="middle" dominantBaseline="central" fontSize={iconSize}>{icons.join(" ")}</text>
+      )}
+      {dname && (
+        <text x={cx} y={nameY} textAnchor="middle" dominantBaseline="central" fontSize={nameSize} fill="#fff"
+          stroke="rgba(0,0,0,.85)" strokeWidth={nameSize * 0.16} style={{ paintOrder: "stroke", fontFamily: "var(--disp)", fontWeight: 700 }}>{dname}</text>
+      )}
+    </g>
+  );
+}
+
 // A note field is a list of collapsible sections {id, title, body, collapsed}. A plain string
 // (older data, or a simple one-liner) is treated as a single untitled section.
 function asSections(v) {
@@ -6909,6 +6940,11 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         </div>
         <span className="dgn-flabel" style={{ marginTop: 4 }}>Room Name</span>
         <input className="dgn-name" placeholder="Name this room… (optional)" value={room.title || ""} onChange={(e) => set({ title: e.target.value })} />
+        <div className="frow" style={{ alignItems: "baseline", justifyContent: "space-between", marginTop: 12 }}>
+          <span className="dgn-flabel" style={{ margin: 0 }}>Display Name <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shown on the map</span></span>
+          <span style={{ fontSize: 11, color: (room.dname || "").length >= DNAME_MAX ? "var(--gold)" : "var(--faint)" }}>{(room.dname || "").length}/{DNAME_MAX}</span>
+        </div>
+        <input className="dgn-name" style={{ fontSize: 16, marginTop: 2 }} maxLength={DNAME_MAX} placeholder="Short label (optional)…" value={room.dname || ""} onChange={(e) => set({ dname: e.target.value })} />
         <span className="dgn-flabel">Shape</span>
         <div className="pickgrid">
           {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
@@ -6927,6 +6963,17 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         <span className="dgn-flabel">Background Colour</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
+        </div>
+        <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
+        <div className="dgn-iconpick">
+          {ROOM_ICONS.map((e) => {
+            const cur = Array.isArray(room.icons) ? room.icons : [];
+            const on = cur.includes(e), full = cur.length >= ROOM_ICON_MAX;
+            return (
+              <button key={e} className={`dgn-iconbtn ${on ? "on" : ""}`} style={{ opacity: !on && full ? 0.35 : 1 }}
+                onClick={() => { if (on) set({ icons: cur.filter((x) => x !== e) }); else if (cur.length < ROOM_ICON_MAX) set({ icons: [...cur, e] }); }}>{e}</button>
+            );
+          })}
         </div>
         {noteField("desc")}
         {noteField("loot")}
@@ -6968,6 +7015,8 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
     return Math.max(8, ext + 2);
   }, [rooms]);
   const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
+  // icons + display name are only legible when zoomed in; hide them once the map is zoomed out
+  const showLabels = view.z >= 0.8;
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
@@ -6976,11 +7025,12 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
         <g key={key} style={{ cursor: "pointer" }} onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
+          {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
         </g>
       );
     }
     return out;
-  }, [rooms, RANGE]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rooms, RANGE, showLabels]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
   const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
