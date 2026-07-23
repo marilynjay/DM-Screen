@@ -6879,11 +6879,13 @@ function RoomLabel({ room, cx, cy }) {
   const s = HEX_SIZE;
   const icons = Array.isArray(room.icons) ? room.icons : [];
   const dname = (room.dname || "").trim();
-  if (!icons.length && !dname) return null;
+  const enc = hasEnc(room), n = encCount(room);
+  if (!icons.length && !dname && !enc) return null;
   const iconSize = s * 0.4;
   const nameSize = Math.min(s * 0.32, (s * 1.5) / (Math.max(dname.length, 5) * 0.58)); // shrink to fit the hex width
   const iconY = dname ? cy - s * 0.16 : cy;
   const nameY = icons.length ? cy + s * 0.34 : cy;
+  const bx = cx - s * 0.42, by = cy - s * 0.46; // upper-left corner (mirrors the delete ✕ on the right)
   return (
     <g style={{ pointerEvents: "none" }}>
       {icons.length > 0 && (
@@ -6892,6 +6894,12 @@ function RoomLabel({ room, cx, cy }) {
       {dname && (
         <text x={cx} y={nameY} textAnchor="middle" dominantBaseline="central" fontSize={nameSize} fill="#fff"
           stroke="rgba(0,0,0,.85)" strokeWidth={nameSize * 0.16} style={{ paintOrder: "stroke", fontFamily: "var(--disp)", fontWeight: 700 }}>{dname}</text>
+      )}
+      {enc && (
+        <g>
+          <circle cx={bx} cy={by} r={s * 0.22} fill="rgba(90,20,20,.85)" stroke="#e0645a" strokeWidth="1.5" />
+          <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" fontSize={s * 0.24} fill="#fff">⚔{n > 1 ? n : ""}</text>
+        </g>
       )}
     </g>
   );
@@ -6931,6 +6939,17 @@ function SectionsEditor({ value, onChange, rows }) {
   );
 }
 
+// Does this room hold a runnable encounter — an inline monster list and/or a saved-group reference?
+function hasEnc(r) {
+  const e = r && r.enc;
+  return !!(e && ((Array.isArray(e.mons) && e.mons.length) || (e.group && e.group.trim())));
+}
+// Total number of monster bodies a room's encounter drops (for the marker count).
+function encCount(r) {
+  const e = r && r.enc; if (!e) return 0;
+  return (Array.isArray(e.mons) ? e.mons.reduce((n, m) => n + (Number(m.c) || 0), 0) : 0);
+}
+
 // Has the DM put anything into this room worth protecting? A freshly-added, untouched room
 // (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
 function roomTouched(r) {
@@ -6938,16 +6957,30 @@ function roomTouched(r) {
   if (Array.isArray(r.icons) && r.icons.length) return true;
   if (r.shape && r.shape !== "hex") return true;
   if (r.color && r.color !== DGN_COLORS[0]) return true;
+  if (hasEnc(r)) return true;
   const n = r.notes || {};
   return Object.keys(DGN_FIELDS).some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, onChange, onDelete, onClose }) {
+function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelete, onClose }) {
   const [full, setFull] = useState(null); // note key open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
+  const [monQ, setMonQ] = useState(null); // non-null = add-monster search open; holds the query
   const set = (patch) => onChange({ ...room, ...patch });
   const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
   const n = room.notes || {};
+  const enc = room.enc || { mons: [], group: null };
+  const setEnc = (patch) => set({ enc: { mons: enc.mons || [], group: enc.group || null, ...patch } });
+  const addMon = (name) => {
+    const mons = (enc.mons || []).map((m) => ({ ...m }));
+    const ex = mons.find((m) => m.n === name);
+    if (ex) ex.c = (Number(ex.c) || 0) + 1; else mons.push({ n: name, c: 1 });
+    setEnc({ mons });
+  };
+  const bumpMon = (name, d) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, c: Math.max(1, (Number(m.c) || 1) + d) } : m)) });
+  const removeMon = (name) => setEnc({ mons: (enc.mons || []).filter((m) => m.n !== name) });
+  const monMatches = monQ && monQ.trim().length >= 1
+    ? monsterList.filter((m) => m.name.toLowerCase().includes(monQ.trim().toLowerCase())).slice(0, 24) : [];
   if (full) { // one note field, expanded to the whole screen for long paragraphs
     return (
       <div className="dgn-overlay" style={{ zIndex: 90 }}>
@@ -7014,6 +7047,43 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
             );
           })}
         </div>
+        <span className="dgn-flabel">Encounter <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— monsters that live here</span></span>
+        {(enc.mons || []).length === 0 && !enc.group && <div className="trait" style={{ fontSize: 12, marginBottom: 2 }}>No encounter — this room is empty.</div>}
+        {(enc.mons || []).map((m) => (
+          <div key={m.n} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.n}</span>
+            <button className="btn tiny" onClick={() => bumpMon(m.n, -1)} disabled={(Number(m.c) || 1) <= 1}>–</button>
+            <span className="ad" style={{ minWidth: 20, textAlign: "center" }}>× {m.c}</span>
+            <button className="btn tiny" onClick={() => bumpMon(m.n, 1)}>+</button>
+            <button className="btn tiny ghost warn" title="Remove" onClick={() => removeMon(m.n)}>✕</button>
+          </div>
+        ))}
+        {enc.group && (
+          <div className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
+            <span style={{ flex: 1 }}>📦 Saved group: <b>{enc.group}</b></span>
+            <button className="btn tiny ghost warn" title="Remove group reference" onClick={() => setEnc({ group: null })}>✕</button>
+          </div>
+        )}
+        <div className="frow" style={{ marginTop: 4, gap: 6 }}>
+          <button className="btn small ghost" onClick={() => setMonQ(monQ == null ? "" : null)}>{monQ != null ? "Close ▲" : "＋ Add monster…"}</button>
+          {groupNames.length > 0 && (
+            <select value="" onChange={(e) => { if (e.target.value) setEnc({ group: e.target.value }); }} style={{ flex: 1 }}>
+              <option value="">Reference a saved group…</option>
+              {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
+            </select>
+          )}
+        </div>
+        {monQ != null && (
+          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+            <input className="sbook-search" placeholder="Search monsters…" autoFocus value={monQ} onChange={(e) => setMonQ(e.target.value)} />
+            {monQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search the bestiary…</div>
+              : monMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No monsters match “{monQ.trim()}”.</div>
+              : <div className="mlist" style={{ marginTop: 4 }}>{monMatches.map((m) => (
+                  <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addMon(m.name)}>
+                    {m.name}{m.cr != null && m.cr !== "" ? <span className="cr"> CR {m.cr}</span> : null}
+                  </button>))}</div>}
+          </div>
+        )}
         {noteField("desc")}
         {noteField("loot")}
         {noteField("npcs")}
@@ -7030,11 +7100,15 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
   );
 }
 
-function DungeonBuilder({ dungeon, onSave, onClose }) {
+function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
   const [dg, setDg] = useState(dungeon);
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
   const [editKey, setEditKey] = useState(null);
+  // sources for a room's encounter editor: every monster (SRD + custom) and the DM's saved groups
+  const monsterList = useMemo(() => fullBestiary().concat(customMonsters || []), [customMonsters]);
+  const [groupNames, setGroupNames] = useState([]);
+  useEffect(() => { let ok = true; (async () => { try { const ks = await stList("dm5e:group:"); if (ok) setGroupNames(ks.map((k) => k.replace("dm5e:group:", ""))); } catch { /* no groups */ } })(); return () => { ok = false; }; }, []);
   const [view, setView] = useState({ x: 0, y: 0, z: 1 });
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 520 });
@@ -7147,7 +7221,7 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
         </div>
       </div>
       {editKey && rooms[editKey] && (
-        <RoomEditor room={rooms[editKey]}
+        <RoomEditor room={rooms[editKey]} monsterList={monsterList} groupNames={groupNames}
           onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
           onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
           onClose={() => setEditKey(null)} />
@@ -9644,7 +9718,7 @@ export default function App() {
         </div>
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
-        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)}
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} customMonsters={myBestiary}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
