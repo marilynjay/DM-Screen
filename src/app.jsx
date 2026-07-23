@@ -262,6 +262,9 @@ input[type=number]{width:64px}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .loaddgn-fab{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:48;background:var(--panel);border:1px solid var(--line2);color:var(--gold);border-radius:20px;padding:8px 14px;font-size:13px;font-family:var(--disp);letter-spacing:.03em;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
+.dgn-tabs{display:flex;gap:4px;margin:8px 0 10px;border-bottom:1px solid var(--line2)}
+.dgn-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--faint);font-family:var(--disp);font-size:13px;letter-spacing:.02em;padding:8px 4px;cursor:pointer}
+.dgn-tab.on{color:var(--gold);border-bottom-color:var(--gold)}
 .dgn-iconpick{display:flex;flex-wrap:wrap;gap:5px}
 .dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
 .dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
@@ -6998,12 +7001,15 @@ function roomTouched(r) {
   if (r.shape && r.shape !== "hex") return true;
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (hasEnc(r)) return true;
+  if (Array.isArray(r.fields) && r.fields.some((f) => (f.label || "").trim())) return true;
   const n = r.notes || {};
-  return Object.keys(DGN_FIELDS).some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
+  const keys = [...Object.keys(DGN_FIELDS), "encnotes", ...((r.fields || []).map((f) => f.id))];
+  return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
 function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelete, onClose }) {
-  const [full, setFull] = useState(null); // note key open full-screen, or null
+  const [tab, setTab] = useState("appearance");
+  const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
   const [monQ, setMonQ] = useState(null); // non-null = add-monster search open; holds the query
   const set = (patch) => onChange({ ...room, ...patch });
@@ -7022,26 +7028,42 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
   const toggleSide = (name) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, side: (m.side === "ally" ? "enemy" : "ally") } : m)) });
   const monMatches = monQ && monQ.trim().length >= 1
     ? monsterList.filter((m) => m.name.toLowerCase().includes(monQ.trim().toLowerCase())).slice(0, 24) : [];
+  // per-room custom note fields
+  const fields = Array.isArray(room.fields) ? room.fields : [];
+  const setFieldLabel = (id, label) => set({ fields: fields.map((f) => (f.id === id ? { ...f, label } : f)) });
+  const addField = () => set({ fields: [...fields, { id: newUid(), label: "" }] });
+  const removeField = (id) => { const nn = { ...(room.notes || {}) }; delete nn[id]; onChange({ ...room, fields: fields.filter((f) => f.id !== id), notes: nn }); };
+
   if (full) { // one note field, expanded to the whole screen for long paragraphs
     return (
       <div className="dgn-overlay" style={{ zIndex: 90 }}>
         <div className="dgn-top">
           <button className="btn small" onClick={() => setFull(null)}>← Done</button>
-          <span className="nm" style={{ flex: 1, fontFamily: "var(--disp)", fontSize: 16, color: "var(--text)" }}>{DGN_FIELDS[full]}</span>
+          <span className="nm" style={{ flex: 1, fontFamily: "var(--disp)", fontSize: 16, color: "var(--text)" }}>{full.label}</span>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
-          <SectionsEditor value={n[full]} onChange={(v) => setNote(full, v)} rows={6} />
+          <SectionsEditor value={n[full.k]} onChange={(v) => setNote(full.k, v)} rows={6} />
         </div>
       </div>
     );
   }
-  const noteField = (k) => (
+  const noteField = (k, label) => (
     <div key={k}>
       <div className="frow" style={{ alignItems: "center", margin: "12px 0 4px" }}>
-        <span className="dgn-flabel" style={{ flex: 1, margin: 0 }}>{DGN_FIELDS[k]}</span>
-        <button className="btn tiny ghost" title="Edit this field full-screen" onClick={() => setFull(k)}>⤢ Full screen</button>
+        <span className="dgn-flabel" style={{ flex: 1, margin: 0 }}>{label}</span>
+        <button className="btn tiny ghost" title="Edit this field full-screen" onClick={() => setFull({ k, label })}>⤢ Full screen</button>
       </div>
       <SectionsEditor value={n[k]} onChange={(v) => setNote(k, v)} rows={2} />
+    </div>
+  );
+  const customField = (f) => (
+    <div key={f.id} style={{ marginTop: 14 }}>
+      <div className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <input className="dgn-sec-title" style={{ flex: 1, color: "var(--gold)", fontWeight: 700 }} placeholder="Field name (e.g. Traps, Secrets)…" value={f.label || ""} onChange={(e) => setFieldLabel(f.id, e.target.value)} />
+        <button className="btn tiny ghost" title="Edit full-screen" onClick={() => setFull({ k: f.id, label: (f.label || "").trim() || "Field" })}>⤢</button>
+        <button className="btn tiny ghost warn" title="Remove this field" onClick={() => removeField(f.id)}>✕</button>
+      </div>
+      <SectionsEditor value={n[f.id]} onChange={(v) => setNote(f.id, v)} rows={2} />
     </div>
   );
   return (
@@ -7051,85 +7073,103 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
           <h3>Room</h3>
           <button className="dgn-xclose" title="Close" onClick={onClose}>✕</button>
         </div>
-        <span className="dgn-flabel" style={{ marginTop: 4 }}>Room Name</span>
-        <input className="dgn-name" placeholder="Name this room… (optional)" value={room.title || ""} onChange={(e) => set({ title: e.target.value })} />
-        <div className="frow" style={{ alignItems: "baseline", justifyContent: "space-between", marginTop: 12 }}>
-          <span className="dgn-flabel" style={{ margin: 0 }}>Display Name <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shown on the map</span></span>
-          <span style={{ fontSize: 11, color: (room.dname || "").length >= DNAME_MAX ? "var(--gold)" : "var(--faint)" }}>{(room.dname || "").length}/{DNAME_MAX}</span>
+        <div className="dgn-tabs">
+          {[["appearance", "Appearance"], ["enc", "Encounters"], ["notes", "Notes"]].map(([k, lbl]) => (
+            <button key={k} className={`dgn-tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{lbl}</button>
+          ))}
         </div>
-        <input className="dgn-name" style={{ fontSize: 16, marginTop: 2 }} maxLength={DNAME_MAX} placeholder="Short label (optional)…" value={room.dname || ""} onChange={(e) => set({ dname: e.target.value })} />
-        <span className="dgn-flabel">Shape</span>
-        <div className="pickgrid">
-          {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
-        </div>
-        {room.shape === "hall" && (
-          <div className="pickgrid" style={{ marginTop: 4 }}>
-            {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
+
+        {tab === "appearance" && (<>
+          <span className="dgn-flabel" style={{ marginTop: 0 }}>Room Name</span>
+          <input className="dgn-name" placeholder="Name this room… (optional)" value={room.title || ""} onChange={(e) => set({ title: e.target.value })} />
+          <div className="frow" style={{ alignItems: "baseline", justifyContent: "space-between", marginTop: 12 }}>
+            <span className="dgn-flabel" style={{ margin: 0 }}>Display Name <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shown on the map</span></span>
+            <span style={{ fontSize: 11, color: (room.dname || "").length >= DNAME_MAX ? "var(--gold)" : "var(--faint)" }}>{(room.dname || "").length}/{DNAME_MAX}</span>
           </div>
-        )}
-        {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee") && (
-          <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
-            <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
-            <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
+          <input className="dgn-name" style={{ fontSize: 16, marginTop: 2 }} maxLength={DNAME_MAX} placeholder="Short label (optional)…" value={room.dname || ""} onChange={(e) => set({ dname: e.target.value })} />
+          <span className="dgn-flabel">Shape</span>
+          <div className="pickgrid">
+            {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
           </div>
-        )}
-        <span className="dgn-flabel">Background Colour</span>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
-        </div>
-        <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
-        <div className="dgn-iconpick">
-          {ROOM_ICONS.map((e) => {
-            const cur = Array.isArray(room.icons) ? room.icons : [];
-            const on = cur.includes(e), full = cur.length >= ROOM_ICON_MAX;
-            return (
-              <button key={e} className={`dgn-iconbtn ${on ? "on" : ""}`} style={{ opacity: !on && full ? 0.35 : 1 }}
-                onClick={() => { if (on) set({ icons: cur.filter((x) => x !== e) }); else if (cur.length < ROOM_ICON_MAX) set({ icons: [...cur, e] }); }}>{e}</button>
-            );
-          })}
-        </div>
-        <span className="dgn-flabel">Encounter <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— who's in this room</span></span>
-        {(enc.mons || []).length === 0 && !enc.group && <div className="trait" style={{ fontSize: 12, marginBottom: 2 }}>No encounter — this room is empty.</div>}
-        {(enc.mons || []).map((m) => (
-          <div key={m.n} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.n}</span>
-            <button className="btn tiny" title="Toggle between a hostile monster and a friendly / neutral NPC" onClick={() => toggleSide(m.n)}>{m.side === "ally" ? "🙂 NPC" : "⚔ Foe"}</button>
-            <button className="btn tiny" onClick={() => bumpMon(m.n, -1)} disabled={(Number(m.c) || 1) <= 1}>–</button>
-            <span className="ad" style={{ minWidth: 20, textAlign: "center" }}>× {m.c}</span>
-            <button className="btn tiny" onClick={() => bumpMon(m.n, 1)}>+</button>
-            <button className="btn tiny ghost warn" title="Remove" onClick={() => removeMon(m.n)}>✕</button>
-          </div>
-        ))}
-        {enc.group && (
-          <div className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
-            <span style={{ flex: 1 }}>📦 Saved group: <b>{enc.group}</b></span>
-            <button className="btn tiny ghost warn" title="Remove group reference" onClick={() => setEnc({ group: null })}>✕</button>
-          </div>
-        )}
-        <div className="frow" style={{ marginTop: 4, gap: 6 }}>
-          <button className="btn small ghost" onClick={() => setMonQ(monQ == null ? "" : null)}>{monQ != null ? "Close ▲" : "＋ Add monster…"}</button>
-          {groupNames.length > 0 && (
-            <select value="" onChange={(e) => { if (e.target.value) setEnc({ group: e.target.value }); }} style={{ flex: 1 }}>
-              <option value="">Reference a saved group…</option>
-              {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
+          {room.shape === "hall" && (
+            <div className="pickgrid" style={{ marginTop: 4 }}>
+              {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
+            </div>
           )}
-        </div>
-        {monQ != null && (
-          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
-            <input className="sbook-search" placeholder="Search monsters…" autoFocus value={monQ} onChange={(e) => setMonQ(e.target.value)} />
-            {monQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search the bestiary…</div>
-              : monMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No monsters match “{monQ.trim()}”.</div>
-              : <div className="mlist" style={{ marginTop: 4 }}>{monMatches.map((m) => (
-                  <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addMon(m.name)}>
-                    {m.name}{m.cr != null && m.cr !== "" ? <span className="cr"> CR {m.cr}</span> : null}
-                  </button>))}</div>}
+          {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee") && (
+            <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
+              <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
+              <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
+            </div>
+          )}
+          <span className="dgn-flabel">Background Colour</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
           </div>
-        )}
-        {noteField("desc")}
-        {noteField("loot")}
-        {noteField("npcs")}
-        <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
+          <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
+          <div className="dgn-iconpick">
+            {ROOM_ICONS.map((e) => {
+              const cur = Array.isArray(room.icons) ? room.icons : [];
+              const on = cur.includes(e), atMax = cur.length >= ROOM_ICON_MAX;
+              return (
+                <button key={e} className={`dgn-iconbtn ${on ? "on" : ""}`} style={{ opacity: !on && atMax ? 0.35 : 1 }}
+                  onClick={() => { if (on) set({ icons: cur.filter((x) => x !== e) }); else if (cur.length < ROOM_ICON_MAX) set({ icons: [...cur, e] }); }}>{e}</button>
+              );
+            })}
+          </div>
+        </>)}
+
+        {tab === "enc" && (<>
+          <span className="dgn-flabel" style={{ marginTop: 0 }}>Encounter <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— who's in this room</span></span>
+          {(enc.mons || []).length === 0 && !enc.group && <div className="trait" style={{ fontSize: 12, marginBottom: 2 }}>No encounter — this room is empty.</div>}
+          {(enc.mons || []).map((m) => (
+            <div key={m.n} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.n}</span>
+              <button className="btn tiny" title="Toggle between a hostile monster and a friendly / neutral NPC" onClick={() => toggleSide(m.n)}>{m.side === "ally" ? "🙂 NPC" : "⚔ Foe"}</button>
+              <button className="btn tiny" onClick={() => bumpMon(m.n, -1)} disabled={(Number(m.c) || 1) <= 1}>–</button>
+              <span className="ad" style={{ minWidth: 20, textAlign: "center" }}>× {m.c}</span>
+              <button className="btn tiny" onClick={() => bumpMon(m.n, 1)}>+</button>
+              <button className="btn tiny ghost warn" title="Remove" onClick={() => removeMon(m.n)}>✕</button>
+            </div>
+          ))}
+          {enc.group && (
+            <div className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <span style={{ flex: 1 }}>📦 Saved group: <b>{enc.group}</b></span>
+              <button className="btn tiny ghost warn" title="Remove group reference" onClick={() => setEnc({ group: null })}>✕</button>
+            </div>
+          )}
+          <div className="frow" style={{ marginTop: 4, gap: 6 }}>
+            <button className="btn small ghost" onClick={() => setMonQ(monQ == null ? "" : null)}>{monQ != null ? "Close ▲" : "＋ Add monster…"}</button>
+            {groupNames.length > 0 && (
+              <select value="" onChange={(e) => { if (e.target.value) setEnc({ group: e.target.value }); }} style={{ flex: 1 }}>
+                <option value="">Reference a saved group…</option>
+                {groupNames.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            )}
+          </div>
+          {monQ != null && (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+              <input className="sbook-search" placeholder="Search monsters…" autoFocus value={monQ} onChange={(e) => setMonQ(e.target.value)} />
+              {monQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search the bestiary…</div>
+                : monMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No monsters match “{monQ.trim()}”.</div>
+                : <div className="mlist" style={{ marginTop: 4 }}>{monMatches.map((m) => (
+                    <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addMon(m.name)}>
+                      {m.name}{m.cr != null && m.cr !== "" ? <span className="cr"> CR {m.cr}</span> : null}
+                    </button>))}</div>}
+            </div>
+          )}
+          {noteField("encnotes", "Encounter Notes")}
+        </>)}
+
+        {tab === "notes" && (<>
+          {noteField("desc", DGN_FIELDS.desc)}
+          {noteField("loot", DGN_FIELDS.loot)}
+          {noteField("npcs", DGN_FIELDS.npcs)}
+          {fields.map(customField)}
+          <button className="btn small ghost" style={{ marginTop: 14 }} onClick={addField}>＋ Add note field</button>
+        </>)}
+
+        <div className="frow" style={{ justifyContent: "space-between", marginTop: 14 }}>
           <button className="btn small danger" onClick={() => { if (roomTouched(room)) setConfirmDel(true); else onDelete(); }}>Delete room</button>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
@@ -7349,7 +7389,10 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onClose }) {
                   {(room.title || "").trim() || (room.dname || "").trim() || "Unnamed room"}
                   {Array.isArray(room.icons) && room.icons.length ? <span style={{ marginLeft: 6 }}>{room.icons.join(" ")}</span> : null}
                 </div>
-                {Object.entries(DGN_FIELDS).map(([k, label]) => {
+                {[
+                  ...Object.entries(DGN_FIELDS).map(([k, label]) => ({ k, label })),
+                  ...(Array.isArray(room.fields) ? room.fields.filter((f) => (f.label || "").trim()).map((f) => ({ k: f.id, label: f.label.trim() })) : []),
+                ].map(({ k, label }) => {
                   const secs = asSections(room.notes?.[k]).filter((s) => (s.title || "").trim() || (s.body || "").trim());
                   if (!secs.length) return null;
                   const open = !!openF[k];
@@ -7383,6 +7426,24 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onClose }) {
                     </div>
                   </>
                 ) : <div className="trait" style={{ fontSize: 12, margin: "4px 0 0" }}>No encounter in this room.</div>}
+                {(() => {
+                  const secs = asSections(room.notes?.encnotes).filter((s) => (s.title || "").trim() || (s.body || "").trim());
+                  if (!secs.length) return null;
+                  const open = !!openF.encnotes;
+                  return (
+                    <div className="dgn-psec" style={{ marginTop: 6 }}>
+                      <button className="dgn-psec-hd" onClick={() => setOpenF((o) => ({ ...o, encnotes: !o.encnotes }))}>
+                        <span className="dgn-fold">{open ? "▾" : "▸"}</span>Encounter Notes
+                      </button>
+                      {open && secs.map((s) => (
+                        <div key={s.id} className="dgn-psec-body">
+                          {(s.title || "").trim() && <div className="sub">{s.title.trim()}</div>}
+                          {(s.body || "").trim()}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </>
             )}
           </div>
