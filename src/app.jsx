@@ -463,6 +463,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .sidebar-dot{width:7px;height:7px;transform:rotate(45deg);flex-shrink:0}
 .side-enemy{background:var(--enemy)} .side-ally{background:var(--ally)} .side-effect{background:var(--fx)}
 .nm{font-weight:600;min-width:0;flex:1}
+.nm-color{border-radius:5px;padding:1px 7px;color:#fff;-webkit-text-fill-color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.clr-sw{width:22px;height:22px;border-radius:5px;border:1px solid var(--line2);cursor:pointer;padding:0;line-height:1;font-size:12px}
+.clr-sw.off{display:flex;align-items:center;justify-content:center;background:var(--panel);color:var(--faint)}
+.clr-sw.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.35)}
 .nm .sub{font-weight:400;color:var(--faint);font-size:11px;margin-left:4px}
 .hpbox{display:flex;align-items:center;gap:2px;flex-shrink:0;position:relative}
 @keyframes hp-punch{0%{transform:scale(1)}30%{transform:scale(1.35)}100%{transform:scale(1)}}
@@ -2809,6 +2813,9 @@ function DmgFx({ type }) {
   return <span className={`dmgfx fx-${t || "plain"}`} aria-hidden>{inner}</span>;
 }
 
+// Roster name-highlight colours — distinct hues a DM can assign to tell same-named monsters apart.
+const ROSTER_COLORS = ["#c0392b", "#cf6a1a", "#c9a227", "#3f9a4e", "#1f9e94", "#2f76c4", "#5a4fd0", "#9b4dc7", "#c0398a", "#7f8c8d"];
+
 function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
@@ -2915,7 +2922,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       <span className="nm" style={c.type === "monster" || c.type === "player" ? { cursor: "pointer" } : undefined}
         title={c.type === "monster" || c.type === "player" ? "Tap to peek at this creature's card" : undefined}
         onClick={(c.type === "monster" || c.type === "player") ? () => api.peek(c.uid) : undefined}>
-        {c.name}
+        {c.color ? <span className="nm-color" style={{ background: c.color }}>{c.name}</span> : c.name}
         {c.dead && <span className="sub">({c.type === "object" ? "destroyed" : "dead"})</span>}
         {c.unconscious && !c.dead && <span className="sub">(unconscious)</span>}
         {bloody && <span className="bloodtag" title="At or below half HP">Bloodied</span>}
@@ -3054,6 +3061,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {c.type === "monster" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
             {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
             <button onClick={() => api.rename(c.uid)}>Rename…</button>
+            {c.type !== "effect" && <button onClick={() => api.openColors()}>🎨 Colour combatants…</button>}
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
             {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
             {c.type === "monster" && atkMaxOf(c) > 0 && <button onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>}
@@ -8215,6 +8223,46 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
   );
 }
 
+// Multi-assign colour picker — tint combatant names so a DM can tell 10 goblins apart at a glance.
+function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
+  const list = combatants.filter((c) => c.type !== "effect");
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="frow" style={{ alignItems: "center" }}>
+          <h3 style={{ flex: 1, margin: 0 }}>🎨 Colour combatants</h3>
+          <button className="modal-x" title="Close" onClick={onClose}>✕</button>
+        </div>
+        <div className="trait" style={{ marginBottom: 8 }}>Tint a combatant's name so same-named monsters are easy to tell apart. Tap a swatch to assign, ∅ to clear.</div>
+        <div className="frow" style={{ gap: 6, marginBottom: 8 }}>
+          <button className="btn small" onClick={onAuto}>🌈 Distinct colours for monsters</button>
+          <button className="btn small ghost" onClick={onClear}>Clear all</button>
+        </div>
+        <div style={{ maxHeight: "52vh", overflowY: "auto" }}>
+          {list.length === 0 && <div className="trait">No combatants on the board yet.</div>}
+          {list.map((c) => (
+            <div key={c.uid} className="frow" style={{ alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
+              <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
+              <span style={{ flex: 1, minWidth: 84, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {c.color ? <span className="nm-color" style={{ background: c.color }}>{c.name}</span> : c.name}
+              </span>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                <button className="clr-sw off" title="No colour" onClick={() => onSet(c.uid, null)}>∅</button>
+                {ROSTER_COLORS.map((col) => (
+                  <button key={col} className={`clr-sw ${c.color === col ? "on" : ""}`} style={{ background: col }} title="Set this colour" onClick={() => onSet(c.uid, col)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ================= App ================= */
 
 export default function App() {
@@ -9488,6 +9536,7 @@ export default function App() {
       pushToasts([{ kind: "good", text: `${updated ? "Updated" : "Saved"} "${sb.name}" in your bestiary.` }]);
     },
     rename: (uid) => setModal({ type: "rename-prompt", uid }),
+    openColors: () => setModal({ type: "colors" }),
     setInit: (uid) => setModal({ type: "init-prompt", uid }),
     setDex: (uid) => setModal({ type: "dex-prompt", uid }),
     nudge: (uid, dir) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.init += dir; }),
@@ -10193,6 +10242,14 @@ export default function App() {
     if (clear && tutSnapRef.current) setState(tutSnapRef.current); // roll the board back to before the tour
     tutSnapRef.current = null;
   };
+  // Roster name-colour assignment (multi-assign modal). color=null clears it.
+  const setCombatantColor = (uid, color) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.color = color || undefined; });
+  const autoColorMonsters = () => mutate((d, L) => {
+    let i = 0;
+    d.combatants.forEach((c) => { if (c.type === "monster") { c.color = ROSTER_COLORS[i % ROSTER_COLORS.length]; i++; } });
+    if (i) L.push(`🎨 Gave ${i} monster${i === 1 ? "" : "s"} distinct colours.`);
+  });
+  const clearCombatantColors = () => mutate((d) => d.combatants.forEach((c) => { c.color = undefined; }));
   const runRoomEncounter = (room) => {
     const enc = room && room.enc; if (!enc) return;
     const list = Array.isArray(enc.mons) ? enc.mons : [];
@@ -10362,6 +10419,9 @@ export default function App() {
               <button onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>
               {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
+              )}
+              {state.combatants.some((c) => c.type !== "effect") && (
+                <button onClick={() => setModal({ type: "colors" })}>🎨 Colour combatants…</button>
               )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
@@ -10876,6 +10936,9 @@ export default function App() {
       )}
       {modal?.type === "rest" && restable.length > 0 && (
         <RestModal combatants={restable} onAccept={applyRest} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "colors" && (
+        <ColorModal combatants={state.combatants} onSet={setCombatantColor} onAuto={autoColorMonsters} onClear={clearCombatantColors} onClose={() => setModal(null)} />
       )}
       {modal?.type === "oldschool-intro" && (
         <div className="overlay" onClick={() => { markOldSchoolIntroSeen(); setModal(null); }}>
