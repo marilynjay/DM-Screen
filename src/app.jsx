@@ -7529,6 +7529,7 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
   const [confirmDel, setConfirmDel] = useState(false);
   const [monQ, setMonQ] = useState(null); // non-null = add-monster search open; holds the query
   const [lootQ, setLootQ] = useState(null); // non-null = add-item search open; holds the query
+  const [lootTab, setLootTab] = useState("all"); // item-browser category
   const [lootCustom, setLootCustom] = useState("");
   const [openSec, setOpenSec] = useState({}); // which collapsible appearance pickers are expanded (start collapsed)
   const toggleSec = (k) => setOpenSec((o) => ({ ...o, [k]: !o[k] }));
@@ -7581,8 +7582,18 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
     set({ loot: [...loot, mine ? JSON.parse(JSON.stringify(mine)) : (lookupItem(t) || { n: t })] });
     setLootCustom("");
   };
-  const lootMatches = lootQ && lootQ.trim().length >= 1
-    ? ITEMS.concat(customItems).filter((x) => x.n.toLowerCase().includes(lootQ.trim().toLowerCase())).slice(0, 24) : [];
+  // categorised item browser: an item can belong to several categories at once
+  // (a custom Rare weapon shows under Custom, Rare, and Weapons).
+  const lootQuery = (lootQ || "").trim().toLowerCase();
+  const inLootCat = (it) => lootTab === "all" ? true
+    : lootTab === "mine" ? !!it.custom
+    : lootTab === "W" ? itemKindOf(it) === "weapon"
+    : lootTab === "A" ? itemKindOf(it) === "armor"
+    : it.rarity === lootTab;
+  const lootNameHit = (it) => !lootQuery || it.n.toLowerCase().includes(lootQuery);
+  const lootMine = (customItems || []).filter((it) => inLootCat(it) && lootNameHit(it));
+  const lootSrd = ITEMS.filter((it) => inLootCat(it) && lootNameHit(it)).slice(0, 80);
+  const LOOT_TABS = [["all", "All"], ["mine", "✦ Custom"], ["W", "Weapons"], ["A", "Armor"], ["C", "Common"], ["U", "Uncommon"], ["R", "Rare"], ["V", "Very rare"], ["L", "Legendary"]];
   // per-room custom note fields
   const fields = Array.isArray(room.fields) ? room.fields : [];
   const setFieldLabel = (id, label) => set({ fields: fields.map((f) => (f.id === id ? { ...f, label } : f)) });
@@ -7915,13 +7926,29 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           </div>
           {lootQ != null && (
             <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
-              <input className="sbook-search" placeholder="Search magic items…" autoFocus value={lootQ} onChange={(e) => setLootQ(e.target.value)} />
-              {lootQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search items (SRD + your custom)…</div>
-                : lootMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No items match “{lootQ.trim()}”.</div>
-                : <div className="mlist" style={{ marginTop: 4 }}>{lootMatches.map((it, i) => (
-                    <button key={it.n + i} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addLoot(it)}>
-                      {it.n}{it.rarity ? <span className="cr"> {rarityLabel(it)}</span> : null}
-                    </button>))}</div>}
+              <input className="sbook-search" placeholder="Search items (or just browse a category)…" autoFocus value={lootQ} onChange={(e) => setLootQ(e.target.value)} />
+              <div className="tabs" style={{ margin: "6px 0" }}>
+                {LOOT_TABS.map(([t, lbl]) => (
+                  <button key={t} className="btn small" style={lootTab === t ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setLootTab(t)}>{lbl}</button>
+                ))}
+              </div>
+              <div style={{ maxHeight: 240, overflowY: "auto" }}>
+                {lootMine.length > 0 && (<>
+                  <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0", letterSpacing: ".1em", textTransform: "uppercase" }}>Your custom items</div>
+                  {lootMine.map((it, i) => (
+                    <button key={"mine:" + it.n + i} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
+                      {it.n}<span className="cr"> {rarityLabel(it)} · custom</span>
+                    </button>))}
+                  {lootTab !== "mine" && lootSrd.length > 0 && <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD catalogue</div>}
+                </>)}
+                {lootTab !== "mine" && lootSrd.map((it, i) => (
+                  <button key={it.n + i} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
+                    {it.n}{it.rarity ? <span className="cr"> {rarityLabel(it)}</span> : null}
+                  </button>))}
+                {lootMine.length === 0 && (lootTab === "mine" || lootSrd.length === 0) && (
+                  <div className="trait" style={{ fontSize: 12 }}>{lootTab === "mine" ? "No custom items yet — build them in ⋯ ▸ Item Compendium (they'll also appear under their type and rarity here)." : `Nothing in this category${lootQuery ? ` matches “${lootQ.trim()}”` : ""}.`}</div>
+                )}
+              </div>
             </div>
           )}
         </>)}
