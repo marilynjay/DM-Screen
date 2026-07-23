@@ -261,6 +261,7 @@ input[type=number]{width:64px}
 .dgn-psec-body .sub{color:var(--gold-2,var(--gold));font-weight:700}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
+.dgn-loot-chip{display:inline-block;background:var(--gold-soft);border:1px solid rgba(217,164,65,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .loaddgn-fab{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:48;background:var(--panel);border:1px solid var(--line2);color:var(--gold);border-radius:20px;padding:8px 14px;font-size:13px;font-family:var(--disp);letter-spacing:.03em;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
 .dgn-tabs{display:flex;gap:4px;margin:8px 0 10px;border-bottom:1px solid var(--line2)}
 .dgn-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--faint);font-family:var(--disp);font-size:13px;letter-spacing:.02em;padding:8px 4px;cursor:pointer}
@@ -6922,7 +6923,8 @@ function RoomLabel({ room, cx, cy }) {
   const allyN = mons.filter((m) => m.side === "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
   const hasFoe = enemyN > 0 || !!(room.enc && room.enc.group); // saved groups are hostile
   const hasAlly = allyN > 0;
-  if (!icons.length && !dname && !hasFoe && !hasAlly) return null;
+  const loot = hasLoot(room), looted = loot && !!room.looted;
+  if (!icons.length && !dname && !hasFoe && !hasAlly && !loot) return null;
   const iconSize = s * 0.4;
   const nameSize = Math.min(s * 0.32, (s * 1.5) / (Math.max(dname.length, 5) * 0.58)); // shrink to fit the hex width
   const iconY = dname ? cy - s * 0.16 : cy;
@@ -6944,6 +6946,9 @@ function RoomLabel({ room, cx, cy }) {
       )}
       {hasFoe && badge(cx - s * 0.42, cy - s * 0.46, "rgba(90,20,20,.85)", "#e0645a", `⚔${enemyN > 1 ? enemyN : ""}`)}
       {hasAlly && badge(cx - s * 0.42, cy + s * 0.46, "rgba(24,54,96,.9)", "#5b8dd6", `🙂${allyN > 1 ? allyN : ""}`)}
+      {loot && (looted
+        ? badge(cx + s * 0.42, cy + s * 0.46, "rgba(30,30,34,.85)", "rgba(150,150,160,.7)", "✓")
+        : badge(cx + s * 0.42, cy + s * 0.46, "rgba(70,54,16,.9)", "var(--gold)", "💰"))}
     </g>
   );
 }
@@ -6992,6 +6997,8 @@ function encCount(r) {
   const e = r && r.enc; if (!e) return 0;
   return (Array.isArray(e.mons) ? e.mons.reduce((n, m) => n + (Number(m.c) || 0), 0) : 0);
 }
+// Does this room hold loot the party can collect?
+function hasLoot(r) { return !!(r && Array.isArray(r.loot) && r.loot.length); }
 
 // Has the DM put anything into this room worth protecting? A freshly-added, untouched room
 // (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
@@ -7001,17 +7008,20 @@ function roomTouched(r) {
   if (r.shape && r.shape !== "hex") return true;
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (hasEnc(r)) return true;
+  if (hasLoot(r)) return true;
   if (Array.isArray(r.fields) && r.fields.some((f) => (f.label || "").trim())) return true;
   const n = r.notes || {};
   const keys = [...Object.keys(DGN_FIELDS), "encnotes", ...((r.fields || []).map((f) => f.id))];
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelete, onClose }) {
+function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
   const [monQ, setMonQ] = useState(null); // non-null = add-monster search open; holds the query
+  const [lootQ, setLootQ] = useState(null); // non-null = add-item search open; holds the query
+  const [lootCustom, setLootCustom] = useState("");
   const set = (patch) => onChange({ ...room, ...patch });
   const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
   const n = room.notes || {};
@@ -7028,6 +7038,18 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
   const toggleSide = (name) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, side: (m.side === "ally" ? "enemy" : "ally") } : m)) });
   const monMatches = monQ && monQ.trim().length >= 1
     ? monsterList.filter((m) => m.name.toLowerCase().includes(monQ.trim().toLowerCase())).slice(0, 24) : [];
+  // room loot — treasure the party can find and collect
+  const loot = Array.isArray(room.loot) ? room.loot : [];
+  const addLoot = (it) => set({ loot: [...loot, JSON.parse(JSON.stringify(it))] });
+  const removeLoot = (i) => set({ loot: loot.filter((_, j) => j !== i) });
+  const addCustomLoot = () => {
+    const t = lootCustom.trim(); if (!t) return;
+    const mine = customItems.find((x) => x.n.toLowerCase() === t.toLowerCase());
+    set({ loot: [...loot, mine ? JSON.parse(JSON.stringify(mine)) : (lookupItem(t) || { n: t })] });
+    setLootCustom("");
+  };
+  const lootMatches = lootQ && lootQ.trim().length >= 1
+    ? ITEMS.concat(customItems).filter((x) => x.n.toLowerCase().includes(lootQ.trim().toLowerCase())).slice(0, 24) : [];
   // per-room custom note fields
   const fields = Array.isArray(room.fields) ? room.fields : [];
   const setFieldLabel = (id, label) => set({ fields: fields.map((f) => (f.id === id ? { ...f, label } : f)) });
@@ -7074,7 +7096,7 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
           <button className="dgn-xclose" title="Close" onClick={onClose}>✕</button>
         </div>
         <div className="dgn-tabs">
-          {[["appearance", "Appearance"], ["enc", "Encounters"], ["notes", "Notes"]].map(([k, lbl]) => (
+          {[["appearance", "Appearance"], ["enc", "Encounters"], ["loot", "Loot"], ["notes", "Notes"]].map(([k, lbl]) => (
             <button key={k} className={`dgn-tab ${tab === k ? "on" : ""}`} onClick={() => setTab(k)}>{lbl}</button>
           ))}
         </div>
@@ -7161,6 +7183,35 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
           {noteField("encnotes", "Encounter Notes")}
         </>)}
 
+        {tab === "loot" && (<>
+          <span className="dgn-flabel" style={{ marginTop: 0 }}>Loot <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— treasure the party can find here</span></span>
+          {loot.length === 0 && <div className="trait" style={{ fontSize: 12, marginBottom: 2 }}>Nothing here yet.</div>}
+          {loot.map((it, i) => (
+            <div key={i} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
+              <span style={{ flex: 1, minWidth: 0 }}>{lootName(it)}{it.rarity ? <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span> : null}</span>
+              <button className="btn tiny ghost warn" title="Remove" onClick={() => removeLoot(i)}>✕</button>
+            </div>
+          ))}
+          <div className="frow" style={{ marginTop: 4 }}>
+            <button className="btn small ghost" onClick={() => setLootQ(lootQ == null ? "" : null)}>{lootQ != null ? "Close ▲" : "＋ Add item…"}</button>
+          </div>
+          <div className="frow" style={{ marginTop: 4 }}>
+            <input type="text" placeholder="Custom item or gold — e.g. 23 gp" value={lootCustom} onChange={(e) => setLootCustom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustomLoot()} style={{ flex: 1 }} />
+            <button className="btn small" disabled={!lootCustom.trim()} onClick={addCustomLoot}>+ Add</button>
+          </div>
+          {lootQ != null && (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+              <input className="sbook-search" placeholder="Search magic items…" autoFocus value={lootQ} onChange={(e) => setLootQ(e.target.value)} />
+              {lootQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search items (SRD + your custom)…</div>
+                : lootMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No items match “{lootQ.trim()}”.</div>
+                : <div className="mlist" style={{ marginTop: 4 }}>{lootMatches.map((it, i) => (
+                    <button key={it.n + i} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addLoot(it)}>
+                      {it.n}{it.rarity ? <span className="cr"> {rarityLabel(it)}</span> : null}
+                    </button>))}</div>}
+            </div>
+          )}
+        </>)}
+
         {tab === "notes" && (<>
           {noteField("desc", DGN_FIELDS.desc)}
           {noteField("loot", DGN_FIELDS.loot)}
@@ -7182,7 +7233,7 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
   );
 }
 
-function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
+function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose }) {
   const [dg, setDg] = useState(dungeon);
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
@@ -7303,7 +7354,7 @@ function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
         </div>
       </div>
       {editKey && rooms[editKey] && (
-        <RoomEditor room={rooms[editKey]} monsterList={monsterList} groupNames={groupNames}
+        <RoomEditor room={rooms[editKey]} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
           onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
           onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
           onClose={() => setEditKey(null)} />
@@ -7313,7 +7364,7 @@ function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onSetLooted, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -7444,6 +7495,15 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onClose }) {
                     </div>
                   );
                 })()}
+                {hasLoot(room) && (
+                  <div style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+                    <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginBottom: 4 }}>💰 Loot{room.looted ? " · collected" : ""}</div>
+                    <div style={{ marginBottom: 6 }}>
+                      {(room.loot || []).map((it, i) => <span key={i} className="dgn-loot-chip" style={{ opacity: room.looted ? 0.5 : 1, textDecoration: room.looted ? "line-through" : "none" }}>{lootName(it)}</span>)}
+                    </div>
+                    <button className="btn small" onClick={() => onSetLooted && onSetLooted(sel, !room.looted)}>{room.looted ? "↺ Mark not collected" : "✓ Mark collected"}</button>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -9382,6 +9442,12 @@ export default function App() {
     if (enc.group) addGroup(enc.group); // async; also drops the saved group's monsters in
     else pushToasts([{ kind: "good", text: "Encounter loaded — press Start combat when ready." }]);
   };
+  // the one thing editable from the read-only play panel: mark a room's loot collected (or not)
+  const setRoomLooted = (roomKey, val) => {
+    if (!dungeonPlayId) return;
+    saveDungeons(dungeonsRef.current.map((d) => (d.id === dungeonPlayId
+      ? { ...d, rooms: { ...d.rooms, [roomKey]: { ...(d.rooms[roomKey] || {}), looted: val } } } : d)));
+  };
   const exportAll = async () => {
     const slotKeys = await stList("dm5e:slot:");
     const groupKeys = await stList("dm5e:group:");
@@ -9595,7 +9661,7 @@ export default function App() {
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode}
-            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onClose={() => setDungeonPlayId(null)} />
+            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onSetLooted={setRoomLooted} onClose={() => setDungeonPlayId(null)} />
         )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
@@ -9972,7 +10038,7 @@ export default function App() {
         </div>
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
-        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} customMonsters={myBestiary}
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} customMonsters={myBestiary} customItems={myItems}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
