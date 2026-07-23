@@ -4527,6 +4527,39 @@ function synthSaveText(r, dc) {
   return d;
 }
 
+// NPC role presets — an NPC is roleplay with a (usually weak) statblock, so these are archetypes,
+// not full monsters. Each carries four tiers of numbers [L1-4, L5-10, L11-16, L17+] so a "Guard"
+// scales to the party: pick a preset, pick a tier (defaults to the party's level band), tweak from there.
+const NPC_TIERS = [["0", "Weak (L1–4)"], ["1", "Seasoned (L5–10)"], ["2", "Elite (L11–16)"], ["3", "Legendary (L17+)"]];
+const npcTier = (level) => (level == null || isNaN(Number(level)) ? 0 : Number(level) <= 4 ? 0 : Number(level) <= 10 ? 1 : Number(level) <= 16 ? 2 : 3);
+const NPC_PRESETS = [
+  { key: "commoner", name: "Commoner", icon: "🧑", spd: "30 ft", ac: [10, 10, 11, 12], hp: [4, 9, 16, 22], atk: "Club", dt: "bludgeoning", hit: [2, 3, 4, 5], dmg: ["1d4", "1d4+1", "1d6+2", "1d6+3"], mods: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 } },
+  { key: "guard", name: "Guard", icon: "🛡️", spd: "30 ft", ac: [16, 16, 18, 18], hp: [11, 27, 52, 90], atk: "Spear", dt: "piercing", hit: [3, 5, 7, 9], dmg: ["1d6+1", "1d8+3", "2d8+4", "3d8+5"], mods: { str: 1, dex: 1, con: 2, int: 0, wis: 0, cha: 0 } },
+  { key: "bandit", name: "Bandit", icon: "🗡️", spd: "30 ft", ac: [12, 13, 15, 16], hp: [11, 27, 52, 90], atk: "Scimitar", dt: "slashing", hit: [3, 5, 7, 9], dmg: ["1d6+1", "1d8+3", "2d8+4", "3d8+5"], mods: { str: 0, dex: 1, con: 1, int: 0, wis: 0, cha: 0 } },
+  { key: "thug", name: "Thug", icon: "👊", spd: "30 ft", ac: [11, 12, 13, 14], hp: [32, 54, 85, 120], atk: "Mace", dt: "bludgeoning", hit: [4, 6, 8, 10], dmg: ["1d6+2", "2d6+3", "3d6+4", "4d6+5"], mods: { str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0 } },
+  { key: "cultist", name: "Cultist", icon: "🕯️", spd: "30 ft", ac: [12, 13, 14, 15], hp: [9, 22, 45, 75], atk: "Ritual Dagger", dt: "piercing", hit: [3, 5, 7, 9], dmg: ["1d4+1", "2d4+2", "3d4+3", "4d4+4"], mods: { str: 0, dex: 1, con: 0, int: 0, wis: 1, cha: 0 } },
+  { key: "noble", name: "Noble", icon: "🎩", spd: "30 ft", ac: [15, 15, 16, 16], hp: [9, 22, 40, 60], atk: "Rapier", dt: "piercing", hit: [3, 5, 7, 9], dmg: ["1d8+1", "1d8+3", "2d8+4", "2d10+5"], mods: { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 3 } },
+  { key: "priest", name: "Priest", icon: "⛪", spd: "30 ft", ac: [13, 15, 17, 18], hp: [27, 45, 85, 120], atk: "Mace", dt: "bludgeoning", hit: [4, 6, 8, 10], dmg: ["1d6+2", "2d6+3", "3d6+4", "4d6+5"], mods: { str: 0, dex: 0, con: 1, int: 1, wis: 3, cha: 1 } },
+  { key: "veteran", name: "Veteran", icon: "⚔️", spd: "30 ft", ac: [17, 17, 18, 18], hp: [45, 75, 110, 150], atk: "Longsword", dt: "slashing", hit: [5, 7, 9, 11], dmg: ["1d8+3", "2d8+4", "3d8+5", "4d8+6"], mods: { str: 2, dex: 1, con: 2, int: 0, wis: 0, cha: 0 } },
+  { key: "knight", name: "Knight", icon: "🐴", spd: "30 ft", ac: [18, 18, 18, 19], hp: [52, 90, 130, 170], atk: "Greatsword", dt: "slashing", hit: [5, 7, 9, 11], dmg: ["2d6+3", "3d6+4", "4d6+5", "5d6+6"], mods: { str: 3, dex: 0, con: 3, int: 0, wis: 1, cha: 2 } },
+  { key: "mage", name: "Mage", icon: "🔮", spd: "30 ft", ac: [12, 13, 15, 15], hp: [22, 40, 67, 99], atk: "Staff", dt: "bludgeoning", hit: [2, 4, 6, 8], dmg: ["1d6", "1d6+2", "2d6+3", "3d6+4"], mods: { str: -1, dex: 2, con: 1, int: 3, wis: 1, cha: 0 } },
+  { key: "spy", name: "Spy", icon: "🕵️", spd: "30 ft", ac: [12, 13, 14, 15], hp: [27, 45, 71, 99], atk: "Shortsword", dt: "piercing", hit: [4, 6, 8, 10], dmg: ["1d6+2", "2d6+3", "3d6+4", "4d6+5"], mods: { str: 0, dex: 3, con: 1, int: 1, wis: 1, cha: 2 } },
+];
+const blankNpcStats = () => ({ ac: 12, hp: 10, spd: "30 ft", atkN: 1, mods: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, attacks: [{ n: "", hit: 3, dmg: "1d6+1", dtype: "bludgeoning" }] });
+const presetToStats = (p, t) => ({ ac: p.ac[t], hp: p.hp[t], spd: p.spd, atkN: 1, mods: { ...p.mods }, attacks: [{ n: p.atk, hit: p.hit[t], dmg: p.dmg[t], dtype: p.dt }] });
+// Build a monster-shaped statblock from an NPC so the existing combat engine can run it.
+function npcToSb(npc) {
+  const s = npc.stats || blankNpcStats();
+  const atks = (s.attacks || []).filter((a) => (a.n || "").trim()).map((a) => ({ n: a.n.trim(), kind: "atk", hit: Number(a.hit) || 0, dmg: a.dmg || "1d4", dtype: a.dtype || "bludgeoning" }));
+  const atkN = Math.max(1, Math.min(6, Number(s.atkN) || 1));
+  return {
+    name: npc.name || "NPC", npc: true, cr: null,
+    ac: Number(s.ac) || 10, hp: Math.max(1, Number(s.hp) || 1), spd: s.spd || "30 ft",
+    mods: { ...(s.mods || {}) }, saves: {},
+    actions: atks, multi: atkN > 1 ? `The ${(npc.name || "NPC").toLowerCase()} makes ${atkN} attacks.` : null,
+  };
+}
+
 function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create" }) {
   const src = initial || null;
   const editing = mode === "edit";
@@ -6121,8 +6154,68 @@ function NoteReadModal({ item, onClose }) {
 // Entries are { id, name, tag, sections:[{id,title,body}] }; NPCs add loc (a location id),
 // locations add parent (a location id) for a two-level city › building tree. Saved on the party.
 // Reuses the dungeon note SectionsEditor / asSections (both hoisted below).
+// Optional combat-stats sub-form for an NPC. Light on purpose — most NPCs never fight.
+// Role presets prefill numbers scaled to the party's level; abilities hide behind a toggle.
+function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
+  const [tier, setTier] = useState(String(npcTier(partyLevel)));
+  const [showAbil, setShowAbil] = useState(false);
+  const set = (k, v) => onChange({ ...stats, [k]: v });
+  const setMod = (k, v) => onChange({ ...stats, mods: { ...stats.mods, [k]: v } });
+  const setAtk = (i, k, v) => onChange({ ...stats, attacks: stats.attacks.map((a, j) => (j === i ? { ...a, [k]: v } : a)) });
+  const applyPreset = (key) => { const p = NPC_PRESETS.find((x) => x.key === key); if (p) onChange({ ...presetToStats(p, Number(tier)), atkN: stats.atkN || 1 }); };
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+      <div className="frow" style={{ alignItems: "center" }}>
+        <span className="lbl" style={{ fontSize: 11, color: "var(--gold)", flex: 1 }}>⚔️ Combat stats</span>
+        <button className="btn tiny ghost warn" title="Remove combat stats — make this a social-only NPC" onClick={onRemove}>Remove</button>
+      </div>
+      <div className="frow" style={{ flexWrap: "wrap", marginTop: 4 }}>
+        <select value="" onChange={(e) => { if (e.target.value) applyPreset(e.target.value); }} title="Prefill from a role archetype">
+          <option value="">Preset…</option>
+          {NPC_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.icon} {p.name}</option>)}
+        </select>
+        <select value={tier} onChange={(e) => setTier(e.target.value)} title="Power tier the preset scales to (defaults to your party's level)">
+          {NPC_TIERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </div>
+      <div className="frow" style={{ flexWrap: "wrap", marginTop: 4 }}>
+        <label style={{ minWidth: 0 }}>AC</label><input type="number" style={{ width: 60 }} value={stats.ac} onChange={(e) => set("ac", e.target.value)} />
+        <label style={{ minWidth: 0 }}>HP</label><input type="number" style={{ width: 66 }} value={stats.hp} onChange={(e) => set("hp", e.target.value)} />
+        <label style={{ minWidth: 0 }}>Speed</label><input type="text" style={{ width: 70 }} value={stats.spd} onChange={(e) => set("spd", e.target.value)} />
+      </div>
+      <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 2px" }}>Attacks</div>
+      {stats.attacks.map((a, i) => (
+        <div className="frow" key={i}>
+          <input type="text" placeholder="Name" autoComplete="off" style={{ width: 100, flex: "none" }} value={a.n} onChange={(e) => setAtk(i, "n", e.target.value)} />
+          <input type="number" placeholder="+hit" style={{ width: 52 }} value={a.hit} onChange={(e) => setAtk(i, "hit", e.target.value)} />
+          <input type="text" placeholder="1d6+1" style={{ width: 72, flex: "none" }} value={a.dmg} onChange={(e) => setAtk(i, "dmg", e.target.value)} />
+          <select value={a.dtype} onChange={(e) => setAtk(i, "dtype", e.target.value)}>{DTYPES.map((t) => <option key={t}>{t}</option>)}</select>
+          {stats.attacks.length > 1 && <button className="btn small ghost" title="Remove attack" onClick={() => onChange({ ...stats, attacks: stats.attacks.filter((_, j) => j !== i) })}>✕</button>}
+        </div>
+      ))}
+      <div className="frow" style={{ marginTop: 2 }}>
+        <button className="btn small ghost" onClick={() => onChange({ ...stats, attacks: [...stats.attacks, { n: "", hit: 3, dmg: "1d6+1", dtype: "bludgeoning" }] })}>+ attack</button>
+        <label style={{ minWidth: 0, marginLeft: 6 }} title="How many attack rolls per turn (Multiattack)">Attacks/turn</label>
+        <input type="number" min={1} max={6} style={{ width: 52 }} value={stats.atkN} onChange={(e) => set("atkN", e.target.value)} />
+      </div>
+      <button className="btn tiny ghost" style={{ marginTop: 6 }} onClick={() => setShowAbil(!showAbil)}>{showAbil ? "▾" : "▸"} Ability modifiers (saves & initiative)</button>
+      {showAbil && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6, marginTop: 4 }}>
+          {["str", "dex", "con", "int", "wis", "cha"].map((k) => (
+            <label key={k} style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", textAlign: "center", letterSpacing: ".06em" }}>
+              {k}
+              <input type="number" value={stats.mods[k]} onChange={(e) => setMod(k, e.target.value)} style={{ width: "100%", padding: "6px 2px", textAlign: "center", display: "block", marginTop: 2 }} />
+            </label>
+          ))}
+        </div>
+      )}
+      <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Hidden from players until a fight starts. Add this NPC to the board from its row, then Start combat to bring the stats live.</div>
+    </div>
+  );
+}
+
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
-function DMNotebookModal({ party, onSave, onClose }) {
+function DMNotebookModal({ party, onSave, onClose, partyLevel }) {
   const [tab, setTab] = useState("npcs");
   const [draft, setDraft] = useState(null); // entry being edited: { tab, id|null, name, tag, sections, loc, parent }
   const [open, setOpen] = useState({}); // expanded rows / collapsed groups
@@ -6144,12 +6237,14 @@ function DMNotebookModal({ party, onSave, onClose }) {
   const cleanSecs = (secs) => (secs || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body);
 
   const commitTab = (k, entries) => onSave({ ...nb, [k]: entries });
-  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "" }); };
-  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "" }); };
+  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null }); };
+  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, lastSide: e.lastSide || "" }); };
   const saveDraft = () => {
     const t = draft.tab;
     const clean = { id: draft.id || newUid(), name: (draft.name || "").trim() || `Untitled ${singularOf(t)}`, tag: (draft.tag || "").trim(), sections: cleanSecs(draft.sections) };
     if (t === "npcs" && draft.loc) clean.loc = draft.loc;
+    if (t === "npcs" && draft.stats) clean.stats = draft.stats;
+    if (t === "npcs" && draft.lastSide) clean.lastSide = draft.lastSide;
     if (t === "locations" && draft.parent) clean.parent = draft.parent;
     const arr = get(t);
     commitTab(t, arr.some((e) => e.id === clean.id) ? arr.map((e) => (e.id === clean.id ? clean : e)) : [...arr, clean]);
@@ -6184,7 +6279,7 @@ function DMNotebookModal({ party, onSave, onClose }) {
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}</span>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.stats && <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span>}</span>
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
         </div>
@@ -6293,6 +6388,10 @@ function DMNotebookModal({ party, onSave, onClose }) {
                 </div>
               ) : <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>This place has buildings under it, so it stays a top-level location.</div>)}
               <SectionsEditor value={draft.sections} onChange={(secs) => setDraft({ ...draft, sections: secs })} />
+              {draft.tab === "npcs" && (draft.stats
+                ? <NpcStatsPanel stats={draft.stats} partyLevel={partyLevel} onChange={(s) => setDraft({ ...draft, stats: s })} onRemove={() => setDraft({ ...draft, stats: null })} />
+                : <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setDraft({ ...draft, stats: blankNpcStats() })}>⚔️ Add combat stats (optional)</button>
+              )}
               <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
                 <button className="btn small" onClick={() => { setDraft(null); setNewLoc(null); }}>Cancel</button>
                 <button className="btn small primary" onClick={saveDraft}>{draft.id ? "Save changes" : `Save ${dSingular}`}</button>
@@ -11860,7 +11959,7 @@ export default function App() {
         <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
       )}
       {modal?.type === "notebook" && (
-        <DMNotebookModal party={activeRoster} onSave={saveNotebook} onClose={() => setModal(null)} />
+        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
