@@ -6822,7 +6822,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 }
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
-const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
+const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#6e4a2a", "#453424", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
@@ -7187,6 +7187,13 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
                 </svg>
               </button>
             ))}
+          </div>
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture</span></span>
+          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
+            <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
+              <defs><TextureDefs /></defs>
+              <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
+            </svg>
           </div>
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
           <div className="dgn-iconpick">
