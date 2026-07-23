@@ -7065,11 +7065,15 @@ function RoomLabel({ room, cx, cy }) {
   );
 }
 
-// A single decorative prop drawn in the centre of a room (over the floor, under the labels).
+// A decorative prop drawn in a room (over the floor, under the labels). Centred by default; featurePos
+// 0-5 nudges it toward that edge (60·i°) so props that belong against a wall don't float dead-centre.
 function RoomFeature({ room, cx, cy }) {
   const f = room && room.feature; if (!f || f === "none") return null;
   const s = HEX_SIZE;
-  const wrap = (children) => <g style={{ pointerEvents: "none" }}>{children}</g>;
+  const pos = room && room.featurePos;
+  let ox = 0, oy = 0;
+  if (typeof pos === "number" && pos >= 0 && pos <= 5) { const a = (60 * pos * Math.PI) / 180, d = s * 0.42; ox = d * Math.cos(a); oy = d * Math.sin(a); }
+  const wrap = (children) => <g style={{ pointerEvents: "none" }} transform={ox || oy ? `translate(${ox.toFixed(1)} ${oy.toFixed(1)})` : undefined}>{children}</g>;
   if (f === "pool" || f === "fountain") {
     return wrap(<>
       <ellipse cx={cx} cy={cy} rx={s * 0.52} ry={s * 0.36} fill="#2f6ea3" stroke="#8fc0e6" strokeWidth="2" />
@@ -7441,6 +7445,20 @@ function RoomEditor({ room, neighbors = [], monsterList = [], groupNames = [], c
                   <span className="dgn-texname">{label}</span>
                 </div>
               ))}
+            </div>
+          )}
+          {room.feature && room.feature !== "none" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "2px 0 4px 2px" }}>
+              <span className="dgn-flabel" style={{ margin: 0 }}>Position</span>
+              <svg width="80" height="72" viewBox="-40 -36 80 72" style={{ background: "#14151c", borderRadius: 8 }}>
+                <polygon points={hexCorners(0, 0, 30)} fill="#20222b" stroke="rgba(255,255,255,.16)" strokeWidth="1" />
+                {(() => { const on = room.featurePos == null; return <circle cx="0" cy="0" r="6" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#f0dcae" : "rgba(255,255,255,.3)"} strokeWidth="1.3" style={{ cursor: "pointer" }} onClick={() => set({ featurePos: null })} />; })()}
+                {Array.from({ length: 6 }, (_, i) => {
+                  const a = (60 * i * Math.PI) / 180, d = 24, mx = d * Math.cos(a), my = d * Math.sin(a), on = room.featurePos === i;
+                  return <circle key={i} cx={mx} cy={my} r="5.5" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#f0dcae" : "rgba(255,255,255,.3)"} strokeWidth="1.2" style={{ cursor: "pointer" }} onClick={() => set({ featurePos: i })} />;
+                })}
+              </svg>
+              <span style={{ fontSize: 11, color: "var(--faint)" }}>centre, or nudge to a wall</span>
             </div>
           )}
           <button className="dgn-collapse" onClick={() => toggleSec("doors")}>
