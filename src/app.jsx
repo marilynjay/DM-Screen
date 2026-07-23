@@ -7675,9 +7675,14 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           )}
           {foes.length > 0 && (() => {
             const v = verdict(), IX = ["Low", "Moderate", "High"];
-            return (
-              <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
-                <div className="dgn-flabel" style={{ margin: "0 0 5px" }}>⚖ Balance to party</div>
+            return (<>
+              <button className="dgn-collapse" onClick={() => toggleSec("bal")}>
+                <span className="dgn-fold">{openSec.bal ? "▾" : "▸"}</span>
+                <span className="dgn-flabel" style={{ margin: 0 }}>⚖ Balance to party</span>
+                <span className="dgn-secsum">{openSec.bal ? "weigh foes vs the party budget" : `≈ ${encXp.toLocaleString()} XP · ${v.label}`}</span>
+              </button>
+              {openSec.bal && (
+              <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 2 }}>
                 <div className="frow" style={{ gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
                   <span className="ad" style={{ fontSize: 12 }}>Party</span>
                   <input type="number" min="1" value={balSize} onChange={(e) => setBalSize(e.target.value)} style={{ width: 46 }} title="Party size" />
@@ -7698,7 +7703,8 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
                 <button className="btn small" onClick={balanceCounts}>⚖ Scale foe counts to {IX[balIx]}</button>
                 <div className="ad" style={{ fontSize: 11, marginTop: 4 }}>Adjusts how many of each foe to hit the target band — DMG guidelines, not gospel.</div>
               </div>
-            );
+              )}
+            </>);
           })()}
           {noteField("encnotes", "Encounter Notes")}
         </>)}
