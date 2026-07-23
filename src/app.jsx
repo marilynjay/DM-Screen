@@ -7350,6 +7350,8 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               <defs><TextureDefs /></defs>
+              {/* the cell outline, so you can see how the shape sits within its hex */}
+              <polygon points={hexCorners(0, 0, HEX_SIZE)} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" strokeDasharray="3 3" />
               <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
               <RoomFeature room={room} cx={0} cy={0} />
               <RoomDoors room={room} cx={0} cy={0} />
