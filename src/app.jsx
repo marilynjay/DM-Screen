@@ -245,6 +245,11 @@ input[type=number]{width:64px}
 .dgn-sec-hd{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .dgn-sec-title{flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;font-weight:600;padding:2px 0}
 .dgn-fold{background:none;border:none;color:var(--gold);font-size:15px;cursor:pointer;padding:0 2px;line-height:1}
+.dgn-flabel{display:block;font-family:var(--disp);font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.02em;margin:12px 0 4px}
+.dgn-name{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);font-family:var(--disp);font-size:18px;padding:8px 10px;margin:4px 0 2px}
+.dgn-ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dgn-ehead h3{margin:0}
+.dgn-xclose{background:none;border:none;color:var(--faint);font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
 .turnbar .tb-round{font-family:var(--disp);font-size:12px;letter-spacing:.08em;color:var(--text);
   border:1px solid var(--line2);border-radius:6px;padding:3px 8px;white-space:nowrap}
 .turnbar .tb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
@@ -6755,7 +6760,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
-const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
+const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
 const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) => {
@@ -6888,8 +6893,8 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
   }
   const noteField = (k) => (
     <div key={k}>
-      <div className="frow" style={{ alignItems: "center", margin: "8px 0 3px" }}>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", flex: 1 }}>{DGN_FIELDS[k]}</div>
+      <div className="frow" style={{ alignItems: "center", margin: "12px 0 4px" }}>
+        <span className="dgn-flabel" style={{ flex: 1, margin: 0 }}>{DGN_FIELDS[k]}</span>
         <button className="btn tiny ghost" title="Edit this field full-screen" onClick={() => setFull(k)}>⤢ Full screen</button>
       </div>
       <SectionsEditor value={n[k]} onChange={(v) => setNote(k, v)} rows={2} />
@@ -6898,8 +6903,13 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Room</h3>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0 4px" }}>Shape</div>
+        <div className="dgn-ehead">
+          <h3>Room</h3>
+          <button className="dgn-xclose" title="Close" onClick={onClose}>✕</button>
+        </div>
+        <span className="dgn-flabel" style={{ marginTop: 4 }}>Room Name</span>
+        <input className="dgn-name" placeholder="Name this room… (optional)" value={room.title || ""} onChange={(e) => set({ title: e.target.value })} />
+        <span className="dgn-flabel">Shape</span>
         <div className="pickgrid">
           {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
         </div>
@@ -6914,7 +6924,7 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
             <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
           </div>
         )}
-        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Background colour</div>
+        <span className="dgn-flabel">Background Colour</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
         </div>
@@ -6948,7 +6958,15 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
     return () => { if (ro) ro.disconnect(); else window.removeEventListener("resize", upd); };
   }, []);
   const rooms = dg.rooms || {};
-  const RANGE = 8; // logical hex extent; the canvas pans/zooms over it
+  // The grid grows dynamically: it always extends a couple of rings past the furthest room,
+  // so placing a room near the edge pops in more hexes and the dungeon can grow without limit.
+  const RANGE = useMemo(() => {
+    const ext = Object.keys(rooms).reduce((m, k) => {
+      const [q, r] = k.split(",").map(Number);
+      return Math.max(m, Math.abs(q), Math.abs(r));
+    }, 0);
+    return Math.max(8, ext + 2);
+  }, [rooms]);
   const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
   const grid = useMemo(() => {
     const out = [];
@@ -6962,7 +6980,7 @@ function DungeonBuilder({ dungeon, onSave, onClose }) {
       );
     }
     return out;
-  }, [rooms]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rooms, RANGE]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
   const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
