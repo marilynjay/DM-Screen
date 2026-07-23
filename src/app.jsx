@@ -3131,7 +3131,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
             {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
             {c.type === "monster" && atkMaxOf(c) > 0 && <button onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>}
-            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "Give loot…"}</button>}
+            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
             {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
@@ -5956,10 +5956,15 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(scrollQ.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 30) : [];
   const addScroll = (k) => { const s = SPELL_REF[k]; setItems([...items, { n: `Scroll of ${s.n}`, scroll: k, c: 1, rarity: "U", d: `Cast ${s.n} (${s.m}) — one use.` }]); setScrollQ(null); };
   const [form, setForm] = useState(null); // null = builder closed
-  const filtered = ITEMS.filter((i) =>
-    (tab === "all" || (tab === "W" ? i.rarity === "G" && i.wpn : tab === "A" ? i.rarity === "G" && !i.wpn : i.rarity === tab))
-    && i.n.toLowerCase().includes(q.toLowerCase()));
-  const mineFiltered = customItems.filter((i) => (tab === "all" || i.rarity === tab) && i.n.toLowerCase().includes(q.toLowerCase()));
+  // an item can belong to several categories at once (a custom Rare weapon shows under Custom, Rare, and Weapons)
+  const inCat = (it) => tab === "all" ? true
+    : tab === "mine" ? !!it.custom
+    : tab === "W" ? itemKindOf(it) === "weapon"
+    : tab === "A" ? itemKindOf(it) === "armor"
+    : it.rarity === tab;
+  const nameHit = (it) => it.n.toLowerCase().includes(q.toLowerCase());
+  const filtered = ITEMS.filter((i) => inCat(i) && nameHit(i));
+  const mineFiltered = customItems.filter((i) => inCat(i) && nameHit(i));
   const addCustomLine = () => {
     const t = custom.trim(); if (!t) return;
     const mine = customItems.find((i) => i.n.toLowerCase() === t.toLowerCase());
@@ -6159,11 +6164,11 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
               <input type="text" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} style={{ flex: 1 }} />
             </div>
             <div className="tabs" style={{ marginBottom: 6 }}>
-              {["all", "W", "A", "C", "U", "R", "V", "L"].map((t) => (
+              {["all", "mine", "W", "A", "C", "U", "R", "V", "L"].map((t) => (
                 <button key={t} className="btn small"
                   style={tab === t ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
                   onClick={() => setTab(t)}>
-                  {t === "all" ? "All" : t === "W" ? "Weapons" : t === "A" ? "Armor" : RARITY_NAME[t]}
+                  {t === "all" ? "All" : t === "mine" ? "✦ Custom" : t === "W" ? "Weapons" : t === "A" ? "Armor" : RARITY_NAME[t]}
                 </button>
               ))}
             </div>
