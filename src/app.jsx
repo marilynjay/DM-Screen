@@ -694,6 +694,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-bloodied{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#f0a9a2;
   border:1px solid var(--danger);background:rgba(200,60,55,.16);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .pm-bloodbtn{border-color:var(--danger);color:#f0a9a2;background:rgba(200,60,55,.16)}
+.pm-move{display:inline-flex;flex-direction:column;gap:1px;flex:none}
+.pm-move button{padding:0 5px;line-height:1.1;font-size:11px;min-height:0}
 .pm-enemy.down{opacity:.5}
 .pm-enemy.down .pm-name{text-decoration:line-through}
 .pm-ds{display:flex;align-items:center;gap:4px;margin-top:5px;flex-wrap:wrap}
@@ -8587,10 +8589,21 @@ function PlayerModeBoard({ onExit }) {
   const [search, setSearch] = useState(null); // null = closed; else query string
   const [cat, setCat] = useState("all");
   const [qty, setQty] = useState("3");
+  const [reorder, setReorder] = useState(false); // show up/down arrows to approximate initiative
   useEffect(() => { let live = true; (async () => { const b = await stGet("dm5e:pmBoard"); if (live) setBoard(b && b.allies ? { ...PM_BLANK(), ...b } : PM_BLANK()); })(); return () => { live = false; }; }, []);
   if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
   const save = (b) => { setBoard(b); stSet("dm5e:pmBoard", b); };
   const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
+  // reorder within a list (approximate initiative order)
+  const moved = (arr, id, dir) => { const i = arr.findIndex((x) => x.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= arr.length) return arr; const n = [...arr]; [n[i], n[j]] = [n[j], n[i]]; return n; };
+  const moveEnemy = (id, dir) => save({ ...board, enemies: moved(board.enemies, id, dir) });
+  const moveAlly = (id, dir) => save({ ...board, allies: moved(board.allies, id, dir) });
+  const moveHandle = (fn, id, atTop, atBottom) => (
+    <span className="pm-move">
+      <button className="btn tiny ghost" disabled={atTop} title="Move up" onClick={() => fn(id, -1)}>▲</button>
+      <button className="btn tiny ghost" disabled={atBottom} title="Move down" onClick={() => fn(id, +1)}>▼</button>
+    </span>
+  );
   // allies
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
   const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] });
@@ -8656,6 +8669,7 @@ function PlayerModeBoard({ onExit }) {
       <style>{CSS}</style>
       <div className="pm-bar">
         <span className="pm-logo">🙂 Player Mode</span>
+        <button className={`btn small ${reorder ? "" : "ghost"}`} onClick={() => setReorder(!reorder)} title="Show up/down arrows to reorder creatures and party — approximate initiative as you figure it out">⇅ Reorder{reorder ? " ✓" : ""}</button>
         <button className="btn small ghost" onClick={onExit} title="Back to the full app">← Exit</button>
       </div>
       <div className="main">
@@ -8683,9 +8697,10 @@ function PlayerModeBoard({ onExit }) {
             </div>
           )}
           {board.enemies.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No enemies yet — add a few above.</div>}
-          {board.enemies.map((e) => (
+          {board.enemies.map((e, ei) => (
             <div key={e.id} className={`pm-enemy ${e.defeated ? "down" : ""}`}>
               <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+                {reorder && moveHandle(moveEnemy, e.id, ei === 0, ei === board.enemies.length - 1)}
                 <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
                 <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
@@ -8713,9 +8728,10 @@ function PlayerModeBoard({ onExit }) {
         {/* PARTY */}
         <div className="card" style={{ marginTop: 12 }}>
           <div className="pm-sect-hd">Party HP</div>
-          {allyRows.map((a) => (
+          {allyRows.map((a, ai) => (
             <div key={a.id} style={{ marginBottom: 8 }}>
               <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+                {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
                 <span style={{ color: "var(--faint)" }}>/</span>
