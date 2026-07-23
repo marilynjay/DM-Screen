@@ -6753,7 +6753,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["curve", "◠ Curved"], ["wcurve", "◡ Wide curve"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["ccurve", "◜ Corner"], ["curve", "◠ Curved"], ["wcurve", "◡ Wide curve"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
@@ -6766,16 +6766,40 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
 function RoomShape({ room, cx, cy, hexKey }) {
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
+  // Clip a corridor shape to its hex cell so nothing pokes past the edges. All corridor
+  // rotations are 60° multiples, and the hexagon is invariant under those, so clipping in the
+  // unrotated frame is exact.
+  const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
+  const clipped = (node, rot = 0) => (
+    <>
+      <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>
+      <g clipPath={`url(#${clipId})`}>
+        {rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}
+      </g>
+    </>
+  );
+
   if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={col} stroke={stroke} strokeWidth="1.5" />;
   if (shape === "square") { // extra shape, shrunk inside the hex — sharp corners
     const side = s * 1.18;
     return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={col} stroke={stroke} strokeWidth="1.5" />;
   }
-  if (shape === "hall") { // a horizontal tube (spans the hex's side edges), optionally rotated 45°/135°
+  if (shape === "hall") { // a straight tube spanning two opposite edges; diagonals run at the hex's own 60° slant
     const th = s * 0.42, L = Math.sqrt(3) * s;
-    const MAP = { h: { len: L, rot: 0 }, d1: { len: L, rot: 135 }, d2: { len: L, rot: 45 } };
+    // rot 0 = flush horizontal; d1 ／ (lower-left↔upper-right) and d2 ＼ (upper-left↔lower-right) both at 60°
+    const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
     const conf = MAP[room.orient] || MAP.h;
-    return <rect x={cx - conf.len / 2} y={cy - th / 2} width={conf.len} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${conf.rot} ${cx} ${cy})`} />;
+    return clipped(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={col} stroke={stroke} strokeWidth="1" />, conf.rot);
+  }
+  if (shape === "ccurve") { // a tight corner elbow arcing around one vertex, joining two adjacent edges
+    const th = s * 0.42, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
+    const vAng = (-30 * Math.PI) / 180; // vertex the arc wraps around (upper-right by default)
+    const vx = cx + s * Math.cos(vAng), vy = cy + s * Math.sin(vAng);
+    const a1 = (90 * Math.PI) / 180, a2 = (210 * Math.PI) / 180; // touches the right & upper-right edge midpoints
+    const P = (rad, a) => `${(vx + rad * Math.cos(a)).toFixed(1)},${(vy + rad * Math.sin(a)).toFixed(1)}`;
+    const d = `M ${P(ro, a1)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 1 ${P(ro, a2)} L ${P(ri, a2)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 0 ${P(ri, a1)} Z`;
+    const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per adjacent-edge pair
+    return clipped(<path d={d} fill={col} stroke={stroke} strokeWidth="1" />, rot);
   }
   if (shape === "curve" || shape === "wcurve") {
     // A curved corridor between two edges 2 apart (passes over the flat between them). "curve" is a
@@ -6789,14 +6813,7 @@ function RoomShape({ room, cx, cy, hexKey }) {
     const pt = (rad, a) => `${(C.x + rad * Math.cos(a)).toFixed(1)},${(C.y + rad * Math.sin(a)).toFixed(1)}`;
     const d = `M ${pt(ro, aA)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${pt(ro, aB)} L ${pt(ri, aB)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${pt(ri, aA)} Z`;
     const rot = ((Number(room.orient) || 0) % 6) * 60; // 6 orientations, one per edge pair
-    // clip to the hex so the tube ends meet the edges flush instead of poking through
-    const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
-    return (
-      <g transform={`rotate(${rot} ${cx} ${cy})`}>
-        <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>
-        <path d={d} fill={col} stroke={stroke} strokeWidth="1" clipPath={`url(#${clipId})`} />
-      </g>
-    );
+    return clipped(<path d={d} fill={col} stroke={stroke} strokeWidth="1" />, rot);
   }
   // hex (default) — the whole cell, filled
   return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={col} stroke={stroke} strokeWidth="1.5" />;
@@ -6876,7 +6893,7 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
             {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
           </div>
         )}
-        {(room.shape === "curve" || room.shape === "wcurve") && (
+        {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve") && (
           <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
             <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
             <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
