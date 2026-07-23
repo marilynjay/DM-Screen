@@ -1178,7 +1178,7 @@ const ITEMS_RAW = [
 ["Well of Many Worlds","L","Cloth opens a portal to another random plane."],
 ];
 const RARITY_NAME = { G: "Gear", C: "Common", U: "Uncommon", R: "Rare", V: "Very rare", L: "Legendary" };
-const rarityLabel = (it) => (it.rarity === "G" ? (it.wpn ? "Weapon" : "Armor") : RARITY_NAME[it.rarity] || "");
+const rarityLabel = (it) => (it.note ? "Note" : it.rarity === "G" ? (it.wpn ? "Weapon" : "Armor") : RARITY_NAME[it.rarity] || "");
 const ITEMS = ITEMS_RAW.map(([n, r, d, x]) => ({ n, rarity: r, d, ...(x || {}) }))
   .sort((a, b) => "GCURVL".indexOf(a.rarity) - "GCURVL".indexOf(b.rarity) || a.n.localeCompare(b.n));
 const lookupItem = (name) => {
@@ -5834,12 +5834,14 @@ const ITEM_KINDS = [
   ["boon", "✨ Boon / self-buff", "One use — temp HP, advantage on your rolls, or a condition on yourself for a few rounds."],
   ["wand", "✨ Charged item", "Tracks charges; describe what a charge does."],
   ["armor", "🛡 Armor / shield", "Grants an AC bonus while equipped."],
+  ["note", "📝 Note / handout", "A letter, journal page, or clue — headed sections of text, no mechanics."],
   ["other", "📜 Trinket / other", "Descriptive item — no mechanics."],
 ];
 // Conditions a thrown / boon item can impart (the cover pseudo-conditions aren't relevant here).
 const THROW_CONDS = Object.keys(CONDITIONS).filter((n) => !/Cover/.test(n));
-const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "", cond: "", aoe: false, bthp: "", badv: false, bdur: "" };
+const BLANK_ITEM_FORM = { origN: null, kind: null, n: "", rarity: "C", d: "", dmg: "1d6", dtype: "slashing", fin: false, rng: false, ls: false, b: "0", heal: "", ch: "", c: false, acB: "", cond: "", aoe: false, bthp: "", badv: false, bdur: "", note: [{ h: "", b: "" }] };
 function itemKindOf(it) {
+  if (it.note) return "note";
   if (it.wpn) return "weapon";
   if (it.thrown) return "thrown";
   if (it.boon) return "boon";
@@ -5856,6 +5858,7 @@ function itemToForm(it) {
     heal: it.heal || "", ch: it.ch != null ? String(it.ch) : "", c: !!it.c, acB: it.acB != null ? String(it.acB) : "",
     cond: it.thrown?.cond || it.boon?.cond || "", aoe: !!it.thrown?.aoe,
     bthp: it.boon?.thp || "", badv: !!it.boon?.adv, bdur: it.boon?.dur != null ? String(it.boon.dur) : "",
+    note: Array.isArray(it.note) && it.note.length ? it.note.map((s) => ({ h: s.h || "", b: s.b || "" })) : [{ h: "", b: "" }],
   };
 }
 function formToItem(f) {
@@ -5890,6 +5893,10 @@ function formToItem(f) {
     it.ch = chN != null ? chN : 3;
   } else if (f.kind === "armor") {
     if (parseInt(f.acB, 10)) it.acB = parseInt(f.acB, 10);
+  } else if (f.kind === "note") {
+    it.note = (f.note || []).map((s) => ({ h: (s.h || "").trim(), b: (s.b || "").trim() })).filter((s) => s.h || s.b);
+    if (!it.note.length) it.note = [{ h: "", b: (f.d || "").trim() }];
+    delete it.rarity; // notes have no rarity
   }
   return it;
 }
@@ -5943,7 +5950,175 @@ function MonsterItemsModal({ c, api, onGive, onClose }) {
   );
 }
 
+// Self-contained custom-item builder — used inline in the loot/compendium screens and the dungeon room editor.
+// Manages its own draft state; on save hands back (item, originalName) so the caller can persist + place it.
+function ItemBuilder({ initial, onSaveItem, onAbilBoost, onClose }) {
+  const [form, setForm] = useState(initial || { ...BLANK_ITEM_FORM });
+  const setF = (k, v) => setForm({ ...form, [k]: v });
+  const setSection = (i, k, v) => setForm({ ...form, note: form.note.map((s, j) => (j === i ? { ...s, [k]: v } : s)) });
+  const isNote = form.kind === "note";
+  const canSave = isNote ? (form.n.trim() || form.note.some((s) => s.h.trim() || s.b.trim())) : form.n.trim();
+  const save = () => onSaveItem(formToItem(form), form.origN);
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
+      <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>
+        {form.origN ? `Edit item — ${form.origN}` : "New custom item"}
+        {form.kind && (
+          <button className="btn tiny ghost" style={{ marginLeft: 8 }} onClick={() => setF("kind", null)}>
+            {ITEM_KINDS.find(([k]) => k === form.kind)?.[1]} — change type
+          </button>
+        )}
+      </div>
+      {!form.kind && (
+        <div>
+          <div className="trait" style={{ marginBottom: 6 }}>What kind of item is it?</div>
+          {ITEM_KINDS.map(([k, label, hint]) => (
+            <button key={k} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setF("kind", k)}>
+              {label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
+            </button>
+          ))}
+          {onAbilBoost && (
+            <button className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => onAbilBoost()}>
+              💪 Ability item<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>Raises an ability score — Belt of Giant Strength, Manual of Gainful Exercise…</span>
+            </button>
+          )}
+        </div>
+      )}
+      {form.kind && isNote && (<>
+        <div className="frow"><input type="text" placeholder="Title — e.g. Torn Letter" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus /></div>
+        {form.note.map((s, i) => (
+          <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 6, padding: "6px 8px", marginTop: 6 }}>
+            <div className="frow">
+              <input type="text" placeholder={`Section ${i + 1} heading (optional)`} style={{ flex: 1, fontWeight: 600 }} value={s.h} onChange={(e) => setSection(i, "h", e.target.value)} />
+              {form.note.length > 1 && <button className="btn tiny danger" title="Remove section" onClick={() => setForm({ ...form, note: form.note.filter((_, j) => j !== i) })}>✕</button>}
+            </div>
+            <textarea placeholder="Body text…" rows={3} style={{ width: "100%", marginTop: 4, resize: "vertical" }} value={s.b} onChange={(e) => setSection(i, "b", e.target.value)} />
+          </div>
+        ))}
+        <div className="frow" style={{ marginTop: 6 }}><button className="btn small ghost" onClick={() => setForm({ ...form, note: [...form.note, { h: "", b: "" }] })}>＋ Add section</button></div>
+        <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>A handout — headings and text, no mechanics. Give it to a player and it stays in their bag; they can re-read it anytime.</div>
+      </>)}
+      {form.kind && !isNote && (<>
+        <div className="frow">
+          <input type="text" placeholder="Item name" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus />
+          <select value={form.rarity} onChange={(e) => setF("rarity", e.target.value)}>
+            {["C", "U", "R", "V", "L"].map((r) => (<option key={r} value={r}>{RARITY_NAME[r]}</option>))}
+          </select>
+        </div>
+        <div className="frow"><input type="text" placeholder="What it does (shown wherever the item appears)" style={{ flex: 1 }} value={form.d} onChange={(e) => setF("d", e.target.value)} /></div>
+        {form.kind === "weapon" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Damage</label>
+            <input type="text" placeholder="1d8" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
+            <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
+              {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+            </select>
+            <select value={form.b} onChange={(e) => setF("b", e.target.value)} title="Magic bonus to hit and damage">
+              {["0", "1", "2", "3"].map((n) => (<option key={n} value={n}>{n === "0" ? "no bonus" : `+${n}`}</option>))}
+            </select>
+          </div>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
+            <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
+            <label style={{ minWidth: 0 }} title="On a hit, the wielder regains HP equal to half the damage dealt"><input type="checkbox" checked={form.ls} onChange={(e) => setF("ls", e.target.checked)} /> 🩸 lifesteal</label>
+            <label style={{ minWidth: 0 }}>Charges</label>
+            <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} title="Optional — for a weapon with a limited-use power described above" />
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Lifesteal heals the wielder for half the damage dealt. Charges are optional, for a limited-use power described above.</div>
+        </>)}
+        {form.kind === "thrown" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Damage</label>
+            <input type="text" placeholder="3d6" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
+            <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
+              {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+            </select>
+          </div>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Condition</label>
+            <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — inflicted on a hit / failed save">
+              <option value="">none</option>
+              {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
+            </select>
+          </div>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }} title="Hits everyone in an area — opens the group-save / AoE screen when used"><input type="checkbox" checked={form.aoe} onChange={(e) => setF("aoe", e.target.checked)} /> 💥 Area burst (save for each target)</label>
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use. When used it rolls damage against a target (or, for an area burst, opens the group-save screen). A condition applies on a hit or failed save.</div>
+        </>)}
+        {form.kind === "boon" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Temp HP</label>
+            <input type="text" placeholder="e.g. 10 or 2d4+2" style={{ width: 120, flex: "none" }} value={form.bthp} onChange={(e) => setF("bthp", e.target.value)} />
+          </div>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }} title="Grants advantage on the user's own attack rolls and saving throws while it lasts"><input type="checkbox" checked={form.badv} onChange={(e) => setF("badv", e.target.checked)} /> ✨ Advantage on your attacks &amp; saves</label>
+          </div>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Condition</label>
+            <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — a condition applied to yourself (e.g. Invisible)">
+              <option value="">none</option>
+              {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
+            </select>
+            <label style={{ minWidth: 0 }}>Rounds</label>
+            <input type="number" min={1} placeholder="—" style={{ width: 56 }} value={form.bdur} onChange={(e) => setF("bdur", e.target.value)} title="How long the advantage / condition lasts, in rounds. Blank = until removed." />
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use, applied to whoever uses it. Advantage and the condition tick down each round and drop off on their own; temp HP has no timer. Leave rounds blank for an effect you'll end manually.</div>
+        </>)}
+        {form.kind === "potion" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Heals</label>
+            <input type="text" placeholder="2d4+2 (blank = no healing)" style={{ width: 170, flex: "none" }} value={form.heal} onChange={(e) => setF("heal", e.target.value)} />
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use — it's consumed when used, healing if dice are set.</div>
+        </>)}
+        {form.kind === "wand" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>Charges</label>
+            <input type="number" min={0} placeholder="3" style={{ width: 64 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} />
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Each Use spends a charge — the description above says what a charge does.</div>
+        </>)}
+        {form.kind === "armor" && (<>
+          <div className="frow" style={{ flexWrap: "wrap" }}>
+            <label style={{ minWidth: 0 }}>+AC</label>
+            <input type="number" min={0} placeholder="1" style={{ width: 64 }} value={form.acB} onChange={(e) => setF("acB", e.target.value)} />
+          </div>
+          <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>The holder gets an Equip button; the bonus applies while equipped.</div>
+        </>)}
+      </>)}
+      {form.kind && (
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
+          <button className="btn small" onClick={onClose}>Cancel</button>
+          <button className="btn small primary" disabled={!canSave} onClick={save}>{form.origN ? "Save changes" : "Save item"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Read-only view of a note/handout item — headed sections of text.
+function NoteReadModal({ item, onClose }) {
+  const sections = (item.note || []).filter((s) => (s.h || "").trim() || (s.b || "").trim());
+  return (
+    <div className="overlay" onClick={onClose} style={{ zIndex: 60 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modalhd"><h3>📝 {item.n || "Note"}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
+        {sections.length === 0 && <div className="trait">This note is blank.</div>}
+        {sections.map((s, i) => (
+          <div key={i} style={{ marginBottom: 12 }}>
+            {(s.h || "").trim() && <div style={{ fontWeight: 700, color: "var(--gold)", marginBottom: 3 }}>{s.h}</div>}
+            {(s.b || "").trim() && <div style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.45 }}>{s.b}</div>}
+          </div>
+        ))}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+
 function PartyInventoryModal({ party, onMove, onRemove, onClose }) {
+  const [reading, setReading] = useState(null);
   const members = (party?.members || []).filter((m) => (m.name || "").trim());
   const others = (mid) => members.filter((m) => m.id !== mid);
   const goldOf = (m) => (m.loot || []).reduce((s, it) => { const n = lootObj(it).n || ""; const mm = n.match(/(\d[\d,]*)\s*(?:gp|gold)\b/i); return s + (mm ? parseInt(mm[1].replace(/,/g, ""), 10) : 0); }, 0);
@@ -5966,6 +6141,7 @@ function PartyInventoryModal({ party, onMove, onRemove, onClose }) {
                 {bag.map((raw, i) => { const it = lootObj(raw); return (
                   <div className="targetline" key={i}>
                     <span style={{ flex: 1 }}>{lootName(it)}{it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}{it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}</span>
+                    {it.note && <button className="btn small ghost" title="Read this note" onClick={() => setReading(it)}>Read</button>}
                     {others(m.id).length > 0 && (
                       <select value="" title="Move to another member" onChange={(e) => { if (e.target.value) onMove(m.id, i, e.target.value); }} style={{ fontSize: 12, maxWidth: 110 }}>
                         <option value="">→ move…</option>
@@ -5982,6 +6158,7 @@ function PartyInventoryModal({ party, onMove, onRemove, onClose }) {
         </>)}
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
       </div>
+      {reading && <NoteReadModal item={reading} onClose={() => setReading(null)} />}
     </div>
   );
 }
@@ -5996,7 +6173,8 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
   const scrollMatches = scrollQ && scrollQ.trim().length >= 2
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(scrollQ.trim().toLowerCase())).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 30) : [];
   const addScroll = (k) => { const s = SPELL_REF[k]; setItems([...items, { n: `Scroll of ${s.n}`, scroll: k, c: 1, rarity: "U", d: `Cast ${s.n} (${s.m}) — one use.` }]); setScrollQ(null); };
-  const [form, setForm] = useState(null); // null = builder closed
+  const [form, setForm] = useState(null); // null = builder closed; otherwise the initial draft handed to ItemBuilder
+  const [reading, setReading] = useState(null); // a note item being read
   // an item can belong to several categories at once (a custom Rare weapon shows under Custom, Rare, and Weapons)
   const inCat = (it) => tab === "all" ? true
     : tab === "mine" ? !!it.custom
@@ -6015,11 +6193,9 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
   // hand an item from this (non-player) holder into a player's bag — moves it out of here
   const canAssign = !compendium && c && c.type !== "player" && players.length > 0 && onAssign;
   const giveTo = (i, playerUid) => { const item = items[i]; const reduced = items.filter((_, j) => j !== i); setItems(reduced); onAssign(reduced, item, playerUid); };
-  const setF = (k, v) => setForm({ ...form, [k]: v });
-  const saveForm = () => {
-    const it = formToItem(form);
-    onSaveCustomItem(it, form.origN);
-    if (!form.origN && !compendium) setItems([...items, JSON.parse(JSON.stringify(it))]); // creating from this creature's loot screen: hand it over too
+  const saveForm = (it, origN) => {
+    onSaveCustomItem(it, origN);
+    if (!origN && !compendium) setItems([...items, JSON.parse(JSON.stringify(it))]); // creating from this creature's loot screen: hand it over too
     setForm(null);
   };
   return (
@@ -6035,6 +6211,7 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
                 {it.rarity && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span>}
                 {it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>}
               </span>
+              {it.note && <button className="btn small ghost" title="Read this note" onClick={() => setReading(it)}>Read</button>}
               {canAssign && (
                 <select value="" title="Give this item to a player" onChange={(e) => { if (e.target.value) giveTo(i, e.target.value); }} style={{ fontSize: 12, maxWidth: 120 }}>
                   <option value="">→ give to…</option>
@@ -6080,124 +6257,7 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
           </div>
         )}
         {form && (
-          <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>
-            <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>
-              {form.origN ? `Edit item — ${form.origN}` : "New custom item"}
-              {form.kind && (
-                <button className="btn tiny ghost" style={{ marginLeft: 8 }} onClick={() => setF("kind", null)}>
-                  {ITEM_KINDS.find(([k]) => k === form.kind)?.[1]} — change type
-                </button>
-              )}
-            </div>
-            {!form.kind && (
-              <div>
-                <div className="trait" style={{ marginBottom: 6 }}>What kind of item is it?</div>
-                {ITEM_KINDS.map(([k, label, hint]) => (
-                  <button key={k} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setF("kind", k)}>
-                    {label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
-                  </button>
-                ))}
-                {onAbilBoost && (
-                  <button className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => onAbilBoost()}>
-                    💪 Ability item<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>Raises an ability score — Belt of Giant Strength, Manual of Gainful Exercise…</span>
-                  </button>
-                )}
-              </div>
-            )}
-            {form.kind && (<>
-              <div className="frow">
-                <input type="text" placeholder="Item name" style={{ flex: 1 }} value={form.n} onChange={(e) => setF("n", e.target.value)} autoFocus />
-                <select value={form.rarity} onChange={(e) => setF("rarity", e.target.value)}>
-                  {["C", "U", "R", "V", "L"].map((r) => (<option key={r} value={r}>{RARITY_NAME[r]}</option>))}
-                </select>
-              </div>
-              <div className="frow"><input type="text" placeholder="What it does (shown wherever the item appears)" style={{ flex: 1 }} value={form.d} onChange={(e) => setF("d", e.target.value)} /></div>
-              {form.kind === "weapon" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Damage</label>
-                  <input type="text" placeholder="1d8" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
-                  <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
-                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-                  </select>
-                  <select value={form.b} onChange={(e) => setF("b", e.target.value)} title="Magic bonus to hit and damage">
-                    {["0", "1", "2", "3"].map((n) => (<option key={n} value={n}>{n === "0" ? "no bonus" : `+${n}`}</option>))}
-                  </select>
-                </div>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.fin} onChange={(e) => setF("fin", e.target.checked)} /> finesse</label>
-                  <label style={{ minWidth: 0 }}><input type="checkbox" checked={form.rng} onChange={(e) => setF("rng", e.target.checked)} /> ranged</label>
-                  <label style={{ minWidth: 0 }} title="On a hit, the wielder regains HP equal to half the damage dealt"><input type="checkbox" checked={form.ls} onChange={(e) => setF("ls", e.target.checked)} /> 🩸 lifesteal</label>
-                  <label style={{ minWidth: 0 }}>Charges</label>
-                  <input type="number" min={0} placeholder="—" style={{ width: 56 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} title="Optional — for a weapon with a limited-use power described above" />
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Holder attacks with their own stats (+ the magic bonus). Lifesteal heals the wielder for half the damage dealt. Charges are optional, for a limited-use power described above.</div>
-              </>)}
-              {form.kind === "thrown" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Damage</label>
-                  <input type="text" placeholder="3d6" style={{ width: 70, flex: "none" }} value={form.dmg} onChange={(e) => setF("dmg", e.target.value)} />
-                  <select value={form.dtype} onChange={(e) => setF("dtype", e.target.value)}>
-                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-                  </select>
-                </div>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Condition</label>
-                  <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — inflicted on a hit / failed save">
-                    <option value="">none</option>
-                    {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
-                  </select>
-                </div>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }} title="Hits everyone in an area — opens the group-save / AoE screen when used"><input type="checkbox" checked={form.aoe} onChange={(e) => setF("aoe", e.target.checked)} /> 💥 Area burst (save for each target)</label>
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use. When used it rolls damage against a target (or, for an area burst, opens the group-save screen). A condition applies on a hit or failed save.</div>
-              </>)}
-              {form.kind === "boon" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Temp HP</label>
-                  <input type="text" placeholder="e.g. 10 or 2d4+2" style={{ width: 120, flex: "none" }} value={form.bthp} onChange={(e) => setF("bthp", e.target.value)} />
-                </div>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }} title="Grants advantage on the user's own attack rolls and saving throws while it lasts"><input type="checkbox" checked={form.badv} onChange={(e) => setF("badv", e.target.checked)} /> ✨ Advantage on your attacks &amp; saves</label>
-                </div>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Condition</label>
-                  <select value={form.cond} onChange={(e) => setF("cond", e.target.value)} title="Optional — a condition applied to yourself (e.g. Invisible)">
-                    <option value="">none</option>
-                    {THROW_CONDS.map((cn) => (<option key={cn} value={cn}>{cn}</option>))}
-                  </select>
-                  <label style={{ minWidth: 0 }}>Rounds</label>
-                  <input type="number" min={1} placeholder="—" style={{ width: 56 }} value={form.bdur} onChange={(e) => setF("bdur", e.target.value)} title="How long the advantage / condition lasts, in rounds. Blank = until removed." />
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use, applied to whoever uses it. Advantage and the condition tick down each round and drop off on their own; temp HP has no timer. Leave rounds blank for an effect you'll end manually.</div>
-              </>)}
-              {form.kind === "potion" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Heals</label>
-                  <input type="text" placeholder="2d4+2 (blank = no healing)" style={{ width: 170, flex: "none" }} value={form.heal} onChange={(e) => setF("heal", e.target.value)} />
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Single use — it's consumed when used, healing if dice are set.</div>
-              </>)}
-              {form.kind === "wand" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>Charges</label>
-                  <input type="number" min={0} placeholder="3" style={{ width: 64 }} value={form.ch} onChange={(e) => setF("ch", e.target.value)} />
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>Each Use spends a charge — the description above says what a charge does.</div>
-              </>)}
-              {form.kind === "armor" && (<>
-                <div className="frow" style={{ flexWrap: "wrap" }}>
-                  <label style={{ minWidth: 0 }}>+AC</label>
-                  <input type="number" min={0} placeholder="1" style={{ width: 64 }} value={form.acB} onChange={(e) => setF("acB", e.target.value)} />
-                </div>
-                <div className="trait" style={{ color: "var(--faint)", fontSize: 11 }}>The holder gets an Equip button; the bonus applies while equipped.</div>
-              </>)}
-              <div className="frow" style={{ justifyContent: "flex-end", marginTop: 6 }}>
-                <button className="btn small" onClick={() => setForm(null)}>Cancel</button>
-                <button className="btn small primary" disabled={!form.n.trim()} onClick={saveForm}>{form.origN ? "Save changes" : "Save item"}</button>
-              </div>
-            </>)}
-          </div>
+          <ItemBuilder initial={form} onAbilBoost={onAbilBoost} onSaveItem={saveForm} onClose={() => setForm(null)} />
         )}
         {browse && (
           <div style={{ marginTop: 8 }}>
@@ -6222,6 +6282,7 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
                       {it.n} <span style={{ color: "var(--faint)", fontSize: 11 }}>· {rarityLabel(it)} · custom</span>
                       <div style={{ fontSize: 11, color: "var(--faint)" }}>{it.d}</div>
                     </span>
+                    {it.note && <button className="btn small ghost" title="Read this note" onClick={() => setReading(it)}>Read</button>}
                     <button className="btn small ghost" title="Edit this item" onClick={() => setForm(itemToForm(it))}>✎</button>
                     <button className="btn small ghost" title="Delete from my items" onClick={() => onDeleteCustomItem(it.n)}>✕</button>
                     {!compendium && <button className="btn small" onClick={() => setItems([...items, JSON.parse(JSON.stringify(it))])}>+ Give</button>}
@@ -6254,6 +6315,7 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], onAssign
                 <button className="btn primary" onClick={() => onSave(items)}>Save</button></>}
         </div>
       </div>
+      {reading && <NoteReadModal item={reading} onClose={() => setReading(null)} />}
     </div>
   );
 }
@@ -7628,7 +7690,7 @@ function roomTouched(r) {
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], party = { size: 4, level: 3, difficulty: "moderate" }, monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
+function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], party = { size: 4, level: 3, difficulty: "moderate" }, monsterList = [], groupNames = [], customItems = [], onSaveCustomItem, onChange, onDelete, onClose }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
@@ -7636,6 +7698,8 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
   const [lootQ, setLootQ] = useState(null); // non-null = add-item search open; holds the query
   const [lootTab, setLootTab] = useState("all"); // item-browser category
   const [lootCustom, setLootCustom] = useState("");
+  const [lootBuilder, setLootBuilder] = useState(null); // null = closed; otherwise ItemBuilder draft
+  const [lootReading, setLootReading] = useState(null); // a note item being read
   const [openSec, setOpenSec] = useState({}); // which collapsible appearance pickers are expanded (start collapsed)
   const toggleSec = (k) => setOpenSec((o) => ({ ...o, [k]: !o[k] }));
   const labelOf = (list, id, dflt) => (list.find(([v]) => v === (id || dflt)) || list[0])[1];
@@ -8019,12 +8083,21 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           {loot.map((it, i) => (
             <div key={i} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
               <span style={{ flex: 1, minWidth: 0 }}>{lootName(it)}{it.rarity ? <span style={{ color: "var(--faint)", fontSize: 11 }}> · {rarityLabel(it)}</span> : null}</span>
+              {it.note && <button className="btn tiny ghost" title="Read this note" onClick={() => setLootReading(it)}>Read</button>}
               <button className="btn tiny ghost warn" title="Remove" onClick={() => removeLoot(i)}>✕</button>
             </div>
           ))}
           <div className="frow" style={{ marginTop: 4 }}>
             <button className="btn small ghost" onClick={() => setLootQ(lootQ == null ? "" : null)}>{lootQ != null ? "Close ▲" : "＋ Add item…"}</button>
+            {onSaveCustomItem && (
+              <button className="btn small ghost" onClick={() => setLootBuilder(lootBuilder ? null : { ...BLANK_ITEM_FORM })}>{lootBuilder ? "Close builder ▲" : "＋ New custom item…"}</button>
+            )}
           </div>
+          {lootBuilder && (
+            <ItemBuilder initial={lootBuilder}
+              onSaveItem={(it, origN) => { onSaveCustomItem(it, origN); addLoot(it); setLootBuilder(null); }}
+              onClose={() => setLootBuilder(null)} />
+          )}
           <div className="frow" style={{ marginTop: 4 }}>
             <input type="text" placeholder="Custom item or gold — e.g. 23 gp" value={lootCustom} onChange={(e) => setLootCustom(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addCustomLoot()} style={{ flex: 1 }} />
             <button className="btn small" disabled={!lootCustom.trim()} onClick={addCustomLoot}>+ Add</button>
@@ -8075,11 +8148,12 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
         <ConfirmModal text="Delete this room? Its name, icons, and notes will be lost." confirmLabel="Delete room"
           onYes={() => { setConfirmDel(false); onDelete(); }} onClose={() => setConfirmDel(false)} />
       )}
+      {lootReading && <NoteReadModal item={lootReading} onClose={() => setLootReading(null)} />}
     </div>
   );
 }
 
-function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, customItems, onSave, onClose }) {
+function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, customItems, onSaveCustomItem, onSave, onClose }) {
   const [dg, setDg] = useState(dungeon);
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
@@ -8218,7 +8292,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
         const linkRooms = Object.entries(rooms).filter(([k]) => k !== editKey).map(([k, rm]) => ({ key: k, label: roomLabelText(rm) || `Room ${k}` }));
         const linkDungeons = allDungeons.filter((d) => d.id !== dungeon.id && Object.keys(d.rooms || {}).length).map((d) => ({ id: d.id, name: (d.name || "").trim() || "Untitled dungeon" }));
         return (
-          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} party={party} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
+          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} party={party} monsterList={monsterList} groupNames={groupNames} customItems={customItems} onSaveCustomItem={onSaveCustomItem}
             onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
             onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
             onClose={() => setEditKey(null)} />
@@ -11579,7 +11653,7 @@ export default function App() {
         </div>
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
-        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} party={party} customMonsters={myBestiary} customItems={myItems}
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} party={party} customMonsters={myBestiary} customItems={myItems} onSaveCustomItem={saveCustomItem}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
