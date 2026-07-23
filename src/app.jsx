@@ -8120,16 +8120,17 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
 const TUTORIAL_STEPS = [
   { title: "Welcome to the tour 🎓", body: "This walkthrough builds a fight from scratch — you'll bring in a party, add monsters, balance them, run combat, and pick up a few tricks along the way. Tap Next to step through it; the app stays tappable underneath, so try things as you go." },
   { title: "1 · Add your party", target: ["party", "add"], body: "Your heroes go in first — fill in the Add your party box (name, AC, HP), or use + Add ▸ Player / ally up top. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them in with one tap. But we'll drop in a premade party of three for now — tap Next." },
-  { title: "2 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
-  { title: "3 · Add some monsters", target: "add", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
-  { title: "4 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
-  { title: "5 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
-  { title: "6 · Take a turn — attack", target: "roster", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
-  { title: "7 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
-  { title: "8 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
-  { title: "9 · End the turn", target: "roster", body: "On the active creature's card, tap the turn arrow to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
-  { title: "10 · Rest between fights", target: "rest", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
-  { title: "11 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
+  { title: "2 · Just the essentials", target: "party", body: "Only a name is required — that's enough for the app to track initiative and turns. Add AC and HP if you'd like it to track hits and damage, and a Spell save DC is recommended for casters so their save prompts fill in automatically. Everything else (passive Perception, DEX, and more under “Track more stats”) is there purely if you want it — fill in as much or as little as your table needs." },
+  { title: "3 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
+  { title: "4 · Add some monsters", target: "add", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
+  { title: "5 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
+  { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
+  { title: "7 · Take a turn — attack", target: "roster", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
+  { title: "8 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
+  { title: "9 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
+  { title: "10 · End the turn", target: "roster", body: "On the active creature's card, tap the turn arrow to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
+  { title: "11 · Rest between fights", target: "rest", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
+  { title: "12 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
   { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
 ];
 function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
@@ -10155,11 +10156,21 @@ export default function App() {
     ].forEach((p) => d.combatants.push({ ...p, _demo: true }));
     L.push("🎓 Tutorial demo party loaded — three adventurers ready to fight.");
   });
-  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); setTutorial(0); }; // party drops in a step or two later
-  const TUT_PARTY_STEP = 2; // the premade party appears once the tour reaches this step
+  const unloadTutorialDemo = () => mutate((d) => {
+    if (!d.combatants.some((c) => c._demo)) return;
+    d.combatants = d.combatants.filter((c) => !c._demo);
+    if (d.combatants.length === 0) { d.mode = "setup"; d.round = 0; d.activeUid = null; }
+  });
+  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); setTutorial(0); }; // party drops in a few steps later
+  const TUT_PARTY_STEP = 3; // the premade party appears once the tour reaches the "Your party" step
   const nextTutorialStep = () => {
     const ns = Math.min(TUTORIAL_STEPS.length - 1, (tutorial ?? 0) + 1);
     if (ns >= TUT_PARTY_STEP) loadTutorialDemo(); // idempotent — only loads once
+    setTutorial(ns);
+  };
+  const prevTutorialStep = () => {
+    const ns = Math.max(0, (tutorial ?? 0) - 1);
+    if (ns < TUT_PARTY_STEP) unloadTutorialDemo(); // stepping back before the party arrives un-adds it
     setTutorial(ns);
   };
   const endTutorial = (clear) => {
@@ -10406,7 +10417,7 @@ export default function App() {
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {tutorial != null && (
           <TutorialOverlay step={tutorial}
-            onBack={() => setTutorial((s) => Math.max(0, s - 1))}
+            onBack={prevTutorialStep}
             onNext={nextTutorialStep}
             onSkip={() => endTutorial(true)} onFinish={endTutorial} />
         )}
