@@ -6835,6 +6835,8 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#6e4a2a", "#453424", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
 // Glow-aura colours: fire/danger, arcane, radiant, poison, necrotic, cold.
 const GLOW_COLORS = ["#e0483a", "#3f7be0", "#e8b23a", "#57c94a", "#a24de0", "#3ad6d0"];
+// Axial deltas to a pointy-top hex's six edge-neighbours (E, SE, SW, W, NW, NE in pixel space).
+const HEX_NEIGHBORS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["tee", "┬ T-junction"], ["ex", "╳ Crossroad"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
@@ -7241,7 +7243,7 @@ function roomTouched(r) {
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
+function RoomEditor({ room, neighbors = [], monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
@@ -7374,6 +7376,14 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               <defs><TextureDefs /></defs>
+              {/* filled edge-neighbours, faded and clipped to their own cells, so you can see how this
+                  room's shape meets the ones around it */}
+              {neighbors.map((n, i) => (
+                <g key={i}>
+                  <clipPath id={`dgnnb-${i}`}><polygon points={hexCorners(n.dx, n.dy, HEX_SIZE)} /></clipPath>
+                  <g clipPath={`url(#dgnnb-${i})`} opacity="0.5"><RoomShape room={n.room} cx={n.dx} cy={n.dy} hexKey={`nb${i}`} /></g>
+                </g>
+              ))}
               {/* the cell outline, so you can see how the shape sits within its hex */}
               <polygon points={hexCorners(0, 0, HEX_SIZE)} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" strokeDasharray="3 3" />
               <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
@@ -7430,25 +7440,31 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               ))}
             </div>
           )}
-          <span className="dgn-flabel">Doors <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap an edge (＋) or corner (◇) to add a doorway</span></span>
-          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
-            <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "#14151c", borderRadius: 10 }}>
-              <polygon points={hexCorners(0, 0, 44)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
-              {Array.from({ length: DOOR_SLOTS }, (_, i) => {
-                const cur = Array.isArray(room.doors) ? room.doors : [];
-                const on = cur.includes(i), corner = i >= 6;
-                const ang = (corner ? 60 * (i - 6) - 30 : 60 * i) * Math.PI / 180;
-                const dist = corner ? 44 : (44 * Math.sqrt(3)) / 2;
-                const mx = dist * Math.cos(ang), my = dist * Math.sin(ang);
-                return (
-                  <g key={i} style={{ cursor: "pointer" }} onClick={() => set({ doors: on ? cur.filter((x) => x !== i) : [...cur, i] })}>
-                    <circle cx={mx} cy={my} r="8.5" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.4" />
-                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="9" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : (corner ? "◇" : "＋")}</text>
-                  </g>
-                );
-              })}
-            </svg>
-          </div>
+          <button className="dgn-collapse" onClick={() => toggleSec("doors")}>
+            <span className="dgn-fold">{openSec.doors ? "▾" : "▸"}</span>
+            <span className="dgn-flabel" style={{ margin: 0 }}>Doors</span>
+            <span className="dgn-secsum">{openSec.doors ? "tap an edge (＋) or corner (◇)" : ((room.doors || []).length ? `${(room.doors || []).length} placed` : "none")}</span>
+          </button>
+          {openSec.doors && (
+            <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
+              <svg width="100%" viewBox="-62 -56 124 112" style={{ maxWidth: 300, height: "auto", display: "block", background: "#14151c", borderRadius: 12 }}>
+                <polygon points={hexCorners(0, 0, 44)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
+                {Array.from({ length: DOOR_SLOTS }, (_, i) => {
+                  const cur = Array.isArray(room.doors) ? room.doors : [];
+                  const on = cur.includes(i), corner = i >= 6;
+                  const ang = (corner ? 60 * (i - 6) - 30 : 60 * i) * Math.PI / 180;
+                  const dist = corner ? 44 : (44 * Math.sqrt(3)) / 2;
+                  const mx = dist * Math.cos(ang), my = dist * Math.sin(ang);
+                  return (
+                    <g key={i} style={{ cursor: "pointer" }} onClick={() => set({ doors: on ? cur.filter((x) => x !== i) : [...cur, i] })}>
+                      <circle cx={mx} cy={my} r="9" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.4" />
+                      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="9" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : (corner ? "◇" : "＋")}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          )}
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
           <div className="dgn-iconpick">
             {ROOM_ICONS.map((e) => {
@@ -7677,12 +7693,23 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           <button onClick={() => zoom(1 / 1.25)}>－</button>
         </div>
       </div>
-      {editKey && rooms[editKey] && (
-        <RoomEditor room={rooms[editKey]} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
-          onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
-          onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
-          onClose={() => setEditKey(null)} />
-      )}
+      {editKey && rooms[editKey] && (() => {
+        // the filled edge-neighbours, with pixel offsets relative to the edited hex, for the preview
+        const [eq, er] = editKey.split(",").map(Number);
+        const ec = hexToPix(eq, er);
+        const neighbors = HEX_NEIGHBORS.map(([dq, dr]) => {
+          const nr = rooms[`${eq + dq},${er + dr}`];
+          if (!nr) return null;
+          const p = hexToPix(eq + dq, er + dr);
+          return { room: nr, dx: p.x - ec.x, dy: p.y - ec.y };
+        }).filter(Boolean);
+        return (
+          <RoomEditor room={rooms[editKey]} neighbors={neighbors} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
+            onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
+            onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
+            onClose={() => setEditKey(null)} />
+        );
+      })()}
     </div>
   );
 }
