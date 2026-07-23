@@ -7183,6 +7183,32 @@ function RoomDoors({ room, cx, cy }) {
   );
 }
 
+// A room's passage/exit marker — a corner badge showing it links elsewhere. room.link is
+// { kind:"room", room:"q,r" } (a secret passage to another room) or { kind:"level", dungeon:id }
+// (stairs to another saved dungeon). In play the badge is tappable; in the builder it's just shown.
+function RoomLinkMark({ room, cx, cy, onFollow }) {
+  const link = room && room.link; if (!link || !link.kind) return null;
+  const s = HEX_SIZE, bx = cx + s * 0.42, by = cy - s * 0.46, isRoom = link.kind === "room";
+  return (
+    <g style={onFollow ? { cursor: "pointer" } : { pointerEvents: "none" }} onClick={onFollow ? (e) => { e.stopPropagation(); onFollow(); } : undefined}>
+      <circle cx={bx} cy={by} r={s * 0.2} fill={isRoom ? "rgba(14,58,56,.92)" : "rgba(58,44,14,.92)"} stroke={isRoom ? "#5fe6df" : "var(--gold)"} strokeWidth="1.3" />
+      <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" fontSize={s * 0.24}>{isRoom ? "🕳" : "🪜"}</text>
+    </g>
+  );
+}
+// Dashed connector lines for every in-dungeon secret passage whose target still exists.
+function linkConnectors(rooms) {
+  const out = [];
+  Object.entries(rooms || {}).forEach(([k, rm]) => {
+    const link = rm && rm.link;
+    if (!link || link.kind !== "room" || !link.room || !rooms[link.room]) return;
+    const [q1, r1] = k.split(",").map(Number), [q2, r2] = link.room.split(",").map(Number);
+    const a = hexToPix(q1, r1), b = hexToPix(q2, r2);
+    out.push(<line key={`lk-${k}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(95,230,223,.5)" strokeWidth="2" strokeDasharray="4 5" style={{ pointerEvents: "none" }} />);
+  });
+  return out;
+}
+
 // A note field is a list of collapsible sections {id, title, body, collapsed}. A plain string
 // (older data, or a simple one-liner) is treated as a single untitled section.
 function asSections(v) {
@@ -7229,6 +7255,8 @@ function encCount(r) {
 }
 // Does this room hold loot the party can collect?
 function hasLoot(r) { return !!(r && Array.isArray(r.loot) && r.loot.length); }
+// A room's human label (its name, else short display name, else empty).
+function roomLabelText(r) { return ((r && r.title) || "").trim() || ((r && r.dname) || "").trim() || ""; }
 
 // Has the DM put anything into this room worth protecting? A freshly-added, untouched room
 // (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
@@ -7241,6 +7269,7 @@ function roomTouched(r) {
   if (r.feature && r.feature !== "none") return true;
   if (r.cave || (r.edge && r.edge !== "none")) return true;
   if (r.glow) return true;
+  if (r.link && r.link.kind) return true;
   if (Array.isArray(r.doors) && r.doors.length) return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
@@ -7250,7 +7279,7 @@ function roomTouched(r) {
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, neighbors = [], monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
+function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], monsterList = [], groupNames = [], customItems = [], onChange, onDelete, onClose }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
@@ -7486,6 +7515,34 @@ function RoomEditor({ room, neighbors = [], monsterList = [], groupNames = [], c
               </svg>
             </div>
           )}
+          {(() => {
+            const lk = room.link || null, kind = lk ? lk.kind : "none";
+            const selStyle = { marginTop: 6, width: "100%", padding: "8px", background: "#1a1b22", color: "var(--text)", WebkitTextFillColor: "var(--text)", border: "1px solid var(--line2)", borderRadius: 8, fontSize: 15 };
+            return (<>
+              <span className="dgn-flabel">Passage / Exit <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap-through to another room or level in play</span></span>
+              <div className="pickgrid">
+                {[["none", "None"], ["room", "🕳 Secret passage"], ["level", "🪜 Level exit"]].map(([k, lbl]) => (
+                  <button key={k} className={`lvlchip ${kind === k ? "on" : ""}`} onClick={() => {
+                    if (k === "none") set({ link: undefined });
+                    else if (k === "room") set({ link: { kind: "room", room: (lk && lk.room) || (linkRooms[0]?.key || "") } });
+                    else set({ link: { kind: "level", dungeon: (lk && lk.dungeon) || (linkDungeons[0]?.id || "") } });
+                  }}>{lbl}</button>
+                ))}
+              </div>
+              {kind === "room" && (linkRooms.length
+                ? <select style={selStyle} value={(lk && lk.room) || ""} onChange={(e) => set({ link: { kind: "room", room: e.target.value } })}>
+                    <option value="">— pick a room —</option>
+                    {linkRooms.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                  </select>
+                : <div className="trait" style={{ fontSize: 12, marginTop: 4 }}>Add another room to this dungeon to link to.</div>)}
+              {kind === "level" && (linkDungeons.length
+                ? <select style={selStyle} value={(lk && lk.dungeon) || ""} onChange={(e) => set({ link: { kind: "level", dungeon: e.target.value } })}>
+                    <option value="">— pick a level —</option>
+                    {linkDungeons.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                : <div className="trait" style={{ fontSize: 12, marginTop: 4 }}>Save another dungeon (with rooms) to link to as a level.</div>)}
+            </>);
+          })()}
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
           <div className="dgn-iconpick">
             {ROOM_ICONS.map((e) => {
@@ -7591,7 +7648,7 @@ function RoomEditor({ room, neighbors = [], monsterList = [], groupNames = [], c
   );
 }
 
-function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose }) {
+function DungeonBuilder({ dungeon, allDungeons = [], customMonsters, customItems, onSave, onClose }) {
   const [dg, setDg] = useState(dungeon);
   const onSaveRef = useRef(onSave); onSaveRef.current = onSave;
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
@@ -7642,6 +7699,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           {room && <RoomDoors room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
+          {room && showLabels && <RoomLinkMark room={room} cx={x} cy={y} />}
           {bare && showLabels && (() => {
             const bx = x + HEX_SIZE * 0.42, by = y - HEX_SIZE * 0.46; // upper-right corner, clear of the tap-to-open centre
             return (
@@ -7695,6 +7753,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           <defs><TextureDefs /></defs>
           <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>
             {grid}
+            {linkConnectors(rooms)}
             {ghost && (() => {
               const gsrc = rooms[ghost.srcKey]; if (!gsrc) return null;
               const { x, y } = hexToPix(ghost.tq, ghost.tr);
@@ -7724,8 +7783,11 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           const p = hexToPix(eq + dq, er + dr);
           return { room: nr, dx: p.x - ec.x, dy: p.y - ec.y };
         }).filter(Boolean);
+        // targets a passage/exit can point at: other rooms in this dungeon, and other saved dungeons
+        const linkRooms = Object.entries(rooms).filter(([k]) => k !== editKey).map(([k, rm]) => ({ key: k, label: roomLabelText(rm) || `Room ${k}` }));
+        const linkDungeons = allDungeons.filter((d) => d.id !== dungeon.id && Object.keys(d.rooms || {}).length).map((d) => ({ id: d.id, name: (d.name || "").trim() || "Untitled dungeon" }));
         return (
-          <RoomEditor room={rooms[editKey]} neighbors={neighbors} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
+          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} monsterList={monsterList} groupNames={groupNames} customItems={customItems}
             onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
             onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
             onClose={() => setEditKey(null)} />
@@ -7736,7 +7798,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUpdateRoom, onLoadLevel, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -7760,6 +7822,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
     );
   });
   useEffect(() => { setRan(null); }, [sel]); // each time a room is (re)selected, allow one add again
+  useEffect(() => { setSel(null); setView({ x: 0, y: 0, z: 0.9 }); }, [dungeon.id]); // reset when a level link swaps the dungeon
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
   const drag = useRef(null);
@@ -7776,6 +7839,13 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
     return Math.max(4, ext + 1);
   }, [rooms]);
   const showLabels = view.z >= 0.8;
+  // pan so a room's centre sits at the middle of the map (used when a secret passage jumps to it)
+  const centerOn = (key) => { const [q, r] = key.split(",").map(Number); const p = hexToPix(q, r); setView((v) => ({ ...v, x: -p.x * v.z, y: -p.y * v.z })); };
+  const followLink = (rm) => {
+    const link = rm && rm.link; if (!link || !link.kind) return;
+    if (link.kind === "room") { if (rooms[link.room]) { setSel(link.room); centerOn(link.room); } }
+    else if (link.kind === "level" && onLoadLevel) onLoadLevel(link.dungeon);
+  };
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
@@ -7787,12 +7857,13 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
           {room && <RoomDoors room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
+          {room && showLabels && <RoomLinkMark room={room} cx={x} cy={y} onFollow={() => followLink(room)} />}
           {key === sel && <polygon points={hexCorners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
         </g>
       );
     }
     return out;
-  }, [rooms, RANGE, showLabels, sel]);
+  }, [rooms, RANGE, showLabels, sel]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
   const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
@@ -7815,7 +7886,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
           <div className="dgn-dock-map" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
             <svg width={size.w} height={size.h}>
               <defs><TextureDefs /></defs>
-              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}</g>
+              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}{linkConnectors(rooms)}</g>
             </svg>
             <div className="dgn-zoom">
               <button onClick={() => zoom(1.25)}>＋</button>
@@ -7831,6 +7902,17 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
                   {(room.title || "").trim() || (room.dname || "").trim() || "Unnamed room"}
                   {Array.isArray(room.icons) && room.icons.length ? <span style={{ marginLeft: 6 }}>{room.icons.join(" ")}</span> : null}
                 </div>
+                {room.link && room.link.kind && (() => {
+                  const lk = room.link;
+                  if (lk.kind === "room") {
+                    const t = rooms[lk.room];
+                    return <button className="btn small" style={{ marginBottom: 6, borderColor: "#5fe6df", color: "#8ff0ea" }} disabled={!t} onClick={() => followLink(room)}>
+                      🕳 {t ? `Secret passage → ${roomLabelText(t) || "that room"}` : "Secret passage (target removed)"}</button>;
+                  }
+                  const d = allDungeons.find((x) => x.id === lk.dungeon);
+                  return <button className="btn small" style={{ marginBottom: 6, borderColor: "var(--gold)" }} disabled={!d || !onLoadLevel} onClick={() => followLink(room)}>
+                    🪜 {d ? `Descend to ${(d.name || "").trim() || "the next level"}` : "Level exit (target removed)"}</button>;
+                })()}
                 {[
                   ...Object.entries(DGN_FIELDS).map(([k, label]) => ({ k, label })),
                   ...(Array.isArray(room.fields) ? room.fields.filter((f) => (f.label || "").trim()).map((f) => ({ k: f.id, label: f.label.trim() })) : []),
@@ -10057,8 +10139,9 @@ export default function App() {
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
-          <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode}
-            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay} onClose={() => setDungeonPlayId(null)} />
+          <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
+            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
+            onLoadLevel={(id) => { if (dungeons.find((d) => d.id === id)) setDungeonPlayId(id); }} onClose={() => setDungeonPlayId(null)} />
         )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
@@ -10435,7 +10518,7 @@ export default function App() {
         </div>
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
-        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} customMonsters={myBestiary} customItems={myItems}
+        <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} customMonsters={myBestiary} customItems={myItems}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
