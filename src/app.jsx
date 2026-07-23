@@ -662,6 +662,11 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .hitbtn:active{background:rgba(127,191,142,.3)}
 .missbtn{border-color:rgba(224,100,90,.55);background:rgba(224,100,90,.12);color:#eba99f;font-size:15px;font-weight:700;padding:12px 0}
 .missbtn:active{background:rgba(224,100,90,.28)}
+/* red End-turn button at the bottom of the active creature's card — advances initiative */
+.endturn-btn{display:block;width:100%;margin-top:12px;border:1px solid var(--danger);border-radius:10px;
+  background:rgba(200,60,55,.16);color:#f0a9a2;font-family:var(--disp);font-size:14px;font-weight:700;
+  letter-spacing:.04em;padding:12px 0;cursor:pointer}
+.endturn-btn:active{background:rgba(200,60,55,.32)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -3935,7 +3940,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
   );
 }
 
-function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
+function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
   const [hintOpen, setHintOpen] = useState(null); // [actionIndex, hintIndex] of expanded advantage-hint chip
   const [spellOpen, setSpellOpen] = useState(null); // `${rowKey}:${spellKey}` of expanded spell chip
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
@@ -4133,12 +4138,13 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
         </button>
         <button className="btn small" onClick={() => api.rename(c.uid)}>Rename…</button>
       </div>
+      {onEndTurn && <button className="endturn-btn" onClick={onEndTurn}>⏭ End turn</button>}
     </div>
   );
 }
 
 const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
-function PlayerCard({ c, api, results, inCombat }) {
+function PlayerCard({ c, api, results, inCombat, onEndTurn }) {
   const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: condText(cd.name) || null }));
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions while incapacitated
   return (
@@ -4222,6 +4228,7 @@ function PlayerCard({ c, api, results, inCombat }) {
         <button className="btn small" onClick={() => api.addCondition(c.uid)}>Add condition…</button>
         <button className="btn small" onClick={() => api.openAdv(c.uid)}>Advantage…</button>
       </div>
+      {onEndTurn && <button className="endturn-btn" onClick={onEndTurn}>⏭ End turn</button>}
     </div>
   );
 }
@@ -6517,7 +6524,7 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
             <div className="frow">
               <label>Damage</label>
               <input type="number" inputMode="numeric" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
-                placeholder="the total they rolled" />
+                placeholder="" />
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }}>Damage type (optional)</div>
             <div className="pickgrid">
@@ -8388,12 +8395,12 @@ const TUTORIAL_STEPS = [
   { title: "4 · Add some monsters", target: "add", gate: "monster", body: "Time for foes — give it a try. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones. (Next unlocks once a monster's on the board.)" },
   { title: "5 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
   { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
-  { title: "7 · Take a turn — attack", target: "roster", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
+  { title: "7 · Take a turn — attack", target: ["active", "roster"], body: "On the active creature's turn, use its card to attack — tap a target to open the attack & damage picker, or just type damage into its HP box in the roster. Watch the hit effect play — monsters even roll their own attacks for you." },
   { title: "8 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
   { title: "9 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
-  { title: "10 · End the turn", target: "roster", body: "On the active creature's card, tap the turn arrow to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
+  { title: "10 · End the turn", target: "active", body: "When a creature is done, tap the red ⏭ End turn button at the bottom of its card to pass to the next combatant — or use Next ▶ in the bar at the top or bottom of the screen. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
   { title: "11 · Rest between fights", target: "rest", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
-  { title: "12 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
+  { title: "12 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones. Dungeons are prepped and run between fights — the play panel isn't available during combat, so wrap up the current fight before opening one." },
   { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
 ];
 function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
@@ -10927,12 +10934,12 @@ export default function App() {
         ))}
 
         {state.mode === "combat" && active && (
-          <div ref={activeCardRef} className="activecard-anchor">
+          <div ref={activeCardRef} className="activecard-anchor" data-tut="active">
             <div className={active.surprised && state.round === 1 ? "surprised-wrap" : undefined}>
               {oldSchool && active.type === "player" ? (
-                <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3></div>
-              ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} />
-              : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} />
+                <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3><button className="endturn-btn" onClick={requestNext}>⏭ End turn</button></div>
+              ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} onEndTurn={requestNext} />
+              : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} onEndTurn={requestNext} />
               : <EffectCard c={active} api={api} round={state.round} />}
               {active.surprised && state.round === 1 && (
                 <div className="surprised-scrim">
