@@ -667,6 +667,23 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   background:rgba(200,60,55,.16);color:#f0a9a2;font-family:var(--disp);font-size:14px;font-weight:700;
   letter-spacing:.04em;padding:12px 0;cursor:pointer}
 .endturn-btn:active{background:rgba(200,60,55,.32)}
+/* Player Mode board */
+.pm-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px calc(10px);
+  background:linear-gradient(180deg,#241b2e,#1b1722);border-bottom:1px solid var(--line)}
+.pm-logo{font-family:var(--disp);font-size:16px;color:var(--gold);letter-spacing:.03em;flex:1}
+.pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
+.pm-enemy{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--raised)}
+.pm-swatch{width:26px;height:26px;flex:none;border-radius:7px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
+.pm-name{flex:1;min-width:0;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:7px 9px;color:var(--text);-webkit-text-fill-color:var(--text)}
+.pm-icon{font-size:17px;cursor:pointer;line-height:1}
+.pm-iconpick{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.pm-iconopt{font-size:18px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:4px 6px;cursor:pointer}
+.pm-iconopt.on{border-color:var(--gold);background:var(--gold-soft)}
+.pm-hp{font-family:var(--disp);font-size:20px;font-weight:700;color:var(--text);min-width:70px}
+.pm-hp.hurt{color:#e0645a}
+.pm-amt{width:64px;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  padding:7px 8px;color:var(--text);-webkit-text-fill-color:var(--text)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -8530,6 +8547,123 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
   );
 }
 
+/* ================= Player Mode =================
+   A stripped, player-facing board (separate from the DM combat engine): track your
+   own and your party's HP, and log damage onto minimal, nameable, colour/icon-tagged
+   enemies whose HP counts DOWN past zero so you know how much you've dealt without ever
+   seeing their real stats. No initiative, no turns. Own persisted state (dm5e:pmBoard). */
+const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
+const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true }], enemies: [] });
+function PlayerModeBoard({ onExit }) {
+  const [board, setBoard] = useState(null);
+  const [amts, setAmts] = useState({});      // per-enemy damage-entry field
+  const [iconFor, setIconFor] = useState(null); // enemy id whose icon picker is open
+  const [colorFor, setColorFor] = useState(null);
+  const [search, setSearch] = useState(null); // null = closed; else query string
+  const [cat, setCat] = useState("all");
+  const [qty, setQty] = useState("3");
+  useEffect(() => { let live = true; (async () => { const b = await stGet("dm5e:pmBoard"); if (live) setBoard(b && b.allies ? { ...PM_BLANK(), ...b } : PM_BLANK()); })(); return () => { live = false; }; }, []);
+  if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
+  const save = (b) => { setBoard(b); stSet("dm5e:pmBoard", b); };
+  const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
+  // allies
+  const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
+  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "" }] });
+  const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
+  // enemies
+  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0 }); save({ ...board, enemies: list }); };
+  const addNamedEnemy = (name) => save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0 }] });
+  const setEnemy = (id, patch) => save({ ...board, enemies: board.enemies.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
+  const removeEnemy = (id) => save({ ...board, enemies: board.enemies.filter((e) => e.id !== id) });
+  const deal = (id, sign) => { const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return; const e = board.enemies.find((x) => x.id === id); if (!e) return; setEnemy(id, { dmg: Math.max(0, (e.dmg || 0) + sign * amt) }); setAmts({ ...amts, [id]: "" }); };
+  const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
+  const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
+  const searchResults = search != null ? fullBestiary().filter((m) => (cat === "all" || m.cat === cat) && m.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 60) : [];
+
+  const allyRows = board.allies.filter((a) => a.me || board.trackParty);
+  return (
+    <div className="dm-app pm-app">
+      <style>{CSS}</style>
+      <div className="pm-bar">
+        <span className="pm-logo">🙂 Player Mode</span>
+        <button className="btn small ghost" onClick={onExit} title="Back to the full app">← Exit</button>
+      </div>
+      <div className="main">
+        {/* ENEMIES */}
+        <div className="card">
+          <div className="pm-sect-hd">Enemies <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>— log damage; HP counts past 0</span></div>
+          <div className="frow" style={{ gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+            <input type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 56 }} min={1} />
+            <button className="btn small" onClick={() => { const n = Math.max(1, Math.min(30, parseInt(qty, 10) || 1)); addEnemies(n); }}>＋ Add unnamed</button>
+            <button className="btn small" onClick={() => setSearch(search == null ? "" : null)}>{search != null ? "Close search ▲" : "🔍 From bestiary"}</button>
+          </div>
+          {search != null && (
+            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
+              <input className="sbook-search" placeholder="Search by name…" autoFocus value={search} onChange={(e) => setSearch(e.target.value)} />
+              <div className="tabs" style={{ margin: "6px 0" }}>
+                <button className="btn small" style={cat === "all" ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setCat("all")}>All</button>
+                {BESTIARY_CATS.map(([k, lbl]) => <button key={k} className="btn small" style={cat === k ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setCat(k)}>{lbl}</button>)}
+              </div>
+              <div style={{ maxHeight: 220, overflowY: "auto" }}>
+                {searchResults.map((m) => (
+                  <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addNamedEnemy(m.name)}>{m.name}</button>
+                ))}
+                {searchResults.length === 0 && <div className="trait" style={{ fontSize: 12 }}>Type a name or pick a category. (Only names show — no stats.)</div>}
+              </div>
+            </div>
+          )}
+          {board.enemies.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No enemies yet — add a few above.</div>}
+          {board.enemies.map((e) => (
+            <div key={e.id} className="pm-enemy">
+              <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+                <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
+                <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
+                {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
+                <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
+                <button className="btn tiny ghost warn" title="Remove" onClick={() => removeEnemy(e.id)}>✕</button>
+              </div>
+              {iconFor === e.id && (
+                <div className="pm-iconpick">{PM_ICONS.map((ic) => <button key={ic} className={`pm-iconopt ${(e.icons || []).includes(ic) ? "on" : ""}`} onClick={() => toggleIcon(e.id, ic)}>{ic}</button>)}</div>
+              )}
+              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
+                <span className={`pm-hp ${e.dmg > 0 ? "hurt" : ""}`}>{e.dmg > 0 ? `−${e.dmg}` : "0"} <span style={{ fontSize: 11, color: "var(--faint)" }}>HP</span></span>
+                <input type="number" inputMode="numeric" className="pm-amt" placeholder="dmg" value={amts[e.id] || ""} onChange={(ev) => setAmts({ ...amts, [e.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && deal(e.id, +1)} />
+                <button className="btn small" onClick={() => deal(e.id, +1)}>− HP</button>
+                <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋</button>
+                {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to 0" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* PARTY */}
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="pm-sect-hd">Party HP</div>
+          {allyRows.map((a) => (
+            <div key={a.id} className="frow" style={{ gap: 6, alignItems: "center", marginBottom: 4 }}>
+              <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
+              <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => setAlly(a.id, { hp: ev.target.value })} />
+              <span style={{ color: "var(--faint)" }}>/</span>
+              <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
+              {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
+            </div>
+          ))}
+          {board.trackParty && <button className="btn small ghost" style={{ marginTop: 4 }} onClick={addAlly}>＋ Add party member</button>}
+          <label className="frow" style={{ gap: 8, marginTop: 8, alignItems: "center", cursor: "pointer" }}>
+            <input type="checkbox" checked={board.trackParty} onChange={(e) => save({ ...board, trackParty: e.target.checked })} />
+            <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = just you)</span></span>
+          </label>
+        </div>
+
+        <div className="frow" style={{ justifyContent: "space-between", marginTop: 12 }}>
+          <button className="btn small ghost warn" onClick={() => { if (window.confirm("Clear the whole Player Mode board?")) save(PM_BLANK()); }}>Clear board</button>
+          <button className="btn" onClick={onExit}>← Back to full app</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ================= App ================= */
 
 export default function App() {
@@ -8647,6 +8781,8 @@ export default function App() {
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
   const [oldSchool, setOldSchoolState] = useState(false); // Old School Mode — app never rolls for monsters
   const setOldSchool = (v) => { setOldSchoolState(v); stSet("dm5e:oldSchool", v ? 1 : 0); };
+  const [pmOn, setPmOnState] = useState(false); // Player Mode — stripped player-facing HP/damage board
+  const setPmOn = (v) => { setPmOnState(v); stSet("dm5e:pmOn", v ? 1 : 0); };
   const [oldSchoolIntroSeen, setOldSchoolIntroSeenState] = useState(false); // has the one-time explainer been shown?
   const markOldSchoolIntroSeen = () => { setOldSchoolIntroSeenState(true); stSet("dm5e:oldSchoolIntro", 1); };
   const [hpEntry, setHpEntry] = useState({}); // Old School quick-entry: { uid: { dmg, heal } } applied together on the Apply bar
@@ -8983,6 +9119,7 @@ export default function App() {
       if (asp && (ANIM_SPEEDS[asp] || asp === "off")) setAnimSpeedState(asp);
       setManualDiceState(!!(await stGet("dm5e:manualDice")));
       setOldSchoolState(!!(await stGet("dm5e:oldSchool")));
+      setPmOnState(!!(await stGet("dm5e:pmOn")));
       setOldSchoolIntroSeenState(!!(await stGet("dm5e:oldSchoolIntro")));
       setPromptScoreState(!!(await stGet("dm5e:promptScore")));
       setEncBalanceState(!!(await stGet("dm5e:encBalance")));
@@ -10717,6 +10854,7 @@ export default function App() {
   const modalC = modal?.uid ? state.combatants.find((x) => x.uid === modal.uid) : null;
 
   /* ================= render ================= */
+  if (pmOn) return <PlayerModeBoard onExit={() => setPmOn(false)} />;
   return (
     <div className="dm-app" style={{ paddingBottom: botPad }}>
       <style>{CSS}</style>
@@ -10823,6 +10961,7 @@ export default function App() {
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
               <button onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>
+              <button onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>
               {state.combatants.some((c) => c.side === "ally") && (
                 <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
               )}
