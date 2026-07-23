@@ -6753,7 +6753,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["ccurve", "◜ Corner"], ["curve", "◠ Curved"], ["wcurve", "◡ Wide curve"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room description", loot: "Objects of interest", npcs: "NPCs" };
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
@@ -6790,6 +6790,19 @@ function RoomShape({ room, cx, cy, hexKey }) {
     const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
     const conf = MAP[room.orient] || MAP.h;
     return clipped(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={col} stroke={stroke} strokeWidth="1" />, conf.rot);
+  }
+  if (shape === "angle" || shape === "ytee") {
+    // straight-tube junctions: "angle" is a two-armed bend joining two edges one flat apart;
+    // "ytee" is a three-way Y for diverging paths. Arms run from the hex centre out to edge midpoints.
+    const th = s * 0.42, apo = (s * Math.sqrt(3)) / 2; // centre → edge-midpoint distance
+    const arms = shape === "ytee" ? [0, 120, 240] : [300, 60];
+    const arm = (deg) => {
+      const a = (deg * Math.PI) / 180;
+      const mx = cx + (apo / 2) * Math.cos(a), my = cy + (apo / 2) * Math.sin(a);
+      return <rect key={deg} x={mx - apo / 2} y={my - th / 2} width={apo} height={th} fill={col} stroke={stroke} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
+    };
+    const rot = ((Number(room.orient) || 0) % 6) * 60;
+    return clipped(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={col} /></g>, rot);
   }
   if (shape === "ccurve") { // a tight corner elbow arcing around one vertex, joining two adjacent edges
     const th = s * 0.42, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
@@ -6895,7 +6908,7 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
             {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
           </div>
         )}
-        {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve") && (
+        {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee") && (
           <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
             <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
             <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
