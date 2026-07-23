@@ -691,6 +691,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-condopt{font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
   color:var(--text);padding:4px 7px;cursor:pointer}
 .pm-condopt.on{border-color:var(--gold);background:var(--gold-soft)}
+.pm-bloodied{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#f0a9a2;
+  border:1px solid var(--danger);background:rgba(200,60,55,.16);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.pm-bloodbtn{border-color:var(--danger);color:#f0a9a2;background:rgba(200,60,55,.16)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -8646,6 +8649,7 @@ function PlayerModeBoard({ onExit }) {
                 <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
                 <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
+                {e.bloodied && <span className="pm-bloodied">🩸 Bloodied</span>}
                 <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
                 <button className="btn tiny ghost warn" title="Remove" onClick={() => removeEnemy(e.id)}>✕</button>
               </div>
@@ -8658,6 +8662,7 @@ function PlayerModeBoard({ onExit }) {
                 <button className="btn small" onClick={() => deal(e.id, +1)}>− HP</button>
                 <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋</button>
                 {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to unknown" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
+                <button className={`btn small ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is bloodied (about half HP)" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
               </div>
               {condUI(e, "e:" + e.id, setEnemy)}
             </div>
