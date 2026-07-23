@@ -7273,7 +7273,7 @@ function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -7325,6 +7325,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
     <div className="dgn-dock">
       <div className="dgn-dock-hd">
         <span className="nm">🗺 {dungeon.name?.trim() || "Dungeon"}</span>
+        <button className="btn small ghost" title="Edit this dungeon in the builder" onClick={onEdit}>✎ Edit</button>
         <button className="btn small ghost" onClick={() => setCollapsed(!collapsed)}>{collapsed ? "▼ Show map" : "▲ Hide map"}</button>
         <button className="modal-x" title="Close play mode" onClick={onClose}>✕</button>
       </div>
@@ -9533,7 +9534,7 @@ export default function App() {
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode}
-            onRun={runRoomEncounter} onClose={() => setDungeonPlayId(null)} />
+            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onClose={() => setDungeonPlayId(null)} />
         )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
