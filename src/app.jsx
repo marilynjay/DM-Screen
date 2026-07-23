@@ -6833,7 +6833,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#6e4a2a", "#453424", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["stub", "╴ Dead end"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["tee", "┬ T-junction"], ["ex", "╳ Crossroad"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
 // At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
@@ -6917,7 +6917,7 @@ function RoomShape({ room, cx, cy, hexKey }) {
   // rendered inline per room (unique id) rather than shared, and the seed persists on the room.
   const caveId = `dgncave-${String(hexKey).replace(/[^\w-]/g, "_")}`;
   const caveSeed = Number.isFinite(room.caveSeed) ? room.caveSeed : 7;
-  const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
+  const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "tee" || shape === "ex" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
   const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
   // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
   // then again with the texture pattern layered on top (transparent detail over the colour).
@@ -6945,6 +6945,20 @@ function RoomShape({ room, cx, cy, hexKey }) {
         const a = (deg * Math.PI) / 180;
         const mx = cx + (apo / 2) * Math.cos(a), my = cy + (apo / 2) * Math.sin(a);
         return <rect key={deg} x={mx - apo / 2} y={my - th / 2} width={apo} height={th} fill={fill} stroke={stk} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
+      };
+      const rot = ((Number(room.orient) || 0) % 6) * 60;
+      return wrap(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={fill} /></g>, rot);
+    }
+    if (shape === "tee" || shape === "ex") {
+      // true T / X junctions: the crossbar runs edge-to-edge (0↔180) while the perpendicular arm(s)
+      // run point-to-point through the hex corners (90/270). Arms are over-long and clipped to the hex,
+      // so each reaches its own boundary (apothem for edges, the vertex for corners).
+      const th = s * 0.42, L = s * 1.08;
+      const arms = shape === "ex" ? [0, 90, 180, 270] : [0, 180, 270];
+      const arm = (deg) => {
+        const a = (deg * Math.PI) / 180;
+        const mx = cx + (L / 2) * Math.cos(a), my = cy + (L / 2) * Math.sin(a);
+        return <rect key={deg} x={mx - L / 2} y={my - th / 2} width={L} height={th} fill={fill} stroke={stk} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
       };
       const rot = ((Number(room.orient) || 0) % 6) * 60;
       return wrap(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={fill} /></g>, rot);
@@ -7118,19 +7132,28 @@ function RoomFeature({ room, cx, cy }) {
   return null;
 }
 
-// Doors on the hex's edges (independent of the room shape). room.doors is a list of edge indices 0-5
-// (edge i midpoint sits at 60·i°). Each door is a small panel straddling that edge.
+// Door-slot geometry, shared by RoomDoors and the editor. Slots 0-5 are the edge midpoints (60·i°, at
+// the apothem); slots 6-11 are the hex corners (60·j-30°, near the vertex). Corner doors let a corridor
+// exit point-first, so true T and X junctions line up with a doorway. Returns angle (deg) + radial dist.
+const DOOR_SLOTS = 12;
+function doorSlot(i, s) {
+  if (i < 6) return { ang: 60 * i, dist: (s * Math.sqrt(3)) / 2 };
+  return { ang: 60 * (i - 6) - 30, dist: s * 0.9 };
+}
+// Doors on the hex's edges and corners (independent of the room shape). room.doors is a list of slot
+// indices 0-11. Each door is a small panel straddling that boundary point.
 function RoomDoors({ room, cx, cy }) {
   const doors = Array.isArray(room && room.doors) ? room.doors : [];
   if (!doors.length) return null;
-  const s = HEX_SIZE, apo = (s * Math.sqrt(3)) / 2, dw = s * 0.52, dh = s * 0.17;
+  const s = HEX_SIZE, dw = s * 0.52, dh = s * 0.17;
   return (
     <g style={{ pointerEvents: "none" }}>
       {doors.map((i) => {
-        const a = (60 * i * Math.PI) / 180;
-        const mx = cx + apo * Math.cos(a), my = cy + apo * Math.sin(a);
+        const { ang, dist } = doorSlot(i, s);
+        const a = (ang * Math.PI) / 180;
+        const mx = cx + dist * Math.cos(a), my = cy + dist * Math.sin(a);
         return (
-          <g key={i} transform={`rotate(${60 * i + 90} ${mx} ${my})`}>
+          <g key={i} transform={`rotate(${ang + 90} ${mx} ${my})`}>
             <rect x={mx - dw / 2} y={my - dh / 2} width={dw} height={dh} rx="2" fill="#7d5730" stroke="#2f1f12" strokeWidth="1.4" />
             <line x1={mx} y1={my - dh / 2} x2={mx} y2={my + dh / 2} stroke="#2f1f12" strokeWidth="1" />
           </g>
@@ -7312,7 +7335,7 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
             </div>
           )}
-          {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee" || room.shape === "cross" || room.shape === "stub") && (
+          {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee" || room.shape === "cross" || room.shape === "tee" || room.shape === "ex" || room.shape === "stub") && (
             <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
               <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
               <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which edges it joins</span>
@@ -7381,19 +7404,20 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               ))}
             </div>
           )}
-          <span className="dgn-flabel">Doors <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap a hex edge to add a doorway</span></span>
+          <span className="dgn-flabel">Doors <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap an edge (＋) or corner (◇) to add a doorway</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "#14151c", borderRadius: 10 }}>
               <polygon points={hexCorners(0, 0, 44)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
-              {Array.from({ length: 6 }, (_, i) => {
+              {Array.from({ length: DOOR_SLOTS }, (_, i) => {
                 const cur = Array.isArray(room.doors) ? room.doors : [];
-                const on = cur.includes(i);
-                const a = (60 * i * Math.PI) / 180, apo = (44 * Math.sqrt(3)) / 2;
-                const mx = apo * Math.cos(a), my = apo * Math.sin(a);
+                const on = cur.includes(i), corner = i >= 6;
+                const ang = (corner ? 60 * (i - 6) - 30 : 60 * i) * Math.PI / 180;
+                const dist = corner ? 44 : (44 * Math.sqrt(3)) / 2;
+                const mx = dist * Math.cos(ang), my = dist * Math.sin(ang);
                 return (
                   <g key={i} style={{ cursor: "pointer" }} onClick={() => set({ doors: on ? cur.filter((x) => x !== i) : [...cur, i] })}>
-                    <circle cx={mx} cy={my} r="11" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.5" />
-                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="12" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : "＋"}</text>
+                    <circle cx={mx} cy={my} r="8.5" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.4" />
+                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="9" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : (corner ? "◇" : "＋")}</text>
                   </g>
                 );
               })}
