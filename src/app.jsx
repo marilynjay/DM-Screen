@@ -255,6 +255,10 @@ input[type=number]{width:64px}
 .dgn-dock-hd .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--disp);font-size:14px;color:var(--gold)}
 .dgn-dock-map{position:relative;height:300px;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
 .dgn-dock-body{padding:10px 12px;border-top:1px solid var(--line)}
+.dgn-psec{border-top:1px solid var(--line)}
+.dgn-psec-hd{width:100%;text-align:left;background:none;border:none;color:var(--gold);font-size:12px;font-weight:700;padding:6px 0;cursor:pointer;display:flex;align-items:center;gap:6px}
+.dgn-psec-body{font-size:12px;color:var(--text);padding:0 0 8px 18px;white-space:pre-wrap}
+.dgn-psec-body .sub{color:var(--gold-2,var(--gold));font-weight:700}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .loaddgn-fab{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:48;background:var(--panel);border:1px solid var(--line2);color:var(--gold);border-radius:20px;padding:8px 14px;font-size:13px;font-family:var(--disp);letter-spacing:.03em;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
@@ -7275,6 +7279,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
   const [sel, setSel] = useState(null);      // selected room key
   const [collapsed, setCollapsed] = useState(false);
   const [ran, setRan] = useState(null);      // key of a room just run, for a brief confirmation
+  const [openF, setOpenF] = useState({});    // which note fields are expanded in the room panel
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
   const drag = useRef(null);
@@ -7345,12 +7350,16 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
                 {Object.entries(DGN_FIELDS).map(([k, label]) => {
                   const secs = asSections(room.notes?.[k]).filter((s) => (s.title || "").trim() || (s.body || "").trim());
                   if (!secs.length) return null;
+                  const open = !!openF[k];
                   return (
-                    <div key={k} style={{ marginBottom: 6 }}>
-                      <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{label}</div>
-                      {secs.map((s) => (
-                        <div key={s.id} style={{ fontSize: 12, color: "var(--text)", whiteSpace: "pre-wrap" }}>
-                          {(s.title || "").trim() && <b>{s.title.trim()}: </b>}{(s.body || "").trim()}
+                    <div key={k} className="dgn-psec">
+                      <button className="dgn-psec-hd" onClick={() => setOpenF((o) => ({ ...o, [k]: !o[k] }))}>
+                        <span className="dgn-fold">{open ? "▾" : "▸"}</span>{label}
+                      </button>
+                      {open && secs.map((s) => (
+                        <div key={s.id} className="dgn-psec-body">
+                          {(s.title || "").trim() && <div className="sub">{s.title.trim()}</div>}
+                          {(s.body || "").trim()}
                         </div>
                       ))}
                     </div>
