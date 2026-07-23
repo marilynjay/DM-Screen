@@ -8122,7 +8122,7 @@ const TUTORIAL_STEPS = [
   { title: "1 · Add your party", target: ["party", "add"], body: "Your heroes go in first — fill in the Add your party box (name, AC, HP), or use + Add ▸ Player / ally up top. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them in with one tap. But we'll drop in a premade party of three for now — tap Next." },
   { title: "2 · Just the essentials", target: "party", body: "Only a name is required — that's enough for the app to track initiative and turns. Add AC and HP if you'd like it to track hits and damage, and a Spell save DC is recommended for casters so their save prompts fill in automatically. Everything else (passive Perception, DEX, and more under “Track more stats”) is there purely if you want it — fill in as much or as little as your table needs." },
   { title: "3 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
-  { title: "4 · Add some monsters", target: "add", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
+  { title: "4 · Add some monsters", target: "add", gate: "monster", body: "Time for foes — give it a try. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones. (Next unlocks once a monster's on the board.)" },
   { title: "5 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
   { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
   { title: "7 · Take a turn — attack", target: "roster", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
@@ -8133,7 +8133,7 @@ const TUTORIAL_STEPS = [
   { title: "12 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
   { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
 ];
-function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
+function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
   const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
   return (
     <div className="tut-card">
@@ -8143,6 +8143,12 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
         <button className="tut-x" title="Close the tour" onClick={onSkip}>✕</button>
       </div>
       <div className="tut-body">{s.body}</div>
+      {nextDisabled && gateHint && (
+        <div className="frow" style={{ alignItems: "center", gap: 8, marginTop: 6 }}>
+          <span className="ad" style={{ fontSize: 12, color: "var(--gold)" }}>⤷ {gateHint}</span>
+          {onAuto && <button className="btn tiny ghost" style={{ marginLeft: "auto" }} onClick={onAuto}>add them for me</button>}
+        </div>
+      )}
       <div className="tut-dots">{TUTORIAL_STEPS.map((_, i) => <span key={i} className={`tut-dot ${i === step ? "on" : ""}`} />)}</div>
       <div className="tut-actions">
         <button className="btn small ghost" disabled={step === 0} onClick={onBack}>◀ Back</button>
@@ -8152,7 +8158,7 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
           <button className="btn small primary" onClick={() => onFinish(true)}>Clear &amp; finish</button>
         </>) : (<>
           <button className="btn small ghost" onClick={onSkip}>Skip</button>
-          <button className="btn small primary" onClick={onNext}>Next ▶</button>
+          <button className="btn small primary" disabled={nextDisabled} onClick={onNext}>Next ▶</button>
         </>)}
       </div>
     </div>
@@ -8163,7 +8169,7 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
 // element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
 // so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
-function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish }) {
+function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
   const s = TUTORIAL_STEPS[step];
   const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
   const [rects, setRects] = useState([]);
@@ -8202,7 +8208,7 @@ function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish }) {
         </svg>
       )}
       {arrow && <div className="tut-arrow" style={{ left: arrow.left, top: arrow.top }}>▲</div>}
-      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} />
+      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} />
     </>
   );
 }
@@ -10161,6 +10167,13 @@ export default function App() {
     d.combatants = d.combatants.filter((c) => !c._demo);
     if (d.combatants.length === 0) { d.mode = "setup"; d.round = 0; d.activeUid = null; }
   });
+  // escape hatch for the gated "add monsters" step — drops in two goblins so nobody gets stuck
+  const tutAddGoblins = () => mutate((d, L) => {
+    const gsb = fullBestiary().find((b) => b.name === "Goblin Warrior");
+    if (!gsb) return;
+    for (let i = 0; i < 2; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
+    L.push("🎓 Added two goblins for the tour.");
+  });
   const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); setTutorial(0); }; // party drops in a few steps later
   const TUT_PARTY_STEP = 3; // the premade party appears once the tour reaches the "Your party" step
   const nextTutorialStep = () => {
@@ -10415,12 +10428,18 @@ export default function App() {
       )}
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
-        {tutorial != null && (
-          <TutorialOverlay step={tutorial}
-            onBack={prevTutorialStep}
-            onNext={nextTutorialStep}
-            onSkip={() => endTutorial(true)} onFinish={endTutorial} />
-        )}
+        {tutorial != null && (() => {
+          const gateUnmet = TUTORIAL_STEPS[tutorial]?.gate === "monster" && !state.combatants.some((c) => c.type === "monster");
+          return (
+            <TutorialOverlay step={tutorial}
+              onBack={prevTutorialStep}
+              onNext={nextTutorialStep}
+              nextDisabled={gateUnmet}
+              gateHint={gateUnmet ? "Add a monster to continue" : null}
+              onAuto={gateUnmet ? tutAddGoblins : null}
+              onSkip={() => endTutorial(true)} onFinish={endTutorial} />
+          );
+        })()}
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
             onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
