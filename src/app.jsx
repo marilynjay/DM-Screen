@@ -749,7 +749,7 @@ const CONDITIONS = {
   Restrained: "Speed 0. Its attacks: DIS; DEX saves: DIS. Attacks vs it: ADV.",
   Stunned: "Incapacitated; auto-fail STR/DEX saves. Attacks vs it: ADV.",
   Unconscious: "Incapacitated, prone; auto-fail STR/DEX saves. Attacks vs it: ADV; 5 ft hits crit.",
-  Exhaustion: "−2 per level to d20 tests (2024 rules).",
+  Exhaustion: "Level-based penalty (see details) — scales with edition.",
   Burning: "Takes 1d4 fire damage at the start of each of its turns until doused (an action) or submerged.",
   Suffocating: "Out of breath: gains 1 Exhaustion level at the end of each of its turns until it can breathe.",
   Hiding: "Counts as Invisible: its attacks have ADV; attacks vs it have DIS. Ends when it attacks, casts with a verbal component, makes noise, or is found.",
@@ -1456,9 +1456,16 @@ function saveAdv(c, ability, magical) {
   if (ability === "dex" && isRestrained(c)) hasDis = true;             // Restrained → DIS on DEX saves
   return hasAdv && hasDis ? "none" : hasAdv ? "adv" : hasDis ? "dis" : "none"; // adv + dis cancel
 }
-// Exhaustion (2024): −2 per level to every d20 Test
+// Exhaustion. 2024: −2 per level to every d20 Test. 2014: a 6-level track with
+// distinct effects (disadvantage at L3+, no flat numeric) — so we never auto-apply
+// the 2024 −2/level math in a 2014 game; the DM applies the level effects by hand.
 const exhaustLevel = (c) => { const cd = (c.conditions || []).find((x) => x.name === "Exhaustion"); return cd ? (cd.level || 1) : 0; };
-const exhaustPen = (c) => 2 * exhaustLevel(c);
+const exhaustPen = (c) => (EDITION.v === "2014" ? 0 : 2 * exhaustLevel(c));
+const exhaustDesc = () => EDITION.v === "2014"
+  ? "2014: L1 disadvantage on ability checks · L2 speed halved · L3 disadvantage on attacks & saves · L4 HP max halved · L5 speed 0 · L6 death. Apply the level's effect by hand."
+  : "−2 per level to every d20 Test (attacks, checks, saves); 6 levels = death.";
+// Edition-aware condition reference text (only Exhaustion actually differs between editions).
+const condText = (n) => (n === "Exhaustion" ? exhaustDesc() : (CONDITIONS[n] || ""));
 // Slow: a Slowed creature has a −2 penalty to Dexterity saving throws (the condition also notes −2 AC etc.)
 const isSlowed = (c) => (c.conditions || []).some((cd) => cd.name === "Slowed");
 const slowSavePen = (c, ability) => (ability === "dex" && isSlowed(c) ? 2 : 0);
@@ -2393,7 +2400,7 @@ function CondIcon({ name, onTap, plain }) {
 function CondBadge({ cond, onTap }) {
   const known = !!CONDITION_ICONS[cond.name];
   return (
-    <span className="cond" title={`${CONDITIONS[cond.name] || (cond.boon ? "Boon" : "Custom effect")} (tap for details)`} onClick={onTap}>
+    <span className="cond" title={`${condText(cond.name) || (cond.boon ? "Boon" : "Custom effect")} (tap for details)`} onClick={onTap}>
       {cond.boon && !known && <span className="condicon">✨</span>}
       <CondIcon name={cond.name} plain />{cond.name}{cond.name === "Exhaustion" && <span className="rt"> Lv{cond.level || 1}</span>}{cond.rounds != null && <span className="rt"> {cond.rounds}r</span>}
     </span>
@@ -3433,7 +3440,7 @@ function RepeatSaveModal({ c, done, api, onContinue, onClose, warnConds, title, 
             <span className="ad" style={{ flexBasis: "100%" }}>
               {cd.name.startsWith("Command:")
                 ? `Must spend this turn obeying — ${cd.name.slice(9).trim()}. The effect ends when this turn does.`
-                : CONDITIONS[cd.name] || ""}
+                : condText(cd.name) || ""}
             </span>
           </div>
         ))}
@@ -3926,7 +3933,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
           {c.conditions.map((cd, i) => (
             <div key={i} style={{ fontSize: 12 }}>
               <b>{cd.name}{cd.rounds != null ? ` (${cd.rounds} round${cd.rounds === 1 ? "" : "s"} left)` : ""}.</b>{" "}
-              {CONDITIONS[cd.name] || "Custom effect — as the DM decreed."}
+              {condText(cd.name) || "Custom effect — as the DM decreed."}
             </div>
           ))}
         </div>
@@ -4101,7 +4108,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
 
 const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
 function PlayerCard({ c, api, results, inCombat }) {
-  const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: CONDITIONS[cd.name] || null }));
+  const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: condText(cd.name) || null }));
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions while incapacitated
   return (
     <div className="card torch">
@@ -4356,7 +4363,7 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
           <label>Duration (rounds)</label>
           <input type="number" value={rounds} onChange={(e) => setRounds(e.target.value)} placeholder="∞" />
         </div>
-        {CONDITIONS[name] && <div className="trait" style={{ marginBottom: 8 }}>{CONDITIONS[name]}</div>}
+        {condText(name) && <div className="trait" style={{ marginBottom: 8 }}>{condText(name)}</div>}
         <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "4px 0" }}>Targets — check everyone caught in it</div>
         {targets.map((t) => (
           <div className="targetline" key={t.uid}>
@@ -11166,7 +11173,7 @@ export default function App() {
                   <span className="ad" style={{ flexBasis: "100%" }}>
                     {cd.name.startsWith("Command:")
                       ? `Must spend this turn obeying — ${cd.name.slice(9).trim()}. The effect ends when this turn does.`
-                      : CONDITIONS[cd.name] || ""}
+                      : condText(cd.name) || ""}
                   </span>
                 </div>
               ))}
@@ -11347,7 +11354,7 @@ export default function App() {
               <h3>{cond.name}{cond.name === "Exhaustion" ? ` — level ${cond.level || 1}` : ""} — {modalC.name}</h3>
               {cond.rounds != null && <div className="statline"><b>{cond.rounds}</b> round{cond.rounds === 1 ? "" : "s"} remaining (ticks at the start of their turn)</div>}
               <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>
-                {CONDITIONS[cond.name] || "Custom effect — as the DM decreed."}
+                {condText(cond.name) || "Custom effect — as the DM decreed."}
               </div>
               {cond.name === "Exhaustion" && (
                 <div className="frow" style={{ gap: 8, alignItems: "center", marginBottom: 12 }}>
