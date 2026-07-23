@@ -8621,6 +8621,19 @@ function PlayerModeBoard({ onExit }) {
     </div>
   );
   const setDs = (id, patch) => { const a = board.allies.find((x) => x.id === id); if (!a) return; setAlly(id, { ds: { ...(a.ds || { s: 0, f: 0 }), ...patch } }); };
+  // apply damage (sign −1) or healing (sign +1) to an ally's current HP, the way you hear it at the table
+  const applyToAlly = (id, sign) => {
+    const a = board.allies.find((x) => x.id === id); if (!a) return;
+    const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return;
+    const max = a.maxHp !== "" && !isNaN(Number(a.maxHp)) ? Number(a.maxHp) : null;
+    if (a.hp === "" && max == null) { setAmts({ ...amts, [id]: "" }); return; } // nothing to track yet
+    const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : max;
+    const nhp = sign < 0 ? Math.max(0, base - amt) : (max != null ? Math.min(max, base + amt) : base + amt);
+    const patch = { hp: String(nhp) };
+    if (nhp > 0) patch.ds = { s: 0, f: 0 }; // back above 0 → clear any death saves
+    setAlly(id, patch);
+    setAmts({ ...amts, [id]: "" });
+  };
   // death-save tracker — shown when an ally is at 0 HP
   const dsUI = (a) => {
     const ds = a.ds || { s: 0, f: 0 };
@@ -8708,6 +8721,11 @@ function PlayerModeBoard({ onExit }) {
                 <span style={{ color: "var(--faint)" }}>/</span>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
+              </div>
+              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
+                <input type="number" inputMode="numeric" className="pm-amt" placeholder="amt" value={amts[a.id] || ""} onChange={(ev) => setAmts({ ...amts, [a.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && applyToAlly(a.id, -1)} />
+                <button className="btn small" title="Subtract this much HP" onClick={() => applyToAlly(a.id, -1)}>− Damage</button>
+                <button className="btn small ghost" title="Add this much HP (up to max)" onClick={() => applyToAlly(a.id, +1)}>＋ Heal</button>
               </div>
               {Number(a.hp) === 0 && a.hp !== "" && dsUI(a)}
               {condUI(a, "a:" + a.id, setAlly)}
