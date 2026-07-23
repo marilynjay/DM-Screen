@@ -8169,7 +8169,7 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, ga
 // element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
 // so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
-function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
+function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
   const s = TUTORIAL_STEPS[step];
   const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
   const [rects, setRects] = useState([]);
@@ -8193,6 +8193,8 @@ function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish, nextDisabled,
   }, [step, JSON.stringify(targets)]); // eslint-disable-line react-hooks/exhaustive-deps
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
+  // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
+  if (suppressed) return <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} />;
   return (
     <>
       {vp.w > 0 && (
@@ -10430,8 +10432,10 @@ export default function App() {
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {tutorial != null && (() => {
           const gateUnmet = TUTORIAL_STEPS[tutorial]?.gate === "monster" && !state.combatants.some((c) => c.type === "monster");
+          // while a menu or modal is open, drop the scrim so it can't dim what the DM is interacting with
+          const suppressed = !!(addMenu || moreMenu || clearMenu || modal || spellBook);
           return (
-            <TutorialOverlay step={tutorial}
+            <TutorialOverlay step={tutorial} suppressed={suppressed}
               onBack={prevTutorialStep}
               onNext={nextTutorialStep}
               nextDisabled={gateUnmet}
