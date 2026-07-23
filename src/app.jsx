@@ -6904,8 +6904,20 @@ function SectionsEditor({ value, onChange, rows }) {
   );
 }
 
+// Has the DM put anything into this room worth protecting? A freshly-added, untouched room
+// (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
+function roomTouched(r) {
+  if ((r.title || "").trim() || (r.dname || "").trim()) return true;
+  if (Array.isArray(r.icons) && r.icons.length) return true;
+  if (r.shape && r.shape !== "hex") return true;
+  if (r.color && r.color !== DGN_COLORS[0]) return true;
+  const n = r.notes || {};
+  return Object.keys(DGN_FIELDS).some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
+}
+
 function RoomEditor({ room, onChange, onDelete, onClose }) {
   const [full, setFull] = useState(null); // note key open full-screen, or null
+  const [confirmDel, setConfirmDel] = useState(false);
   const set = (patch) => onChange({ ...room, ...patch });
   const setNote = (k, v) => onChange({ ...room, notes: { ...(room.notes || {}), [k]: v } });
   const n = room.notes || {};
@@ -6932,7 +6944,7 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
     </div>
   );
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={() => { if (!confirmDel) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="dgn-ehead">
           <h3>Room</h3>
@@ -6979,10 +6991,14 @@ function RoomEditor({ room, onChange, onDelete, onClose }) {
         {noteField("loot")}
         {noteField("npcs")}
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 8 }}>
-          <button className="btn small danger" onClick={onDelete}>Delete room</button>
+          <button className="btn small danger" onClick={() => { if (roomTouched(room)) setConfirmDel(true); else onDelete(); }}>Delete room</button>
           <button className="btn primary" onClick={onClose}>Done</button>
         </div>
       </div>
+      {confirmDel && (
+        <ConfirmModal text="Delete this room? Its name, icons, and notes will be lost." confirmLabel="Delete room"
+          onYes={() => { setConfirmDel(false); onDelete(); }} onClose={() => setConfirmDel(false)} />
+      )}
     </div>
   );
 }
