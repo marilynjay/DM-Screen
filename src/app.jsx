@@ -5383,7 +5383,7 @@ function RestModal({ combatants, onAccept, onClose }) {
           <div key={c.uid} className="frow" style={{ alignItems: "center", gap: 8 }}>
             <label style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</label>
             <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>now {c.hp ?? "—"}</span>
-            <input type="number" inputMode="numeric" placeholder={String(c.hp ?? "")} style={{ width: 68, textAlign: "center" }} value={vals[c.uid] ?? ""} onChange={(e) => set(c.uid, e.target.value)} />
+            <input type="text" inputMode="numeric" pattern="[0-9]*" placeholder={String(c.hp ?? "")} style={{ width: 68, textAlign: "center" }} value={vals[c.uid] ?? ""} onChange={(e) => set(c.uid, e.target.value.replace(/[^0-9]/g, ""))} />
             <span className="ad" style={{ fontSize: 12, minWidth: 40 }}>/ {c.maxHp}</span>
           </div>
         ))}
