@@ -250,6 +250,12 @@ input[type=number]{width:64px}
 .dgn-ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dgn-ehead h3{margin:0}
 .dgn-xclose{background:none;border:none;color:var(--faint);font-size:24px;line-height:1;cursor:pointer;padding:0 4px}
+.dgn-dock{margin:8px;border:1px solid var(--line2);border-radius:12px;background:var(--panel);overflow:hidden}
+.dgn-dock-hd{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--line)}
+.dgn-dock-hd .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--disp);font-size:14px;color:var(--gold)}
+.dgn-dock-map{position:relative;height:300px;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
+.dgn-dock-body{padding:10px 12px;border-top:1px solid var(--line)}
+.dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-iconpick{display:flex;flex-wrap:wrap;gap:5px}
 .dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
 .dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
@@ -7253,6 +7259,117 @@ function DungeonBuilder({ dungeon, customMonsters, onSave, onClose }) {
   );
 }
 
+/* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
+function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
+  const rooms = dungeon.rooms || {};
+  const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
+  const [sel, setSel] = useState(null);      // selected room key
+  const [collapsed, setCollapsed] = useState(false);
+  const [ran, setRan] = useState(null);      // key of a room just run, for a brief confirmation
+  const wrapRef = useRef(null);
+  const [size, setSize] = useState({ w: 360, h: 300 });
+  const drag = useRef(null);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const upd = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    upd();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(upd) : null;
+    if (ro) ro.observe(el); else window.addEventListener("resize", upd);
+    return () => { if (ro) ro.disconnect(); else window.removeEventListener("resize", upd); };
+  }, [collapsed]);
+  const RANGE = useMemo(() => {
+    const ext = Object.keys(rooms).reduce((m, k) => { const [q, r] = k.split(",").map(Number); return Math.max(m, Math.abs(q), Math.abs(r)); }, 0);
+    return Math.max(4, ext + 1);
+  }, [rooms]);
+  const showLabels = view.z >= 0.8;
+  const grid = useMemo(() => {
+    const out = [];
+    for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
+      const { x, y } = hexToPix(q, r), key = `${q},${r}`, room = rooms[key];
+      out.push(
+        <g key={key} style={{ cursor: room ? "pointer" : "default" }} onClick={() => { if (drag.current && drag.current.moved) return; setSel(room ? key : null); }}>
+          <polygon className="dgn-hex" points={hexCorners(x, y)} />
+          {room && <RoomShape room={room} cx={x} cy={y} hexKey={`p-${key}`} />}
+          {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
+          {key === sel && <polygon points={hexCorners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
+        </g>
+      );
+    }
+    return out;
+  }, [rooms, RANGE, showLabels, sel]);
+  const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
+  const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
+  const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
+  const zoom = (f) => setView((v) => ({ ...v, z: Math.max(0.5, Math.min(2.4, v.z * f)) }));
+  const room = sel ? rooms[sel] : null;
+  const inCombat = mode === "combat";
+  const encMons = room && room.enc && Array.isArray(room.enc.mons) ? room.enc.mons : [];
+  const encGroup = room && room.enc ? room.enc.group : null;
+  const runnable = hasEnc(room || {});
+  return (
+    <div className="dgn-dock">
+      <div className="dgn-dock-hd">
+        <span className="nm">🗺 {dungeon.name?.trim() || "Dungeon"}</span>
+        <button className="btn small ghost" onClick={() => setCollapsed(!collapsed)}>{collapsed ? "▼ Show map" : "▲ Hide map"}</button>
+        <button className="modal-x" title="Close play mode" onClick={onClose}>✕</button>
+      </div>
+      {!collapsed && (
+        <>
+          <div className="dgn-dock-map" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+            <svg width={size.w} height={size.h}>
+              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}</g>
+            </svg>
+            <div className="dgn-zoom">
+              <button onClick={() => zoom(1.25)}>＋</button>
+              <button onClick={() => zoom(1 / 1.25)}>－</button>
+            </div>
+          </div>
+          <div className="dgn-dock-body">
+            {!room ? (
+              <div className="trait" style={{ fontSize: 12, margin: 0 }}>Tap a room to see what's inside · drag to pan · pinch the ± to zoom.</div>
+            ) : (
+              <>
+                <div style={{ fontFamily: "var(--disp)", fontSize: 15, color: "var(--gold)", marginBottom: 4 }}>
+                  {(room.title || "").trim() || (room.dname || "").trim() || "Unnamed room"}
+                  {Array.isArray(room.icons) && room.icons.length ? <span style={{ marginLeft: 6 }}>{room.icons.join(" ")}</span> : null}
+                </div>
+                {Object.entries(DGN_FIELDS).map(([k, label]) => {
+                  const secs = asSections(room.notes?.[k]).filter((s) => (s.title || "").trim() || (s.body || "").trim());
+                  if (!secs.length) return null;
+                  return (
+                    <div key={k} style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700 }}>{label}</div>
+                      {secs.map((s) => (
+                        <div key={s.id} style={{ fontSize: 12, color: "var(--text)", whiteSpace: "pre-wrap" }}>
+                          {(s.title || "").trim() && <b>{s.title.trim()}: </b>}{(s.body || "").trim()}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+                {runnable ? (
+                  <>
+                    <div style={{ margin: "8px 0 4px" }}>
+                      {encMons.map((m) => <span key={m.n} className="dgn-enc-mon">{m.n} ×{m.c}</span>)}
+                      {encGroup && <span className="dgn-enc-mon">📦 {encGroup}</span>}
+                    </div>
+                    <div className="frow" style={{ marginBottom: 0 }}>
+                      <button className="btn small primary" disabled={inCombat} onClick={() => { onRun(room); setRan(sel); }}>⚔ Run encounter</button>
+                      {inCombat ? <span className="ad" style={{ fontSize: 11 }}>finish the current fight first</span>
+                        : ran === sel ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)" }}>✓ added — press Start combat above</span>
+                        : <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>drops these into the roster</span>}
+                    </div>
+                  </>
+                ) : <div className="trait" style={{ fontSize: 12, margin: "4px 0 0" }}>No encounter in this room.</div>}
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ================= App ================= */
 
 export default function App() {
@@ -7442,6 +7559,7 @@ export default function App() {
   const [dungeons, setDungeonsState] = useState([]); // saved dungeons (hex-grid maps of rooms)
   const saveDungeons = (list) => { setDungeonsState(list); stSet("dm5e:dungeons", list); };
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
+  const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
   const savePartiesAll = (list, activeId) => {
     setPartiesState(list); stSet("dm5e:parties", list);
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
@@ -9161,6 +9279,24 @@ export default function App() {
     pushToasts([{ kind: "good", text: `Added ${sbs.length} monster${sbs.length === 1 ? "" : "s"} from "${name.replace(/_/g, " ")}".` }]);
   };
   const deleteGroup = async (name) => stDel(`dm5e:group:${name}`);
+  // Drop a dungeon room's encounter (inline monsters + any saved-group reference) into the roster.
+  const runRoomEncounter = (room) => {
+    const enc = room && room.enc; if (!enc) return;
+    const list = Array.isArray(enc.mons) ? enc.mons : [];
+    if (list.length) {
+      const src = fullBestiary().concat(myBestiary);
+      mutate((d, L) => {
+        let added = 0;
+        for (const m of list) {
+          const sb = src.find((b) => b.name === m.n); if (!sb) continue;
+          for (let i = 0; i < (Number(m.c) || 0); i++) { d.combatants.push(makeMonster(sb, d, { side: "enemy" })); added++; }
+        }
+        if (added) L.push(`Loaded room encounter — <b>${added}</b> monster${added === 1 ? "" : "s"} added.`);
+      });
+    }
+    if (enc.group) addGroup(enc.group); // async; also drops the saved group's monsters in
+    else pushToasts([{ kind: "good", text: "Encounter loaded — press Start combat when ready." }]);
+  };
   const exportAll = async () => {
     const slotKeys = await stList("dm5e:slot:");
     const groupKeys = await stList("dm5e:group:");
@@ -9371,6 +9507,10 @@ export default function App() {
       )}
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
+        {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
+          <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode}
+            onRun={runRoomEncounter} onClose={() => setDungeonPlayId(null)} />
+        )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
             <h3>New encounter</h3>
@@ -9729,6 +9869,7 @@ export default function App() {
                 <div key={d.id} className="gs-row" style={{ alignItems: "center" }}>
                   <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
                   <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
+                  {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { setDungeonPlayId(d.id); setModal(null); }}>▶ Play</button>}
                   <button className="btn small" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>Edit</button>
                   <button className="btn small danger" title="Delete this dungeon" onClick={() => saveDungeons(dungeons.filter((x) => x.id !== d.id))}>✕</button>
                 </div>
