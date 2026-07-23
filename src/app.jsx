@@ -301,6 +301,15 @@ input[type=number]{width:64px}
 .btn.primary:hover{background:#e5b657}
 .btn.ok{background:var(--ok);color:#0e1a12;font-weight:600;border-color:var(--ok)}
 .btn.ok:hover{background:#93cfa1}
+.tut-card{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));width:calc(100% - 20px);max-width:460px;z-index:55;background:var(--panel);border:1px solid var(--gold);border-radius:14px;box-shadow:0 6px 26px rgba(0,0,0,.55);padding:12px 14px}
+.tut-hd{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.tut-title{flex:1;font-family:var(--disp);font-weight:700;color:var(--gold);font-size:15px}
+.tut-x{background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
+.tut-body{font-size:13px;line-height:1.42;color:var(--text)}
+.tut-dots{display:flex;gap:5px;justify-content:center;margin:9px 0 8px}
+.tut-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.tut-dot.on{background:var(--gold)}
+.tut-actions{display:flex;align-items:center;gap:6px}
 .btn.danger{border-color:var(--danger);color:var(--danger)}
 .btn.small{padding:3px 8px;font-size:12px;border-radius:6px}
 .btn.ghost{border-color:transparent;color:var(--dim)}
@@ -8103,6 +8112,45 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
   );
 }
 
+// A quick guided tour. Narration only — it loads a demo scenario and walks the DM through the real UI,
+// which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
+const TUTORIAL_STEPS = [
+  { title: "Welcome to the tour 🎓", body: "I've dropped a demo party of three plus two goblins into your roster. This quick walkthrough points out the essentials — tap Next to step through it, Skip to stop. The app stays tappable underneath, so try things as you go." },
+  { title: "1 · Your roster", body: "Everyone waiting to fight sits in the roster — your adventurers and the goblins. Tap any card to expand its HP, AC, conditions and notes. Drag isn't needed; initiative sorts them once combat starts." },
+  { title: "2 · Start combat", body: "Tap the ⚔ Start combat button up top. You'll punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
+  { title: "3 · Take a turn — attack", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play. Monsters roll their own attacks for you (unless you switch on Old-School mode)." },
+  { title: "4 · Layer an effect", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
+  { title: "5 · End the turn", body: "Tap End turn to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
+  { title: "6 · Rest between fights", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
+  { title: "7 · Build dungeons 🗺", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
+  { title: "You're ready! 🎉", body: "That's the whole tour. Clear the demo to start with a blank board, or keep it around to keep poking. You can reopen this any time from the ⋯ menu." },
+];
+function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
+  const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
+  return (
+    <div className="tut-card">
+      <div className="tut-hd">
+        <span className="tut-title">{s.title}</span>
+        <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>{step + 1}/{n}</span>
+        <button className="tut-x" title="Close the tour" onClick={onSkip}>✕</button>
+      </div>
+      <div className="tut-body">{s.body}</div>
+      <div className="tut-dots">{TUTORIAL_STEPS.map((_, i) => <span key={i} className={`tut-dot ${i === step ? "on" : ""}`} />)}</div>
+      <div className="tut-actions">
+        <button className="btn small ghost" disabled={step === 0} onClick={onBack}>◀ Back</button>
+        <span style={{ flex: 1 }} />
+        {last ? (<>
+          <button className="btn small ghost" onClick={() => onFinish(false)}>Keep demo</button>
+          <button className="btn small primary" onClick={() => onFinish(true)}>Clear &amp; finish</button>
+        </>) : (<>
+          <button className="btn small ghost" onClick={onSkip}>Skip</button>
+          <button className="btn small primary" onClick={onNext}>Next ▶</button>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
 /* ================= App ================= */
 
 export default function App() {
@@ -8294,6 +8342,7 @@ export default function App() {
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
   const [dungeonNav, setDungeonNav] = useState([]); // stack of dungeon ids we descended FROM, for going back up a level
+  const [tutorial, setTutorial] = useState(null); // guided-tour step index, or null
   // add the ready-made starter dungeons, with fresh ids (level-exit links remapped to match)
   const addSampleDungeons = () => {
     const idMap = {}; SAMPLE_DUNGEONS.forEach((d) => { idMap[d.id] = newUid(); });
@@ -10038,6 +10087,26 @@ export default function App() {
   };
   const deleteGroup = async (name) => stDel(`dm5e:group:${name}`);
   // Drop a dungeon room's encounter (inline monsters + any saved-group reference) into the roster.
+  // Guided tour: load a demo party + goblins (tagged _demo so we can clear just them), then step through.
+  const loadTutorialDemo = () => mutate((d, L) => {
+    if (d.combatants.some((c) => c._demo)) return;
+    [
+      makePlayer({ name: "Krusk · Fighter", ac: 17, hp: 28, dex: 1 }),
+      makePlayer({ name: "Mika · Cleric", ac: 18, hp: 24, dex: 0, spellDC: 13 }),
+      makePlayer({ name: "Ellywick · Wizard", ac: 12, hp: 18, dex: 3, spellDC: 13 }),
+    ].forEach((p) => d.combatants.push({ ...p, _demo: true }));
+    const gsb = fullBestiary().find((b) => b.name === "Goblin Warrior");
+    if (gsb) for (let i = 0; i < 2; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
+    L.push("🎓 Tutorial demo loaded — a party of three and two goblins.");
+  });
+  const startTutorial = () => { loadTutorialDemo(); setTutorial(0); };
+  const endTutorial = (clear) => {
+    setTutorial(null);
+    if (clear) mutate((d) => {
+      d.combatants = d.combatants.filter((c) => !c._demo);
+      if (d.combatants.length === 0) { d.mode = "setup"; d.round = 0; d.activeUid = null; }
+    });
+  };
   const runRoomEncounter = (room) => {
     const enc = room && room.enc; if (!enc) return;
     const list = Array.isArray(enc.mons) ? enc.mons : [];
@@ -10211,6 +10280,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
+              <button onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
@@ -10274,6 +10344,12 @@ export default function App() {
       )}
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
+        {tutorial != null && (
+          <TutorialCard step={tutorial}
+            onBack={() => setTutorial((s) => Math.max(0, s - 1))}
+            onNext={() => setTutorial((s) => Math.min(TUTORIAL_STEPS.length - 1, s + 1))}
+            onSkip={() => endTutorial(false)} onFinish={endTutorial} />
+        )}
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
             onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
