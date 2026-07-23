@@ -299,6 +299,8 @@ input[type=number]{width:64px}
 .btn:hover{border-color:var(--gold)}
 .btn.primary{background:var(--gold);color:#241d0e;font-weight:600;border-color:var(--gold)}
 .btn.primary:hover{background:#e5b657}
+.btn.ok{background:var(--ok);color:#0e1a12;font-weight:600;border-color:var(--ok)}
+.btn.ok:hover{background:#93cfa1}
 .btn.danger{border-color:var(--danger);color:var(--danger)}
 .btn.small{padding:3px 8px;font-size:12px;border-radius:6px}
 .btn.ghost{border-color:transparent;color:var(--dim)}
@@ -6840,6 +6842,52 @@ const HEX_NEIGHBORS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["tee", "┬ T-junction"], ["ex", "╳ Crossroad"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
+
+// Ready-made starter dungeons — original content built only from SRD (CC-BY) monsters, for players to
+// try out. Placeholder ids are remapped to fresh ids on load; level-exit links point at sibling samples.
+const SAMPLE_DUNGEONS = [
+  {
+    id: "s-warren", name: "The Goblin Warren", sample: true,
+    rooms: {
+      "0,0": { shape: "hall", orient: "h", color: "#453424", texture: "dirt", edge: "cave", caveSeed: 12, doors: [0], title: "Entrance Tunnel", dname: "Entrance", icons: ["🪤"], notes: { desc: "A low, damp tunnel of packed earth slopes down into the hillside. Crude goblin totems of bone and feather hang from the ceiling. A tripwire (DC 12 Perception) rings a bundle of tin cans deeper in." } },
+      "1,0": { shape: "hex", color: "#453424", texture: "dirt", edge: "cave", caveSeed: 5, doors: [3, 0], title: "Guard Cave", dname: "Guards", icons: ["😈"], notes: { desc: "Two goblins bicker over a gnawed haunch of meat beside a smoldering firepit. They shriek for help the instant they spot intruders." }, enc: { mons: [{ n: "Goblin Warrior", c: 2, side: "enemy" }, { n: "Goblin Minion", c: 2, side: "enemy" }], group: null } },
+      "2,0": { shape: "ytee", orient: 0, color: "#453424", texture: "dirt", edge: "cave", caveSeed: 9, doors: [3], title: "Warren Hub", dname: "The Warren", icons: ["🔥"], notes: { desc: "The central cavern reeks of wet fur and woodsmoke. Tunnels branch in every direction; a mangy wolf is chained near the north passage.", npcs: "Grik, a cowardly goblin, will beg for his life and can be persuaded (DC 10) to reveal the chief's cave and the loose wall to the west." }, enc: { mons: [{ n: "Goblin Warrior", c: 2, side: "enemy" }, { n: "Wolf", c: 1, side: "enemy" }], group: null } },
+      "2,-1": { shape: "round", color: "#5a3b3b", texture: "mud", feature: "skeletons", featurePos: 4, doors: [2], title: "Wolf Pen", dname: "Wolf Pen", icons: ["🍖"], notes: { desc: "A reeking pit strewn with cracked bones. Two wolves lunge to the length of their chains — a DC 13 Animal Handling calms them; otherwise they snap free when combat starts nearby." }, enc: { mons: [{ n: "Dire Wolf", c: 1, side: "enemy" }, { n: "Wolf", c: 2, side: "enemy" }], group: null } },
+      "3,-1": { shape: "hex", color: "#5a3b3b", texture: "stone", feature: "chest", featurePos: 1, glow: true, glowColor: "#e8b23a", doors: [3], title: "Chief's Cave", dname: "Chief", icons: ["👑", "😈"], notes: { desc: "Furs and stolen finery carpet the floor of the chief's den. Graznak the Goblin Boss rules from a throne of lashed spears, a bugbear enforcer at his side.", encnotes: "Graznak flees to the Wolf Pen at 10 HP if he can, blowing a horn to rouse any survivors." }, enc: { mons: [{ n: "Goblin Boss", c: 1, side: "enemy" }, { n: "Bugbear Warrior", c: 1, side: "enemy" }, { n: "Goblin Minion", c: 2, side: "enemy" }], group: null }, loot: [{ n: "80 gp" }, { n: "Potion of Healing" }, { n: "Graznak's spear (trophy)" }] },
+      "2,1": { shape: "hex", color: "#2c2c30", texture: "gravel", edge: "rubble", caveSeed: 3, title: "Collapsed Passage", dname: "Rubble", icons: ["🪨"], notes: { desc: "A cave-in blocks this passage with tumbled rock. A DC 13 Investigation notices a draft — and a loose slab hiding a crawlway west into the old vault.", loot: "Behind the loose slab: a narrow crawl leads to the hidden vault." }, link: { kind: "room", room: "3,1" } },
+      "3,1": { shape: "square", color: "#5a523b", texture: "marble", feature: "chest", featurePos: 0, glow: true, glowColor: "#e8b23a", title: "Hidden Vault", dname: "Vault", icons: ["💰"], notes: { desc: "A dry stone vault the goblins never found. Dust lies thick over a strongbox and the bones of its long-dead owner, still clutching a wand." }, loot: [{ n: "150 gp" }, { n: "Wand of Magic Missiles" }, { n: "2 gems (50 gp each)" }] },
+    },
+  },
+  {
+    id: "s-crypt", name: "The Sunken Crypt", sample: true,
+    rooms: {
+      "0,0": { shape: "hall", orient: "h", color: "#3b3f52", texture: "stone", doors: [0], title: "Crypt Entrance", dname: "Entrance", icons: ["🪦"], notes: { desc: "Weathered steps descend to a bronze door hanging off one hinge. The air is cold and smells of stagnant water and old dust." } },
+      "1,0": { shape: "round", color: "#3b4a5a", texture: "water", feature: "pool", doors: [3, 1], title: "Flooded Nave", dname: "Flooded Nave", icons: ["💦"], notes: { desc: "Black water fills this pillared hall to knee height. Rats boil out of niches in the walls as you wade in. Movement here is difficult terrain.", encnotes: "The swarm disperses if reduced to half its HP; the giant rats fight to the death." }, enc: { mons: [{ n: "Swarm of Rats", c: 1, side: "enemy" }, { n: "Giant Rat", c: 2, side: "enemy" }], group: null } },
+      "1,-1": { shape: "hex", color: "#3b3f52", texture: "stone", feature: "skeletons", featurePos: 2, doors: [4], title: "Ossuary", dname: "Ossuary", icons: ["💀"], notes: { desc: "Skulls are stacked in the walls floor to ceiling. When anyone disturbs the central cairn, the bones knit themselves into standing skeletons." }, enc: { mons: [{ n: "Skeleton", c: 3, side: "enemy" }], group: null }, loot: [{ n: "35 sp" }, { n: "silver holy symbol (25 gp)" }] },
+      "2,-1": { shape: "hex", color: "#3b5a45", texture: "blood", feature: "altar", featurePos: 5, glow: true, glowColor: "#57c94a", doors: [3, 0], title: "Altar of the Drowned", dname: "Drowned Altar", icons: ["📜", "😈"], notes: { desc: "A cracked altar to a forgotten drowned god drips with green ichor. Two ghouls crouch over a fresh kill and turn, ravenous.", loot: "A DC 14 Religion check identifies the rite; the offering bowl holds a Potion of Water Breathing." }, enc: { mons: [{ n: "Ghoul", c: 2, side: "enemy" }], group: null }, loot: [{ n: "Potion of Water Breathing" }, { n: "60 gp in waterlogged coin" }] },
+      "2,0": { shape: "hex", color: "#3b3f52", texture: "stone", feature: "stairs", featurePos: 0, doors: [3], title: "The Sunken Stair", dname: "Stairs Down", icons: ["⬇️"], notes: { desc: "A spiral stair corkscrews down into darkness, its lower steps lost beneath oily water. Cold air rises from below — the catacombs await." }, link: { kind: "level", dungeon: "s-crypt2" } },
+    },
+  },
+  {
+    id: "s-crypt2", name: "Sunken Crypt · Catacombs", sample: true,
+    rooms: {
+      "0,0": { shape: "hex", color: "#3b3f52", texture: "stone", feature: "stairs", featurePos: 3, doors: [0], title: "Catacomb Landing", dname: "Landing", icons: ["⬆️"], notes: { desc: "The stair bottoms out in a vaulted landing. The way back up is behind you; ahead, burial galleries stretch into the dark." }, link: { kind: "level", dungeon: "s-crypt" } },
+      "1,0": { shape: "hall", orient: "h", color: "#453424", texture: "cobble", doors: [3, 0], title: "Bone Gallery", dname: "Bone Gallery", icons: ["💀"], notes: { desc: "Loculi line both walls, each holding a shrouded corpse. Halfway down, four skeletons and a headless warhorse clatter free of their niches.", encnotes: "Fighting here is cramped — no more than two attackers can reach a target in the corridor at once." }, enc: { mons: [{ n: "Skeleton", c: 4, side: "enemy" }, { n: "Warhorse Skeleton", c: 1, side: "enemy" }], group: null } },
+      "1,-1": { shape: "round", color: "#2c2c30", texture: "mist", edge: "cave", caveSeed: 7, glow: true, glowColor: "#a24de0", doors: [4], title: "Vault of Shades", dname: "Shades", icons: ["👻"], notes: { desc: "The torchlight gutters and dies at the threshold of this lightless vault. Things move in the cold — shadows peel off the walls and a specter drifts through the far arch.", encnotes: "The shadows drain Strength on a hit; a creature at STR 0 dies and rises as a new shadow." }, enc: { mons: [{ n: "Shadow", c: 2, side: "enemy" }, { n: "Specter", c: 1, side: "enemy" }], group: null } },
+      "2,-1": { shape: "square", color: "#4a3b5a", texture: "marble", feature: "altar", featurePos: 0, glow: true, glowColor: "#3f7be0", doors: [3], title: "Tomb of the Wight", dname: "The Wight", icons: ["👑", "💀"], notes: { desc: "A sealed royal tomb, its lid shattered from within. Lord Maalveth the Wight rises in rusted mail, flanked by his skeletal honor guard, and levels a barrow-blade at the living.", encnotes: "Maalveth targets spellcasters first with his Life Drain. His blade is the reward for felling him." }, enc: { mons: [{ n: "Wight", c: 1, side: "enemy" }, { n: "Skeleton", c: 2, side: "enemy" }], group: null }, loot: [{ n: "300 gp in grave-goods" }, { n: "Maalveth's barrow-blade (+1 longsword)" }, { n: "gold circlet (250 gp)" }] },
+    },
+  },
+  {
+    id: "s-shrine", name: "The Ember Shrine", sample: true,
+    rooms: {
+      "0,0": { shape: "hall", orient: "h", color: "#453424", texture: "dirt", doors: [0], title: "Ashen Threshold", dname: "Threshold", icons: ["🔥"], notes: { desc: "Scorched flagstones and drifting ash mark the entrance to a shrine dug into a dead volcano. Heat breathes up from somewhere below." } },
+      "1,0": { shape: "hex", color: "#5a3b3b", texture: "brick", feature: "brazier", featurePos: 4, glow: true, glowColor: "#e0483a", doors: [3, 0], title: "Cultist Hall", dname: "Cultists", icons: ["📜", "😈"], notes: { desc: "Red-robed cultists chant around a central brazier, faces hidden behind ash-grey masks. They break off to attack, calling on the Ember Lord." }, enc: { mons: [{ n: "Cultist", c: 4, side: "enemy" }], group: null } },
+      "1,-1": { shape: "hex", color: "#5a3b3b", texture: "stone", feature: "statue", featurePos: 2, doors: [4], title: "Vigil of Embers", dname: "The Vigil", icons: ["🔥", "😈"], notes: { desc: "A basalt idol of a burning serpent looms over kneeling worshippers. A priest tends the eternal flame and will not let it be defiled.", encnotes: "The priest casts spiritual weapon and guiding bolt; the cultists screen him." }, enc: { mons: [{ n: "Priest", c: 1, side: "enemy" }, { n: "Cultist", c: 2, side: "enemy" }], group: null }, loot: [{ n: "incense and offerings (40 gp)" }] },
+      "2,-1": { shape: "cross", orient: 0, color: "#2c2c30", texture: "lava", edge: "rubble", caveSeed: 4, glow: true, glowColor: "#e0483a", doors: [3], title: "The Lava Chasm", dname: "Lava Chasm", icons: ["🔥", "💥"], notes: { desc: "A narrow causeway crosses a churning river of magma. Three magma mephits skitter across the rock, bursting into cinders when slain.", encnotes: "A creature that ends its turn adjacent to the lava takes 3 (1d6) fire damage. The mephits explode for 7 (2d6) fire on death — spread out." }, enc: { mons: [{ n: "Magma Mephit", c: 3, side: "enemy" }], group: null } },
+      "2,0": { shape: "round", color: "#5a3b52", texture: "runes", feature: "circle", glow: true, glowColor: "#e0483a", doors: [3], title: "Circle of Summoning", dname: "The Circle", icons: ["⭐️", "🔥"], notes: { desc: "A great binding-circle scored into obsidian blazes with heat-light. High Priest Vharos completes the rite as you enter — and a fire elemental tears free of the circle to defend its summoner.", encnotes: "Destroying the circle (AC 13, 20 HP) before the elemental is summoned removes it from the fight. Vharos fights to the last, sure of his god's favor." }, enc: { mons: [{ n: "Cultist Fanatic", c: 1, side: "enemy" }, { n: "Fire Elemental", c: 1, side: "enemy" }], group: null }, loot: [{ n: "220 gp" }, { n: "Ember Lord's ritual dagger (+1 dagger)" }, { n: "ruby of the bound flame (500 gp)" }] },
+    },
+  },
+];
 // At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
 const ROOM_ICONS = ["😈", "📜", "⭐️", "💰", "🙂", "💥", "🧨", "🍖", "💦", "🌿", "🔥", "🍄", "🪦", "💀", "🚪", "🗝️", "⚔️", "🔮", "🧪", "👑", "🕸️", "🗿", "🕳️", "💎"];
 const ROOM_ICON_MAX = 3; // how many icons a single hex may show
@@ -8183,6 +8231,18 @@ export default function App() {
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
   const [dungeonNav, setDungeonNav] = useState([]); // stack of dungeon ids we descended FROM, for going back up a level
+  // add the ready-made starter dungeons, with fresh ids (level-exit links remapped to match)
+  const addSampleDungeons = () => {
+    const idMap = {}; SAMPLE_DUNGEONS.forEach((d) => { idMap[d.id] = newUid(); });
+    const clones = SAMPLE_DUNGEONS.map((d) => {
+      const nd = JSON.parse(JSON.stringify(d)); nd.id = idMap[d.id];
+      Object.values(nd.rooms).forEach((rm) => { if (rm.link && rm.link.kind === "level" && idMap[rm.link.dungeon]) rm.link.dungeon = idMap[rm.link.dungeon]; });
+      return nd;
+    });
+    saveDungeons([...dungeons, ...clones]);
+  };
+  const sampleNames = new Set(SAMPLE_DUNGEONS.map((d) => d.name));
+  const hasSamples = dungeons.some((d) => sampleNames.has(d.name));
   // load a dungeon fresh into the play panel (Play button / Load FAB) — resets the level-back history
   const playDungeon = (id) => { setDungeonNav([]); setDungeonPlayId(id); };
   // follow a level-exit link: remember the level we're leaving so we can climb back
@@ -10520,12 +10580,18 @@ export default function App() {
                 <div key={d.id} className="gs-row" style={{ alignItems: "center" }}>
                   <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
                   <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
+                  <button className="btn small ok" title="Open this dungeon in the builder to edit it" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>✎ Edit</button>
                   {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { playDungeon(d.id); setModal(null); }}>▶ Play</button>}
-                  <button className="btn small" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>Edit</button>
                   <button className="btn small danger" title="Delete this dungeon" onClick={() => setDgnDelId(d.id)}>✕</button>
                 </div>
               );
             })}
+            {!hasSamples && (
+              <div className="trait" style={{ fontSize: 12, marginTop: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span>New here? Load three ready-made starter dungeons to explore.</span>
+                <button className="btn small ok" onClick={addSampleDungeons}>✨ Add sample dungeons</button>
+              </div>
+            )}
             <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
               <button className="btn" onClick={() => setModal(null)}>Close</button>
               <button className="btn primary" onClick={() => { const id = newUid(); saveDungeons([...dungeons, { id, name: "", rooms: {} }]); setDungeonEditId(id); setModal(null); }}>＋ New dungeon</button>
