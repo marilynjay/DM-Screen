@@ -256,6 +256,8 @@ input[type=number]{width:64px}
 .dgn-dock-map{position:relative;height:300px;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
 .dgn-dock-body{padding:10px 12px;border-top:1px solid var(--line)}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
+.dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
+.loaddgn-fab{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:48;background:var(--panel);border:1px solid var(--line2);color:var(--gold);border-radius:20px;padding:8px 14px;font-size:13px;font-family:var(--disp);letter-spacing:.03em;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
 .dgn-iconpick{display:flex;flex-wrap:wrap;gap:5px}
 .dgn-iconbtn{font-size:20px;width:40px;height:40px;border-radius:8px;border:1px solid var(--line2);background:var(--panel);padding:0;line-height:1;cursor:pointer}
 .dgn-iconbtn.on{border-color:var(--gold);background:rgba(212,175,55,.16)}
@@ -6908,13 +6910,22 @@ function RoomLabel({ room, cx, cy }) {
   const s = HEX_SIZE;
   const icons = Array.isArray(room.icons) ? room.icons : [];
   const dname = (room.dname || "").trim();
-  const enc = hasEnc(room), n = encCount(room);
-  if (!icons.length && !dname && !enc) return null;
+  const mons = (room.enc && Array.isArray(room.enc.mons)) ? room.enc.mons : [];
+  const enemyN = mons.filter((m) => (m.side || "enemy") !== "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
+  const allyN = mons.filter((m) => m.side === "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
+  const hasFoe = enemyN > 0 || !!(room.enc && room.enc.group); // saved groups are hostile
+  const hasAlly = allyN > 0;
+  if (!icons.length && !dname && !hasFoe && !hasAlly) return null;
   const iconSize = s * 0.4;
   const nameSize = Math.min(s * 0.32, (s * 1.5) / (Math.max(dname.length, 5) * 0.58)); // shrink to fit the hex width
   const iconY = dname ? cy - s * 0.16 : cy;
   const nameY = icons.length ? cy + s * 0.34 : cy;
-  const bx = cx - s * 0.42, by = cy - s * 0.46; // upper-left corner (mirrors the delete ✕ on the right)
+  const badge = (bx, by, fill, stroke, glyph) => (
+    <g>
+      <circle cx={bx} cy={by} r={s * 0.22} fill={fill} stroke={stroke} strokeWidth="1.5" />
+      <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" fontSize={s * 0.24} fill="#fff">{glyph}</text>
+    </g>
+  );
   return (
     <g style={{ pointerEvents: "none" }}>
       {icons.length > 0 && (
@@ -6924,12 +6935,8 @@ function RoomLabel({ room, cx, cy }) {
         <text x={cx} y={nameY} textAnchor="middle" dominantBaseline="central" fontSize={nameSize} fill="#fff"
           stroke="rgba(0,0,0,.85)" strokeWidth={nameSize * 0.16} style={{ paintOrder: "stroke", fontFamily: "var(--disp)", fontWeight: 700 }}>{dname}</text>
       )}
-      {enc && (
-        <g>
-          <circle cx={bx} cy={by} r={s * 0.22} fill="rgba(90,20,20,.85)" stroke="#e0645a" strokeWidth="1.5" />
-          <text x={bx} y={by} textAnchor="middle" dominantBaseline="central" fontSize={s * 0.24} fill="#fff">⚔{n > 1 ? n : ""}</text>
-        </g>
-      )}
+      {hasFoe && badge(cx - s * 0.42, cy - s * 0.46, "rgba(90,20,20,.85)", "#e0645a", `⚔${enemyN > 1 ? enemyN : ""}`)}
+      {hasAlly && badge(cx - s * 0.42, cy + s * 0.46, "rgba(24,54,96,.9)", "#5b8dd6", `🙂${allyN > 1 ? allyN : ""}`)}
     </g>
   );
 }
@@ -7003,11 +7010,12 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
   const addMon = (name) => {
     const mons = (enc.mons || []).map((m) => ({ ...m }));
     const ex = mons.find((m) => m.n === name);
-    if (ex) ex.c = (Number(ex.c) || 0) + 1; else mons.push({ n: name, c: 1 });
+    if (ex) ex.c = (Number(ex.c) || 0) + 1; else mons.push({ n: name, c: 1, side: "enemy" });
     setEnc({ mons });
   };
   const bumpMon = (name, d) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, c: Math.max(1, (Number(m.c) || 1) + d) } : m)) });
   const removeMon = (name) => setEnc({ mons: (enc.mons || []).filter((m) => m.n !== name) });
+  const toggleSide = (name) => setEnc({ mons: (enc.mons || []).map((m) => (m.n === name ? { ...m, side: (m.side === "ally" ? "enemy" : "ally") } : m)) });
   const monMatches = monQ && monQ.trim().length >= 1
     ? monsterList.filter((m) => m.name.toLowerCase().includes(monQ.trim().toLowerCase())).slice(0, 24) : [];
   if (full) { // one note field, expanded to the whole screen for long paragraphs
@@ -7076,11 +7084,12 @@ function RoomEditor({ room, monsterList = [], groupNames = [], onChange, onDelet
             );
           })}
         </div>
-        <span className="dgn-flabel">Encounter <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— monsters that live here</span></span>
+        <span className="dgn-flabel">Encounter <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— who's in this room</span></span>
         {(enc.mons || []).length === 0 && !enc.group && <div className="trait" style={{ fontSize: 12, marginBottom: 2 }}>No encounter — this room is empty.</div>}
         {(enc.mons || []).map((m) => (
           <div key={m.n} className="frow" style={{ alignItems: "center", gap: 6, marginBottom: 3 }}>
             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.n}</span>
+            <button className="btn tiny" title="Toggle between a hostile monster and a friendly / neutral NPC" onClick={() => toggleSide(m.n)}>{m.side === "ally" ? "🙂 NPC" : "⚔ Foe"}</button>
             <button className="btn tiny" onClick={() => bumpMon(m.n, -1)} disabled={(Number(m.c) || 1) <= 1}>–</button>
             <span className="ad" style={{ minWidth: 20, textAlign: "center" }}>× {m.c}</span>
             <button className="btn tiny" onClick={() => bumpMon(m.n, 1)}>+</button>
@@ -7350,7 +7359,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onClose }) {
                 {runnable ? (
                   <>
                     <div style={{ margin: "8px 0 4px" }}>
-                      {encMons.map((m) => <span key={m.n} className="dgn-enc-mon">{m.n} ×{m.c}</span>)}
+                      {encMons.map((m) => <span key={m.n} className={m.side === "ally" ? "dgn-enc-ally" : "dgn-enc-mon"}>{m.side === "ally" ? "🙂 " : ""}{m.n} ×{m.c}</span>)}
                       {encGroup && <span className="dgn-enc-mon">📦 {encGroup}</span>}
                     </div>
                     <div className="frow" style={{ marginBottom: 0 }}>
@@ -9289,9 +9298,10 @@ export default function App() {
         let added = 0;
         for (const m of list) {
           const sb = src.find((b) => b.name === m.n); if (!sb) continue;
-          for (let i = 0; i < (Number(m.c) || 0); i++) { d.combatants.push(makeMonster(sb, d, { side: "enemy" })); added++; }
+          const side = m.side === "ally" ? "ally" : "enemy";
+          for (let i = 0; i < (Number(m.c) || 0); i++) { d.combatants.push(makeMonster(sb, d, { side })); added++; }
         }
-        if (added) L.push(`Loaded room encounter — <b>${added}</b> monster${added === 1 ? "" : "s"} added.`);
+        if (added) L.push(`Loaded room encounter — <b>${added}</b> creature${added === 1 ? "" : "s"} added.`);
       });
     }
     if (enc.group) addGroup(enc.group); // async; also drops the saved group's monsters in
@@ -9886,6 +9896,9 @@ export default function App() {
         <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} customMonsters={myBestiary}
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
+      )}
+      {dungeons.length > 0 && state.mode === "setup" && !dungeonPlayId && !dungeonEditId && (
+        <button className="loaddgn-fab" title="Load a dungeon into the play panel" onClick={() => setModal({ type: "dungeons" })}>🗺 Load Dungeon</button>
       )}
       {modal?.type === "item-compendium" && (
         <LootGiveModal compendium customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)} />
