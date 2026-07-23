@@ -273,11 +273,11 @@ input[type=number]{width:64px}
 .dgn-texbtn{width:40px;height:40px;padding:0;border:1px solid var(--line2);border-radius:8px;overflow:hidden;cursor:pointer;background:none;line-height:0}
 .dgn-texbtn.on{border-color:var(--gold)}
 .dgn-texbtn svg{display:block}
-.dgn-texgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 4px;margin-top:2px}
-.dgn-texcell{display:flex;flex-direction:column;align-items:center;gap:3px}
+.dgn-texgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:7px 3px;margin-top:2px}
+.dgn-texcell{display:flex;flex-direction:column;align-items:center;gap:2px}
 .dgn-texcell .dgn-texbtn{width:100%;height:auto;aspect-ratio:1}
 .dgn-texcell .dgn-texbtn svg{width:100%;height:100%}
-.dgn-texname{font-size:10px;line-height:1.15;text-align:center;color:var(--faint);word-break:break-word}
+.dgn-texname{font-size:9px;line-height:1.1;text-align:center;color:var(--faint);word-break:break-word}
 .dgn-texcell.on .dgn-texname{color:var(--gold)}
 .dgn-collapse{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0;margin:12px 0 4px;cursor:pointer;text-align:left}
 .dgn-secsum{font-size:12px;color:var(--faint);font-weight:400;margin-left:auto}
@@ -6831,7 +6831,7 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#6e4a2a", "#453424", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
-const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"]];
+const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
 // At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
@@ -6878,6 +6878,7 @@ function TextureDefs() {
       <filter id="f-dirt" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>
       <filter id="f-mud" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>
       <filter id="f-mist" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>
+      <filter id="f-cave" x="-35%" y="-35%" width="170%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="7" result="n" /><feDisplacementMap in="SourceGraphic" in2="n" scale="15" xChannelSelector="R" yChannelSelector="G" /></filter>
       <pattern id="tex-stone" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-stone)" /></pattern>
       <pattern id="tex-marble" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-marble)" /></pattern>
       <pattern id="tex-dirt" width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter="url(#f-dirt)" /></pattern>
@@ -6911,22 +6912,30 @@ function RoomShape({ room, cx, cy, hexKey }) {
   const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}` : null;
   // Clip corridor shapes to their hex cell; all corridor rotations are 60° multiples (hex is invariant).
   const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
-  const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
+  const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
   const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
   // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
   // then again with the texture pattern layered on top (transparent detail over the colour).
   const draw = (fill, stk) => {
     if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={fill} stroke={stk} strokeWidth="1.5" />;
     if (shape === "square") { const side = s * 1.18; return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={fill} stroke={stk} strokeWidth="1.5" />; }
+    if (shape === "diamond") { const d = s * 0.84; return <polygon points={`${cx},${(cy - d).toFixed(1)} ${(cx + d).toFixed(1)},${cy} ${cx},${(cy + d).toFixed(1)} ${(cx - d).toFixed(1)},${cy}`} fill={fill} stroke={stk} strokeWidth="1.5" />; }
+    if (shape === "stub") {
+      const th = s * 0.5, apo = (s * Math.sqrt(3)) / 2;
+      const rot = ((Number(room.orient) || 0) % 6) * 60;
+      // a corridor that enters one edge and terminates in a rounded dead end near the centre
+      return wrap(<rect x={cx - th * 0.5} y={cy - th / 2} width={apo + th * 0.5} height={th} rx={th * 0.42} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    }
     if (shape === "hall") {
       const th = s * 0.42, L = Math.sqrt(3) * s;
       const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
       const conf = MAP[room.orient] || MAP.h;
       return wrap(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={fill} stroke={stk} strokeWidth="1" />, conf.rot);
     }
-    if (shape === "angle" || shape === "ytee") {
+    if (shape === "angle" || shape === "ytee" || shape === "cross") {
       const th = s * 0.42, apo = (s * Math.sqrt(3)) / 2;
-      const arms = shape === "ytee" ? [0, 120, 240] : [300, 60];
+      // cross = the Y-junction plus a fourth exit budding from one of its crooks (still edge-aligned)
+      const arms = shape === "ytee" ? [0, 120, 240] : shape === "cross" ? [0, 120, 240, 60] : [300, 60];
       const arm = (deg) => {
         const a = (deg * Math.PI) / 180;
         const mx = cx + (apo / 2) * Math.cos(a), my = cy + (apo / 2) * Math.sin(a);
@@ -6963,8 +6972,11 @@ function RoomShape({ room, cx, cy, hexKey }) {
   return (
     <>
       {needClip && <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>}
-      {draw(col, stroke)}
-      {texId && draw(`url(#${texId})`, "none")}
+      {/* the cave treatment displaces the whole room outline with turbulence for an organic, rough-hewn edge */}
+      <g filter={room.cave ? "url(#f-cave)" : undefined}>
+        {draw(col, stroke)}
+        {texId && draw(`url(#${texId})`, "none")}
+      </g>
     </>
   );
 }
@@ -7172,6 +7184,7 @@ function roomTouched(r) {
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (r.texture && r.texture !== "none") return true;
   if (r.feature && r.feature !== "none") return true;
+  if (r.cave) return true;
   if (Array.isArray(r.doors) && r.doors.length) return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
@@ -7287,12 +7300,17 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
             </div>
           )}
-          {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee") && (
+          {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee" || room.shape === "cross" || room.shape === "stub") && (
             <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
               <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
-              <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which two edges it joins</span>
+              <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which edges it joins</span>
             </div>
           )}
+          <label className="dgn-cave" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!room.cave} onChange={(e) => set({ cave: e.target.checked })} />
+            <span style={{ fontFamily: "var(--disp)", fontWeight: 700, color: "var(--gold)", fontSize: 15 }}>Cave edges</span>
+            <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— rough, organic outline on any shape</span>
+          </label>
           <span className="dgn-flabel">Background Colour</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
