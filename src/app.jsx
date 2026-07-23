@@ -262,6 +262,8 @@ input[type=number]{width:64px}
 .dgn-enc-mon{display:inline-block;background:rgba(224,100,90,.14);border:1px solid rgba(224,100,90,.4);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-enc-ally{display:inline-block;background:rgba(70,120,200,.16);border:1px solid rgba(90,141,214,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
 .dgn-loot-chip{display:inline-block;background:var(--gold-soft);border:1px solid rgba(217,164,65,.5);border-radius:6px;padding:1px 7px;margin:0 4px 4px 0;font-size:12px}
+.dgn-loot-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:var(--text);font-size:13px;padding:3px 0;cursor:pointer}
+.dgn-loot-check{color:var(--gold);font-size:16px;width:16px;flex-shrink:0}
 .loaddgn-fab{position:fixed;right:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:48;background:var(--panel);border:1px solid var(--line2);color:var(--gold);border-radius:20px;padding:8px 14px;font-size:13px;font-family:var(--disp);letter-spacing:.03em;box-shadow:0 2px 10px rgba(0,0,0,.45);cursor:pointer}
 .dgn-tabs{display:flex;gap:4px;margin:8px 0 10px;border-bottom:1px solid var(--line2)}
 .dgn-tab{flex:1;background:none;border:none;border-bottom:2px solid transparent;color:var(--faint);font-family:var(--disp);font-size:13px;letter-spacing:.02em;padding:8px 4px;cursor:pointer}
@@ -6965,7 +6967,8 @@ function RoomLabel({ room, cx, cy }) {
   const allyN = mons.filter((m) => m.side === "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
   const hasFoe = enemyN > 0 || !!(room.enc && room.enc.group); // saved groups are hostile
   const hasAlly = allyN > 0;
-  const loot = hasLoot(room), looted = loot && !!room.looted;
+  const loot = hasLoot(room);
+  const looted = loot && room.loot.every((it) => (it.got === undefined ? !!room.looted : it.got)); // all items collected
   if (!icons.length && !dname && !hasFoe && !hasAlly && !loot) return null;
   const iconSize = s * 0.4;
   const nameSize = Math.min(s * 0.32, (s * 1.5) / (Math.max(dname.length, 5) * 0.58)); // shrink to fit the hex width
@@ -7422,7 +7425,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onSetLooted, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -7554,15 +7557,30 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onSetLooted, onClose }
                     </div>
                   );
                 })()}
-                {hasLoot(room) && (
-                  <div style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
-                    <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginBottom: 4 }}>💰 Loot{room.looted ? " · collected" : ""}</div>
-                    <div style={{ marginBottom: 6 }}>
-                      {(room.loot || []).map((it, i) => <span key={i} className="dgn-loot-chip" style={{ opacity: room.looted ? 0.5 : 1, textDecoration: room.looted ? "line-through" : "none" }}>{lootName(it)}</span>)}
+                {hasLoot(room) && (() => {
+                  const lootArr = room.loot || [];
+                  const gotOf = (it) => (it.got === undefined ? !!room.looted : it.got); // migrate legacy whole-room flag
+                  const allGot = lootArr.length > 0 && lootArr.every(gotOf);
+                  const toggleItem = (i) => onUpdateRoom && onUpdateRoom(sel, { looted: false, loot: lootArr.map((it, j) => ({ ...it, got: j === i ? !gotOf(it) : gotOf(it) })) });
+                  const setAll = (v) => onUpdateRoom && onUpdateRoom(sel, { looted: v, loot: lootArr.map((it) => ({ ...it, got: v })) });
+                  return (
+                    <div style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+                      <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginBottom: 4 }}>💰 Loot{allGot ? " · collected" : ""}</div>
+                      <div style={{ marginBottom: 6 }}>
+                        {lootArr.map((it, i) => {
+                          const got = gotOf(it);
+                          return (
+                            <button key={i} className="dgn-loot-item" onClick={() => toggleItem(i)}>
+                              <span className="dgn-loot-check">{got ? "☑" : "☐"}</span>
+                              <span style={{ flex: 1, textDecoration: got ? "line-through" : "none", opacity: got ? 0.55 : 1 }}>{lootName(it)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <button className="btn small" onClick={() => setAll(!allGot)}>{allGot ? "↺ Mark all not collected" : "✓ Mark all collected"}</button>
                     </div>
-                    <button className="btn small" onClick={() => onSetLooted && onSetLooted(sel, !room.looted)}>{room.looted ? "↺ Mark not collected" : "✓ Mark collected"}</button>
-                  </div>
-                )}
+                  );
+                })()}
               </>
             )}
           </div>
@@ -9501,11 +9519,12 @@ export default function App() {
     if (enc.group) addGroup(enc.group); // async; also drops the saved group's monsters in
     else pushToasts([{ kind: "good", text: "Encounter loaded — press Start combat when ready." }]);
   };
-  // the one thing editable from the read-only play panel: mark a room's loot collected (or not)
-  const setRoomLooted = (roomKey, val) => {
+  // the one thing editable from the read-only play panel: mark a room's loot collected (whole room
+  // or item-by-item). The panel sends the patch (loot array and/or looted flag); we merge + save.
+  const updateRoomInPlay = (roomKey, patch) => {
     if (!dungeonPlayId) return;
     saveDungeons(dungeonsRef.current.map((d) => (d.id === dungeonPlayId
-      ? { ...d, rooms: { ...d.rooms, [roomKey]: { ...(d.rooms[roomKey] || {}), looted: val } } } : d)));
+      ? { ...d, rooms: { ...d.rooms, [roomKey]: { ...(d.rooms[roomKey] || {}), ...patch } } } : d)));
   };
   const exportAll = async () => {
     const slotKeys = await stList("dm5e:slot:");
@@ -9720,7 +9739,7 @@ export default function App() {
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode}
-            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onSetLooted={setRoomLooted} onClose={() => setDungeonPlayId(null)} />
+            onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay} onClose={() => setDungeonPlayId(null)} />
         )}
         {order.length === 0 && !restoreBanner && (
           <div className="card">
