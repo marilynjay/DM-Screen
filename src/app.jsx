@@ -8115,15 +8115,18 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
 // A quick guided tour. Narration only — it loads a demo scenario and walks the DM through the real UI,
 // which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
 const TUTORIAL_STEPS = [
-  { title: "Welcome to the tour 🎓", body: "I've dropped a demo party of three plus two goblins into your roster. This quick walkthrough points out the essentials — tap Next to step through it, Skip to stop. The app stays tappable underneath, so try things as you go." },
-  { title: "1 · Your roster", body: "Everyone waiting to fight sits in the roster — your adventurers and the goblins. Tap any card to expand its HP, AC, conditions and notes. Drag isn't needed; initiative sorts them once combat starts." },
-  { title: "2 · Start combat", body: "Tap the ⚔ Start combat button up top. You'll punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
-  { title: "3 · Take a turn — attack", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play. Monsters roll their own attacks for you (unless you switch on Old-School mode)." },
-  { title: "4 · Layer an effect", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
-  { title: "5 · End the turn", body: "Tap End turn to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
-  { title: "6 · Rest between fights", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
-  { title: "7 · Build dungeons 🗺", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
-  { title: "You're ready! 🎉", body: "That's the whole tour. Clear the demo to start with a blank board, or keep it around to keep poking. You can reopen this any time from the ⋯ menu." },
+  { title: "Welcome to the tour 🎓", body: "I've dropped a demo party of three into your roster. This walkthrough builds a fight from scratch — you'll add monsters, balance them to the party, run combat, and pick up a few tricks. Tap Next to step through; the app stays tappable underneath, so try things as you go." },
+  { title: "1 · Your party", body: "Your three adventurers sit in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
+  { title: "2 · Add some monsters", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
+  { title: "3 · Balance to your party ⚖", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
+  { title: "4 · Start combat", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
+  { title: "5 · Take a turn — attack", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
+  { title: "6 · Want an easier pace? 🕯", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
+  { title: "7 · Layer an effect", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
+  { title: "8 · End the turn", body: "Tap End turn to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
+  { title: "9 · Rest between fights", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
+  { title: "10 · Build dungeons 🗺", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
+  { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
 ];
 function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
   const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
@@ -10087,7 +10090,10 @@ export default function App() {
   };
   const deleteGroup = async (name) => stDel(`dm5e:group:${name}`);
   // Drop a dungeon room's encounter (inline monsters + any saved-group reference) into the roster.
-  // Guided tour: load a demo party + goblins (tagged _demo so we can clear just them), then step through.
+  // Guided tour: load a demo party only (the DM adds monsters themselves during the tour). We snapshot
+  // the board on start so "Clear & finish" can restore whatever was there before — party, the monsters
+  // they added, and any combat state all revert cleanly.
+  const tutSnapRef = useRef(null);
   const loadTutorialDemo = () => mutate((d, L) => {
     if (d.combatants.some((c) => c._demo)) return;
     [
@@ -10095,17 +10101,13 @@ export default function App() {
       makePlayer({ name: "Mika · Cleric", ac: 18, hp: 24, dex: 0, spellDC: 13 }),
       makePlayer({ name: "Ellywick · Wizard", ac: 12, hp: 18, dex: 3, spellDC: 13 }),
     ].forEach((p) => d.combatants.push({ ...p, _demo: true }));
-    const gsb = fullBestiary().find((b) => b.name === "Goblin Warrior");
-    if (gsb) for (let i = 0; i < 2; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
-    L.push("🎓 Tutorial demo loaded — a party of three and two goblins.");
+    L.push("🎓 Tutorial demo party loaded — three adventurers ready to fight.");
   });
-  const startTutorial = () => { loadTutorialDemo(); setTutorial(0); };
+  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); loadTutorialDemo(); setTutorial(0); };
   const endTutorial = (clear) => {
     setTutorial(null);
-    if (clear) mutate((d) => {
-      d.combatants = d.combatants.filter((c) => !c._demo);
-      if (d.combatants.length === 0) { d.mode = "setup"; d.round = 0; d.activeUid = null; }
-    });
+    if (clear && tutSnapRef.current) setState(tutSnapRef.current); // roll the board back to before the tour
+    tutSnapRef.current = null;
   };
   const runRoomEncounter = (room) => {
     const enc = room && room.enc; if (!enc) return;
