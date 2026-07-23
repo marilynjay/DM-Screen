@@ -684,6 +684,13 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-hp.hurt{color:#e0645a}
 .pm-amt{width:64px;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
   padding:7px 8px;color:var(--text);-webkit-text-fill-color:var(--text)}
+.pm-conds{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+.pm-condchip{display:inline-flex;align-items:center;gap:3px;font-size:12px;border:1px solid var(--gold);
+  background:var(--gold-soft);color:var(--text);border-radius:999px;padding:2px 8px;cursor:pointer}
+.pm-condpick{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.pm-condopt{font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+  color:var(--text);padding:4px 7px;cursor:pointer}
+.pm-condopt.on{border-color:var(--gold);background:var(--gold-soft)}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -8553,12 +8560,15 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
    enemies whose HP counts DOWN past zero so you know how much you've dealt without ever
    seeing their real stats. No initiative, no turns. Own persisted state (dm5e:pmBoard). */
 const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
-const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true }], enemies: [] });
+const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
+const PM_COND_ICON = Object.fromEntries(PM_CONDS);
+const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [] }], enemies: [] });
 function PlayerModeBoard({ onExit }) {
   const [board, setBoard] = useState(null);
   const [amts, setAmts] = useState({});      // per-enemy damage-entry field
   const [iconFor, setIconFor] = useState(null); // enemy id whose icon picker is open
   const [colorFor, setColorFor] = useState(null);
+  const [condFor, setCondFor] = useState(null); // "e:<id>" / "a:<id>" whose condition picker is open
   const [search, setSearch] = useState(null); // null = closed; else query string
   const [cat, setCat] = useState("all");
   const [qty, setQty] = useState("3");
@@ -8568,16 +8578,33 @@ function PlayerModeBoard({ onExit }) {
   const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
   // allies
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "" }] });
+  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [] }] });
   const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
   // enemies
-  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0 }); save({ ...board, enemies: list }); };
-  const addNamedEnemy = (name) => save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0 }] });
+  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); };
+  const addNamedEnemy = (name) => save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] });
   const setEnemy = (id, patch) => save({ ...board, enemies: board.enemies.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   const removeEnemy = (id) => save({ ...board, enemies: board.enemies.filter((e) => e.id !== id) });
   const deal = (id, sign) => { const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return; const e = board.enemies.find((x) => x.id === id); if (!e) return; setEnemy(id, { dmg: Math.max(0, (e.dmg || 0) + sign * amt) }); setAmts({ ...amts, [id]: "" }); };
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
   const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
+  const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
+  // shared condition UI (chips + expandable picker) for an enemy or ally
+  const condUI = (item, key, setter) => (
+    <div style={{ marginTop: 4 }}>
+      {(item.conds || []).length > 0 && (
+        <div className="pm-conds">{item.conds.map((c) => (
+          <span key={c} className="pm-condchip" title={`${c} — tap to remove`} onClick={() => toggleCond(setter, item, c)}>{PM_COND_ICON[c] || ""} {c}</span>
+        ))}</div>
+      )}
+      <button className="btn tiny ghost" onClick={() => setCondFor(condFor === key ? null : key)}>{condFor === key ? "Close ▲" : "＋ status"}</button>
+      {condFor === key && (
+        <div className="pm-condpick">{PM_CONDS.map(([c, ic]) => (
+          <button key={c} className={`pm-condopt ${(item.conds || []).includes(c) ? "on" : ""}`} onClick={() => toggleCond(setter, item, c)}>{ic} {c}</button>
+        ))}</div>
+      )}
+    </div>
+  );
   const searchResults = search != null ? fullBestiary().filter((m) => (cat === "all" || m.cat === cat) && m.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 60) : [];
 
   const allyRows = board.allies.filter((a) => a.me || board.trackParty);
@@ -8626,12 +8653,13 @@ function PlayerModeBoard({ onExit }) {
                 <div className="pm-iconpick">{PM_ICONS.map((ic) => <button key={ic} className={`pm-iconopt ${(e.icons || []).includes(ic) ? "on" : ""}`} onClick={() => toggleIcon(e.id, ic)}>{ic}</button>)}</div>
               )}
               <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
-                <span className={`pm-hp ${e.dmg > 0 ? "hurt" : ""}`}>{e.dmg > 0 ? `−${e.dmg}` : "0"} <span style={{ fontSize: 11, color: "var(--faint)" }}>HP</span></span>
+                <span className={`pm-hp ${e.dmg > 0 ? "hurt" : ""}`}>{e.dmg > 0 ? `−${e.dmg}` : "?"} <span style={{ fontSize: 11, color: "var(--faint)" }}>HP</span></span>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="dmg" value={amts[e.id] || ""} onChange={(ev) => setAmts({ ...amts, [e.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && deal(e.id, +1)} />
                 <button className="btn small" onClick={() => deal(e.id, +1)}>− HP</button>
                 <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋</button>
-                {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to 0" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
+                {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to unknown" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
               </div>
+              {condUI(e, "e:" + e.id, setEnemy)}
             </div>
           ))}
         </div>
@@ -8640,12 +8668,15 @@ function PlayerModeBoard({ onExit }) {
         <div className="card" style={{ marginTop: 12 }}>
           <div className="pm-sect-hd">Party HP</div>
           {allyRows.map((a) => (
-            <div key={a.id} className="frow" style={{ gap: 6, alignItems: "center", marginBottom: 4 }}>
-              <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
-              <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => setAlly(a.id, { hp: ev.target.value })} />
-              <span style={{ color: "var(--faint)" }}>/</span>
-              <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
-              {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
+            <div key={a.id} style={{ marginBottom: 8 }}>
+              <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+                <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
+                <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => setAlly(a.id, { hp: ev.target.value })} />
+                <span style={{ color: "var(--faint)" }}>/</span>
+                <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
+                {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
+              </div>
+              {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
           {board.trackParty && <button className="btn small ghost" style={{ marginTop: 4 }} onClick={addAlly}>＋ Add party member</button>}
