@@ -694,6 +694,18 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-bloodied{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#f0a9a2;
   border:1px solid var(--danger);background:rgba(200,60,55,.16);border-radius:999px;padding:2px 8px;white-space:nowrap}
 .pm-bloodbtn{border-color:var(--danger);color:#f0a9a2;background:rgba(200,60,55,.16)}
+.pm-enemy.down{opacity:.5}
+.pm-enemy.down .pm-name{text-decoration:line-through}
+.pm-ds{display:flex;align-items:center;gap:4px;margin-top:5px;flex-wrap:wrap}
+.pm-pip{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--panel);
+  font-size:13px;line-height:1;cursor:pointer;color:var(--faint);padding:0}
+.pm-pip.good.on{border-color:#3f9a4e;background:rgba(63,154,78,.22);color:#8fe0a0}
+.pm-pip.bad.on{border-color:var(--danger);background:rgba(200,60,55,.2);color:#f0a9a2}
+.pm-dstag{font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px}
+.pm-dstag.good{color:#8fe0a0;border:1px solid #3f9a4e;background:rgba(63,154,78,.18)}
+.pm-dstag.dead{color:#f0a9a2;border:1px solid var(--danger);background:rgba(200,60,55,.18)}
+.pm-notes{width:100%;min-height:90px;resize:vertical;font-size:15px;line-height:1.4;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);-webkit-text-fill-color:var(--text);font-family:inherit}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -8565,7 +8577,7 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
 const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
 const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
 const PM_COND_ICON = Object.fromEntries(PM_CONDS);
-const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [] }], enemies: [] });
+const PM_BLANK = () => ({ trackParty: true, notes: "", allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
 function PlayerModeBoard({ onExit }) {
   const [board, setBoard] = useState(null);
   const [amts, setAmts] = useState({});      // per-enemy damage-entry field
@@ -8581,7 +8593,7 @@ function PlayerModeBoard({ onExit }) {
   const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
   // allies
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [] }] });
+  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] });
   const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
   // enemies
   const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); };
@@ -8608,6 +8620,21 @@ function PlayerModeBoard({ onExit }) {
       )}
     </div>
   );
+  const setDs = (id, patch) => { const a = board.allies.find((x) => x.id === id); if (!a) return; setAlly(id, { ds: { ...(a.ds || { s: 0, f: 0 }), ...patch } }); };
+  // death-save tracker — shown when an ally is at 0 HP
+  const dsUI = (a) => {
+    const ds = a.ds || { s: 0, f: 0 };
+    if (ds.s >= 3) return <div className="pm-ds"><span className="pm-dstag good">Stabilised</span><button className="btn tiny ghost" onClick={() => setDs(a.id, { s: 0, f: 0 })}>↺</button></div>;
+    if (ds.f >= 3) return <div className="pm-ds"><span className="pm-dstag dead">💀 Dead</span><button className="btn tiny ghost" onClick={() => setDs(a.id, { s: 0, f: 0 })}>↺</button></div>;
+    return (
+      <div className="pm-ds">
+        <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>Death saves</span>
+        {[0, 1, 2].map((i) => <button key={"s" + i} className={`pm-pip good ${i < ds.s ? "on" : ""}`} title="success" onClick={() => setDs(a.id, { s: i < ds.s ? i : i + 1 })}>✓</button>)}
+        <span style={{ width: 6 }} />
+        {[0, 1, 2].map((i) => <button key={"f" + i} className={`pm-pip bad ${i < ds.f ? "on" : ""}`} title="failure" onClick={() => setDs(a.id, { f: i < ds.f ? i : i + 1 })}>✗</button>)}
+      </div>
+    );
+  };
   const searchResults = search != null ? fullBestiary().filter((m) => (cat === "all" || m.cat === cat) && m.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 60) : [];
 
   const allyRows = board.allies.filter((a) => a.me || board.trackParty);
@@ -8644,7 +8671,7 @@ function PlayerModeBoard({ onExit }) {
           )}
           {board.enemies.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No enemies yet — add a few above.</div>}
           {board.enemies.map((e) => (
-            <div key={e.id} className="pm-enemy">
+            <div key={e.id} className={`pm-enemy ${e.defeated ? "down" : ""}`}>
               <div className="frow" style={{ gap: 6, alignItems: "center" }}>
                 <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
                 <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
@@ -8663,6 +8690,7 @@ function PlayerModeBoard({ onExit }) {
                 <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋</button>
                 {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to unknown" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
                 <button className={`btn small ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is bloodied (about half HP)" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
+                <button className={`btn small ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
               </div>
               {condUI(e, "e:" + e.id, setEnemy)}
             </div>
@@ -8676,11 +8704,12 @@ function PlayerModeBoard({ onExit }) {
             <div key={a.id} style={{ marginBottom: 8 }}>
               <div className="frow" style={{ gap: 6, alignItems: "center" }}>
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
-                <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => setAlly(a.id, { hp: ev.target.value })} />
+                <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
                 <span style={{ color: "var(--faint)" }}>/</span>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
               </div>
+              {Number(a.hp) === 0 && a.hp !== "" && dsUI(a)}
               {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
@@ -8689,6 +8718,12 @@ function PlayerModeBoard({ onExit }) {
             <input type="checkbox" checked={board.trackParty} onChange={(e) => save({ ...board, trackParty: e.target.checked })} />
             <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = just you)</span></span>
           </label>
+        </div>
+
+        {/* NOTES */}
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="pm-sect-hd">Notes <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>— quests, NPCs, clues</span></div>
+          <textarea className="pm-notes" placeholder="Jot down anything — quest hooks, names, what that door said…" value={board.notes || ""} onChange={(e) => save({ ...board, notes: e.target.value })} />
         </div>
 
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 12 }}>
