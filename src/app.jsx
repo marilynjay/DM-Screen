@@ -7086,6 +7086,28 @@ function RoomFeature({ room, cx, cy }) {
   return null;
 }
 
+// Doors on the hex's edges (independent of the room shape). room.doors is a list of edge indices 0-5
+// (edge i midpoint sits at 60·i°). Each door is a small panel straddling that edge.
+function RoomDoors({ room, cx, cy }) {
+  const doors = Array.isArray(room && room.doors) ? room.doors : [];
+  if (!doors.length) return null;
+  const s = HEX_SIZE, apo = (s * Math.sqrt(3)) / 2, dw = s * 0.52, dh = s * 0.17;
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      {doors.map((i) => {
+        const a = (60 * i * Math.PI) / 180;
+        const mx = cx + apo * Math.cos(a), my = cy + apo * Math.sin(a);
+        return (
+          <g key={i} transform={`rotate(${60 * i + 90} ${mx} ${my})`}>
+            <rect x={mx - dw / 2} y={my - dh / 2} width={dw} height={dh} rx="2" fill="#7d5730" stroke="#2f1f12" strokeWidth="1.4" />
+            <line x1={mx} y1={my - dh / 2} x2={mx} y2={my + dh / 2} stroke="#2f1f12" strokeWidth="1" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 // A note field is a list of collapsible sections {id, title, body, collapsed}. A plain string
 // (older data, or a simple one-liner) is treated as a single untitled section.
 function asSections(v) {
@@ -7142,6 +7164,7 @@ function roomTouched(r) {
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (r.texture && r.texture !== "none") return true;
   if (r.feature && r.feature !== "none") return true;
+  if (Array.isArray(r.doors) && r.doors.length) return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
   if (Array.isArray(r.fields) && r.fields.some((f) => (f.label || "").trim())) return true;
@@ -7290,12 +7313,31 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               </button>
             ))}
           </div>
-          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature</span></span>
+          <span className="dgn-flabel">Doors <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— tap a hex edge to add a doorway</span></span>
+          <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
+            <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "#14151c", borderRadius: 10 }}>
+              <polygon points={hexCorners(0, 0, 44)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
+              {Array.from({ length: 6 }, (_, i) => {
+                const cur = Array.isArray(room.doors) ? room.doors : [];
+                const on = cur.includes(i);
+                const a = (60 * i * Math.PI) / 180, apo = (44 * Math.sqrt(3)) / 2;
+                const mx = apo * Math.cos(a), my = apo * Math.sin(a);
+                return (
+                  <g key={i} style={{ cursor: "pointer" }} onClick={() => set({ doors: on ? cur.filter((x) => x !== i) : [...cur, i] })}>
+                    <circle cx={mx} cy={my} r="11" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.5" />
+                    <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="12" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : "＋"}</text>
+                  </g>
+                );
+              })}
+            </svg>
+          </div>
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               <defs><TextureDefs /></defs>
               <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
               <RoomFeature room={room} cx={0} cy={0} />
+              <RoomDoors room={room} cx={0} cy={0} />
             </svg>
           </div>
           <span className="dgn-flabel">Map Icons <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— pick up to {ROOM_ICON_MAX}</span></span>
@@ -7451,6 +7493,7 @@ function DungeonBuilder({ dungeon, customMonsters, customItems, onSave, onClose 
           onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
+          {room && <RoomDoors room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {bare && showLabels && (() => {
@@ -7568,6 +7611,7 @@ function DungeonPlayPanel({ dungeon, mode, onRun, onEdit, onUpdateRoom, onClose 
         <g key={key} style={{ cursor: room ? "pointer" : "default" }} onClick={() => { if (drag.current && drag.current.moved) return; setSel(room ? key : null); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
           {room && <RoomShape room={room} cx={x} cy={y} hexKey={`p-${key}`} />}
+          {room && <RoomDoors room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {key === sel && <polygon points={hexCorners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
