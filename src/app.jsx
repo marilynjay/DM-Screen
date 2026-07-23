@@ -1764,6 +1764,12 @@ function applyDamage(c, amt, dtype, logs, toasts) {
   if (c.hp === 0 && before > 0) {
     if (c.type === "object") { c.dead = true; logs.push(`<b>${c.name}</b> is <b>destroyed</b>!`); toasts.push({ kind: "good", text: `${c.name} is destroyed!` }); return; }
     if (c.side === "enemy") { c.dead = true; c.thp = 0; c.concentration = null; logs.push(`<b>${c.name}</b> dies.`); toasts.push({ kind: "bad", text: `${c.name} is dead.` }); }
+    else if (through - before >= c.maxHp) {
+      // Massive damage (both editions): reduced to 0 with leftover damage ≥ HP maximum → instant death, no death saves.
+      c.dead = true; c.thp = 0; c.concentration = null; c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false;
+      logs.push(`<b>${c.name}</b> — <b>massive damage</b> (${through - before} past 0 ≥ ${c.maxHp} max HP): <b>dies instantly</b>, no death saves.`);
+      toasts.push({ kind: "bad", text: `${c.name} — massive damage, dies instantly!` });
+    }
     else { c.unconscious = true; c.concentration = null; c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> falls unconscious.`); toasts.push({ kind: "bad", text: `${c.name} is unconscious — death saves!` }); }
     return;
   }
@@ -3127,6 +3133,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {c.type === "player" && <button onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>}
             {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
+            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openGrapple(c.uid)}>🤼 Grapple / Shove…</button>}
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
@@ -5219,6 +5226,54 @@ function EditionModal({ edition, ready, expandedOn, onSet, onClose }) {
         </div>
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GrappleModal({ attacker, combatants, edition, oldSchool, onResolve, onClose }) {
+  const targets = combatants.filter((c) => c.uid !== attacker.uid && !c.dead && c.type !== "effect" && c.type !== "object");
+  const [targetUid, setTargetUid] = useState(targets[0]?.uid || "");
+  const [kind, setKind] = useState("grapple"); // grapple | shove
+  const [shoveMode, setShoveMode] = useState("prone"); // prone | push
+  const is2014 = edition === "2014";
+  const pb = attacker.type === "monster" ? Math.max(2, 2 + Math.floor((crToNum(attacker.cr) - 1) / 4)) : 3;
+  const dc = 8 + pb + (attacker.mods?.str ?? 0);
+  const go = (outcome) => { if (targetUid) { onResolve(attacker.uid, targetUid, kind, shoveMode, outcome); onClose(); } };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>🤼 {attacker.name} — Grapple / Shove</h3>
+        {targets.length === 0 ? <div className="trait">No other creatures to target.</div> : (<>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0 2px" }}>Target</div>
+          <select value={targetUid} onChange={(e) => setTargetUid(e.target.value)} style={{ width: "100%", fontSize: 16, padding: "8px 10px", marginBottom: 8 }}>
+            {targets.map((t) => <option key={t.uid} value={t.uid}>{t.name}</option>)}
+          </select>
+          <div className="frow" style={{ gap: 6 }}>
+            <button className={`btn ${kind === "grapple" ? "primary" : ""}`} onClick={() => setKind("grapple")}>Grapple</button>
+            <button className={`btn ${kind === "shove" ? "primary" : ""}`} onClick={() => setKind("shove")}>Shove</button>
+          </div>
+          {kind === "shove" && (
+            <div className="frow" style={{ gap: 6, marginTop: 6 }}>
+              <button className={`btn small ${shoveMode === "prone" ? "primary" : ""}`} onClick={() => setShoveMode("prone")}>Knock Prone</button>
+              <button className={`btn small ${shoveMode === "push" ? "primary" : ""}`} onClick={() => setShoveMode("push")}>Push 5 ft.</button>
+            </div>
+          )}
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0" }}>
+            {is2014
+              ? `2014: opposed check — ${attacker.name}'s Athletics (STR +${pb} prof.) vs the target's Athletics or Acrobatics (its better of STR/DEX). Higher wins; a tie changes nothing.`
+              : `2024: the target rolls a STR or DEX save (its better) against DC ${dc} (8 + PB ${pb} + STR ${fmtMod(attacker.mods?.str ?? 0)}).`}
+          </div>
+          {!oldSchool && <button className="btn primary" style={{ width: "100%" }} onClick={() => go("auto")}>🎲 Roll it</button>}
+          <div className="frow" style={{ gap: 6, marginTop: 8, justifyContent: oldSchool ? "stretch" : "space-between" }}>
+            <button className="btn" style={{ flex: 1 }} onClick={() => go("success")}>✓ It succeeds</button>
+            <button className="btn" style={{ flex: 1 }} onClick={() => go("fail")}>✗ It fails</button>
+          </div>
+          {oldSchool && <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Old School Mode: roll the dice at the table, then tap the result.</div>}
+        </>)}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+          <button className="btn" onClick={onClose}>Close</button>
         </div>
       </div>
     </div>
@@ -9190,6 +9245,46 @@ export default function App() {
     dodge: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.dodging = true; L.push(`<b>${c.name}</b> takes the <b>Dodge</b> action — attacks against them have DISADVANTAGE until their next turn.`); }),
     dash: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) L.push(`<b>${c.name}</b> takes the <b>Dash</b> action.`); }),
     readyAction: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = true; L.push(`<b>${c.name}</b> <b>readies</b> an action (triggers on their reaction).`); }),
+    openGrapple: (uid) => setModal({ type: "grapple", uid }),
+    resolveGrapple: (attackerUid, targetUid, kind, shoveMode, outcome) => mutate((d, L, T) => {
+      const A = d.combatants.find((x) => x.uid === attackerUid);
+      const Tg = d.combatants.find((x) => x.uid === targetUid);
+      if (!A || !Tg) return;
+      const pb = A.type === "monster" ? Math.max(2, 2 + Math.floor((crToNum(A.cr) - 1) / 4)) : 3;
+      const aStr = A.mods?.str ?? 0;
+      const escDC = 8 + pb + aStr;
+      const label = kind === "shove" ? "Shove" : "Grapple";
+      let success;
+      if (outcome === "success") success = true;
+      else if (outcome === "fail") success = false;
+      else if (EDITION.v === "2014") { // opposed Athletics vs Athletics/Acrobatics
+        const aR = d20(aStr); const aTot = aR.total + pb; // initiator assumed proficient in Athletics
+        const tBest = Math.max(Tg.mods?.str ?? 0, Tg.mods?.dex ?? 0);
+        const tR = d20(tBest);
+        success = aTot > tR.total; // a tied contest leaves things unchanged
+        L.push(`🤼 <b>${A.name}</b> ${label}s <b>${Tg.name}</b> — Athletics ${aR.text} +${pb} prof = ${aTot} vs ${tR.text} → <b>${success ? "SUCCESS" : "resisted"}</b>`);
+      } else { // 2024: target saves (STR or DEX, best) vs the grappler's DC
+        const dc = escDC;
+        const tBest = Math.max(saveMod(Tg, "str"), saveMod(Tg, "dex"));
+        const tR = d20(tBest);
+        success = tR.total < dc;
+        L.push(`🤼 <b>${A.name}</b> ${label}s <b>${Tg.name}</b> — DC ${dc} STR/DEX save: ${tR.text} → <b>${success ? "FAILS — caught" : "saves"}</b>`);
+      }
+      if (outcome === "success" || outcome === "fail") L.push(`🤼 <b>${A.name}</b> ${label}s <b>${Tg.name}</b> — DM ruled a ${success ? "success" : "failure"}.`);
+      if (!success) { T.push({ kind: "good", text: `${Tg.name} resists the ${label.toLowerCase()}.` }); return; }
+      if (kind === "grapple") {
+        if (!Tg.conditions.some((cd) => cd.name === "Grappled")) Tg.conditions.push({ name: "Grappled", rounds: null });
+        L.push(`<b>${Tg.name}</b> is <b>Grappled</b> by ${A.name} — Speed 0 (escape: action, DC ${escDC}).`);
+        T.push({ kind: "bad", text: `${Tg.name} is Grappled.` });
+      } else if (shoveMode === "prone") {
+        if (!Tg.conditions.some((cd) => cd.name === "Prone")) Tg.conditions.push({ name: "Prone", rounds: null });
+        L.push(`<b>${Tg.name}</b> is knocked <b>Prone</b>.`);
+        T.push({ kind: "bad", text: `${Tg.name} is knocked Prone.` });
+      } else {
+        L.push(`<b>${A.name}</b> pushes <b>${Tg.name}</b> 5 ft. away.`);
+        T.push({ kind: "bad", text: `${Tg.name} is pushed back 5 ft.` });
+      }
+    }),
     openReadied: (uid) => setReadiedUid(uid),
     clearReadied: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; L.push(`<b>${c.name}</b> drops their readied action.`); }),
     resolveReadied: (uid) => { mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (!c) return; c.readied = false; c.reaction = false; L.push(`<b>${c.name}</b> takes their <b>readied action</b> (reaction spent).`); }); setReadiedUid(null); },
@@ -10838,6 +10933,10 @@ export default function App() {
       {modal?.type === "edition" && (
         <EditionModal edition={edition} ready={edReady} expandedOn={expandedOn} onSet={setEdition} onClose={() => setModal(null)} />
       )}
+      {modal?.type === "grapple" && (() => {
+        const atk = state.combatants.find((c) => c.uid === modal.uid);
+        return atk ? <GrappleModal attacker={atk} combatants={state.combatants} edition={edition} oldSchool={oldSchool} onResolve={api.resolveGrapple} onClose={() => setModal(null)} /> : null;
+      })()}
       {modal?.type === "playtest" && (
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
