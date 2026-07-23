@@ -601,6 +601,15 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .reminder{border:1px solid var(--gold);background:var(--gold-soft);border-radius:8px;
   padding:8px 12px;font-size:13px}
 .notice{border:1px solid var(--fx);border-radius:8px;padding:8px 12px;font-size:13px;color:#c3cdec}
+/* Old School Mode surprise: the surprised creature's card is scrimmed so it's clear it can't act */
+.surprised-wrap{position:relative}
+.surprised-wrap>.card{filter:grayscale(.5) brightness(.75)}
+.surprised-scrim{position:absolute;inset:0;z-index:6;border-radius:12px;display:flex;
+  align-items:center;justify-content:center;text-align:center;padding:18px;
+  background:rgba(12,9,16,.66);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.surprised-scrim .sb-emoji{font-size:38px;line-height:1}
+.surprised-scrim .sb-title{font-family:var(--disp);font-size:16px;color:var(--gold);margin-top:6px}
+.surprised-scrim .sb-sub{font-size:12px;color:var(--text);margin-top:6px;max-width:240px}
 
 /* chat */
 .lootico{cursor:default;font-size:12px;flex-shrink:0}
@@ -10679,14 +10688,22 @@ export default function App() {
 
         {state.mode === "combat" && active && (
           <div ref={activeCardRef} className="activecard-anchor">
-            {active.surprised && state.round === 1 && (
-              <div className="reminder" style={{ marginBottom: 8 }}>😴 <b>{active.name} is surprised</b> — it loses this turn and can't act or take reactions. Tap <b>End turn</b> to pass.</div>
-            )}
-            {oldSchool && active.type === "player" ? (
-              <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3></div>
-            ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} />
-            : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} />
-            : <EffectCard c={active} api={api} round={state.round} />}
+            <div className={active.surprised && state.round === 1 ? "surprised-wrap" : undefined}>
+              {oldSchool && active.type === "player" ? (
+                <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3></div>
+              ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} />
+              : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} />
+              : <EffectCard c={active} api={api} round={state.round} />}
+              {active.surprised && state.round === 1 && (
+                <div className="surprised-scrim">
+                  <div>
+                    <div className="sb-emoji">😴</div>
+                    <div className="sb-title">{active.name} is surprised</div>
+                    <div className="sb-sub">Loses this turn — can't take actions or reactions. Tap <b>Next ▶</b> to pass.</div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
