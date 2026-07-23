@@ -6833,6 +6833,8 @@ function ConfirmModal({ text, confirmLabel, onYes, onClose }) {
 
 /* ================= Dungeon Builder (Phase 1: hex grid + rooms + notes) ================= */
 const DGN_COLORS = ["#3b3f52", "#5a3b3b", "#6e4a2a", "#453424", "#3b5a45", "#3b4a5a", "#5a523b", "#4a3b5a", "#5a3b52", "#2c2c30"];
+// Glow-aura colours: fire/danger, arcane, radiant, poison, necrotic, cold.
+const GLOW_COLORS = ["#e0483a", "#3f7be0", "#e8b23a", "#57c94a", "#a24de0", "#3ad6d0"];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["tee", "┬ T-junction"], ["ex", "╳ Crossroad"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
@@ -6913,10 +6915,14 @@ function RoomShape({ room, cx, cy, hexKey }) {
   const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}` : null;
   // Clip corridor shapes to their hex cell; all corridor rotations are 60° multiples (hex is invariant).
   const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
-  // Each cave room gets its own turbulence seed so no two rough outlines look alike; the filter is
-  // rendered inline per room (unique id) rather than shared, and the seed persists on the room.
-  const caveId = `dgncave-${String(hexKey).replace(/[^\w-]/g, "_")}`;
-  const caveSeed = Number.isFinite(room.caveSeed) ? room.caveSeed : 7;
+  // Edge treatments (cave/rubble) + glow are composed into one per-room inline filter (unique id, so
+  // each room's turbulence seed keeps its outline unique). edge migrates the legacy room.cave flag.
+  const fxId = `dgnfx-${String(hexKey).replace(/[^\w-]/g, "_")}`;
+  const fxSeed = Number.isFinite(room.caveSeed) ? room.caveSeed : 7;
+  const edge = room.edge || (room.cave ? "cave" : "none");
+  const disp = edge === "cave" ? { bf: ".035", oct: 2, scale: 15 } : edge === "rubble" ? { bf: ".13", oct: 3, scale: 9 } : null;
+  const glowOn = !!room.glow, glowColor = room.glowColor || GLOW_COLORS[0];
+  const fxOn = !!disp || glowOn;
   const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "tee" || shape === "ex" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
   const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
   // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
@@ -6991,15 +6997,20 @@ function RoomShape({ room, cx, cy, hexKey }) {
   return (
     <>
       {needClip && <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>}
-      {/* the cave treatment displaces the whole room outline with turbulence for an organic, rough-hewn
-          edge — a per-room seed keeps each cavern's roughness unique */}
-      {room.cave && (
-        <filter id={caveId} x="-35%" y="-35%" width="170%" height="170%">
-          <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed={caveSeed} result="n" />
-          <feDisplacementMap in="SourceGraphic" in2="n" scale="15" xChannelSelector="R" yChannelSelector="G" />
+      {/* Edge/glow filter: an optional turbulence displacement (cave = smooth-organic, rubble = choppy-
+          broken) reshapes the outline, then an optional coloured halo is flooded around the result. A
+          per-room seed keeps each rough outline unique. */}
+      {fxOn && (
+        <filter id={fxId} x="-45%" y="-45%" width="190%" height="190%">
+          {disp && <feTurbulence type="fractalNoise" baseFrequency={disp.bf} numOctaves={disp.oct} seed={fxSeed} result="n" />}
+          {disp && <feDisplacementMap in="SourceGraphic" in2="n" scale={disp.scale} xChannelSelector="R" yChannelSelector="G" result="disp" />}
+          {glowOn && <feGaussianBlur in={disp ? "disp" : "SourceGraphic"} stdDeviation="5" result="gb" />}
+          {glowOn && <feFlood floodColor={glowColor} floodOpacity="0.9" result="gc" />}
+          {glowOn && <feComposite in="gc" in2="gb" operator="in" result="glow" />}
+          {glowOn && <feMerge><feMergeNode in="glow" /><feMergeNode in={disp ? "disp" : "SourceGraphic"} /></feMerge>}
         </filter>
       )}
-      <g filter={room.cave ? `url(#${caveId})` : undefined}>
+      <g filter={fxOn ? `url(#${fxId})` : undefined}>
         {draw(col, stroke)}
         {texId && draw(`url(#${texId})`, "none")}
       </g>
@@ -7219,7 +7230,8 @@ function roomTouched(r) {
   if (r.color && r.color !== DGN_COLORS[0]) return true;
   if (r.texture && r.texture !== "none") return true;
   if (r.feature && r.feature !== "none") return true;
-  if (r.cave) return true;
+  if (r.cave || (r.edge && r.edge !== "none")) return true;
+  if (r.glow) return true;
   if (Array.isArray(r.doors) && r.doors.length) return true;
   if (hasEnc(r)) return true;
   if (hasLoot(r)) return true;
@@ -7341,12 +7353,24 @@ function RoomEditor({ room, monsterList = [], groupNames = [], customItems = [],
               <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which edges it joins</span>
             </div>
           )}
-          <label className="dgn-cave" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={!!room.cave} onChange={(e) => set(e.target.checked ? { cave: true, caveSeed: Number.isFinite(room.caveSeed) ? room.caveSeed : Math.floor(Math.random() * 90) + 1 } : { cave: false })} />
-            <span style={{ fontFamily: "var(--disp)", fontWeight: 700, color: "var(--gold)", fontSize: 15 }}>Cave edges</span>
-            <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— rough, organic outline on any shape</span>
-          </label>
-          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors</span></span>
+          <span className="dgn-flabel">Edge treatment <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— reshapes the outline on any shape</span></span>
+          <div className="pickgrid">
+            {[["none", "Smooth"], ["cave", "◜ Cave"], ["rubble", "⛰ Rubble"]].map(([k, lbl]) => {
+              const cur = room.edge || (room.cave ? "cave" : "none");
+              return <button key={k} className={`lvlchip ${cur === k ? "on" : ""}`}
+                onClick={() => set({ edge: k, cave: undefined, caveSeed: k !== "none" && !Number.isFinite(room.caveSeed) ? Math.floor(Math.random() * 90) + 1 : room.caveSeed })}>{lbl}</button>;
+            })}
+          </div>
+          <span className="dgn-flabel">Glow <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— a coloured aura around the room</span></span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <button className={`dgn-swatch ${!room.glow ? "on" : ""}`} title="No glow" onClick={() => set({ glow: false })}
+              style={{ background: "#20222b", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--faint)", fontSize: 13 }}>∅</button>
+            {GLOW_COLORS.map((c) => (
+              <button key={c} className={`dgn-swatch ${room.glow && (room.glowColor || GLOW_COLORS[0]) === c ? "on" : ""}`} title="Glow colour"
+                style={{ background: c, boxShadow: `0 0 7px ${c}` }} onClick={() => set({ glow: true, glowColor: c })} />
+            ))}
+          </div>
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors · edges · glow</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               <defs><TextureDefs /></defs>
