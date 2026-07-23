@@ -3007,7 +3007,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {c.type === "player" && <button onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>}
             {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
             <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAbilBoost(c.uid)}>💪 Ability item…</button>}
             {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
@@ -5643,7 +5642,7 @@ function MonsterItemsModal({ c, api, onGive, onClose }) {
   );
 }
 
-function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDeleteCustomItem, onSave, onClose }) {
+function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDeleteCustomItem, onSave, onAbilBoost, onClose }) {
   const [items, setItems] = useState(() => (c?.loot || []).map(lootObj));
   const [custom, setCustom] = useState("");
   const [browse, setBrowse] = useState(!!compendium); // the compendium is a browse-first view
@@ -5740,6 +5739,11 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
                     {label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
                   </button>
                 ))}
+                {onAbilBoost && (
+                  <button className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => onAbilBoost()}>
+                    💪 Ability item<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>Raises an ability score — Belt of Giant Strength, Manual of Gainful Exercise…</span>
+                  </button>
+                )}
               </div>
             )}
             {form.kind && (<>
@@ -9599,6 +9603,7 @@ export default function App() {
       )}
       {modal?.type === "loot-give" && modalC && (
         <LootGiveModal c={modalC} customItems={myItems} onSaveCustomItem={saveCustomItem} onDeleteCustomItem={deleteCustomItem} onClose={() => setModal(null)}
+          onAbilBoost={modalC.type !== "effect" && modalC.type !== "object" ? () => setModal({ type: "abil-boost", uid: modal.uid }) : undefined}
           onSave={(items) => {
             mutate((d, L) => {
               const c = d.combatants.find((x) => x.uid === modal.uid); if (!c) return;
