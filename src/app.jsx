@@ -6118,29 +6118,129 @@ function NoteReadModal({ item, onClose }) {
 }
 
 // Per-party DM Notebook — light campaign notetaking (NPCs, locations, plot, misc).
-// Each tab holds entries of { id, name, tag, sections:[{id,title,body}] }; saved on the active party.
+// Entries are { id, name, tag, sections:[{id,title,body}] }; NPCs add loc (a location id),
+// locations add parent (a location id) for a two-level city › building tree. Saved on the party.
 // Reuses the dungeon note SectionsEditor / asSections (both hoisted below).
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
 function DMNotebookModal({ party, onSave, onClose }) {
   const [tab, setTab] = useState("npcs");
-  const [draft, setDraft] = useState(null); // entry being edited: { id|null, name, tag, sections }
-  const [open, setOpen] = useState({}); // expanded entries in the read view
+  const [draft, setDraft] = useState(null); // entry being edited: { tab, id|null, name, tag, sections, loc, parent }
+  const [open, setOpen] = useState({}); // expanded rows / collapsed groups
+  const [q, setQ] = useState(""); // NPC search
+  const [locFilter, setLocFilter] = useState(""); // "" = all, id, or "__unfiled"
+  const [newLoc, setNewLoc] = useState(null); // inline location creation from the NPC editor: {name, parent}
   const nb = (party && party.notebook) || {};
-  const [tabKey, tabLabel, , singular] = NB_TABS.find(([k]) => k === tab);
-  const entries = Array.isArray(nb[tabKey]) ? nb[tabKey] : [];
-  const commit = (nextEntries) => onSave({ ...nb, [tabKey]: nextEntries });
-  const startNew = () => setDraft({ id: null, name: "", tag: "", sections: asSections("") });
-  const startEdit = (e) => setDraft({ id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections) });
+  const get = (k) => (Array.isArray(nb[k]) ? nb[k] : []);
+  const npcs = get("npcs"), locations = get("locations");
+  const singularOf = (t) => NB_TABS.find(([k]) => k === t)[3];
+  const locById = (id) => locations.find((l) => l.id === id) || null;
+  const childrenOf = (id) => locations.filter((l) => l.parent === id);
+  const topLocs = locations.filter((l) => !l.parent);
+  const orphans = locations.filter((l) => l.parent && !locById(l.parent)); // parent was deleted — treat as top-level
+  const locOrder = []; topLocs.forEach((c) => { locOrder.push(c); childrenOf(c.id).forEach((b) => locOrder.push(b)); }); orphans.forEach((o) => locOrder.push(o));
+  const locPath = (id) => { const l = locById(id); if (!l) return ""; const p = l.parent ? locById(l.parent) : null; return p ? `${p.name} › ${l.name}` : l.name; };
+  const npcsAt = (id) => npcs.filter((n) => n.loc === id);
+  const cleanSecs = (secs) => (secs || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body);
+
+  const commitTab = (k, entries) => onSave({ ...nb, [k]: entries });
+  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "" }); };
+  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "" }); };
   const saveDraft = () => {
-    const clean = {
-      id: draft.id || newUid(),
-      name: (draft.name || "").trim() || `Untitled ${singular}`,
-      tag: (draft.tag || "").trim(),
-      sections: (draft.sections || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body),
-    };
-    commit(entries.some((e) => e.id === clean.id) ? entries.map((e) => (e.id === clean.id ? clean : e)) : [...entries, clean]);
-    setDraft(null);
+    const t = draft.tab;
+    const clean = { id: draft.id || newUid(), name: (draft.name || "").trim() || `Untitled ${singularOf(t)}`, tag: (draft.tag || "").trim(), sections: cleanSecs(draft.sections) };
+    if (t === "npcs" && draft.loc) clean.loc = draft.loc;
+    if (t === "locations" && draft.parent) clean.parent = draft.parent;
+    const arr = get(t);
+    commitTab(t, arr.some((e) => e.id === clean.id) ? arr.map((e) => (e.id === clean.id ? clean : e)) : [...arr, clean]);
+    setDraft(null); setNewLoc(null);
   };
+  // Deleting a location promotes its buildings to top-level and unfiles any NPCs placed there.
+  const deleteLocation = (id) => onSave({
+    ...nb,
+    locations: locations.filter((l) => l.id !== id).map((l) => (l.parent === id ? { ...l, parent: undefined } : l)),
+    npcs: npcs.map((n) => (n.loc === id ? { ...n, loc: "" } : n)),
+  });
+  const addInlineLoc = () => {
+    const name = (newLoc.name || "").trim(); if (!name) return;
+    const loc = { id: newUid(), name, tag: "", sections: [] };
+    if (newLoc.parent) loc.parent = newLoc.parent;
+    onSave({ ...nb, locations: [...locations, loc] });
+    setDraft((d) => ({ ...d, loc: loc.id }));
+    setNewLoc(null);
+  };
+
+  const readSecs = (secs) => secs.map((s, i) => (
+    <div key={i} style={{ margin: "6px 0 2px 22px" }}>
+      {(s.title || "").trim() && <div style={{ fontWeight: 700, color: "var(--gold)", fontSize: 13, marginBottom: 2 }}>{s.title}</div>}
+      {(s.body || "").trim() && <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.4 }}>{s.body}</div>}
+    </div>
+  ));
+  // A flat entry row (NPCs within a group, plus plot/misc). Delete stays within the row's tab.
+  const entryRow = (e, rowTab) => {
+    const secs = (e.sections || []).filter((s) => (s.title || "").trim() || (s.body || "").trim());
+    const isOpen = !!open[e.id];
+    return (
+      <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
+        <div className="frow" style={{ alignItems: "center" }}>
+          <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}</span>
+          <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
+          <button className="btn small ghost warn" title="Delete" onClick={() => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id))}>✕</button>
+        </div>
+        {isOpen && readSecs(secs)}
+      </div>
+    );
+  };
+  // A location row with its NPC roster (the cross-link), indented for buildings.
+  const locRow = (loc, isChild) => {
+    const secs = (loc.sections || []).filter((s) => (s.title || "").trim() || (s.body || "").trim());
+    const roster = npcsAt(loc.id);
+    const isOpen = !!open[loc.id];
+    const hasDetail = secs.length > 0 || roster.length > 0;
+    return (
+      <div key={loc.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6, marginLeft: isChild ? 18 : 0 }}>
+        <div className="frow" style={{ alignItems: "center" }}>
+          <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [loc.id]: !isOpen })} disabled={!hasDetail}>{!hasDetail ? "•" : isOpen ? "▾" : "▸"}</button>
+          <span style={{ flex: 1, minWidth: 0 }}>{isChild && <span style={{ color: "var(--faint)" }}>› </span>}<b>{loc.name}</b>{loc.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {loc.tag}</span>}{roster.length > 0 && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {roster.length} 👤</span>}</span>
+          <button className="btn small ghost" title="Edit" onClick={() => startEdit(loc, "locations")}>✎</button>
+          <button className="btn small ghost warn" title="Delete" onClick={() => deleteLocation(loc.id)}>✕</button>
+        </div>
+        {isOpen && (<>
+          {readSecs(secs)}
+          {roster.length > 0 && (
+            <div style={{ margin: "6px 0 2px 22px" }}>
+              <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", letterSpacing: ".08em", textTransform: "uppercase", marginBottom: 2 }}>NPCs here</div>
+              {roster.map((n) => (
+                <div key={n.id} className="frow" style={{ alignItems: "center" }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>👤 {n.name}{n.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {n.tag}</span>}</span>
+                  <button className="btn tiny ghost" title="Edit this NPC" onClick={() => { setTab("npcs"); startEdit(n, "npcs"); }}>✎</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>)}
+      </div>
+    );
+  };
+
+  // NPC search + location filter + grouping
+  const needle = q.trim().toLowerCase();
+  const matchQ = (n) => !needle || (n.name || "").toLowerCase().includes(needle) || (n.tag || "").toLowerCase().includes(needle);
+  const passFilter = (n) => {
+    if (!locFilter) return true;
+    if (locFilter === "__unfiled") return !n.loc || !locById(n.loc);
+    if (n.loc === locFilter) return true;
+    const l = n.loc && locById(n.loc); return !!(l && l.parent === locFilter); // filtering by a city includes its buildings
+  };
+  const shownNpcs = npcs.filter((n) => matchQ(n) && passFilter(n));
+  const npcGroups = [];
+  locOrder.forEach((l) => { const list = shownNpcs.filter((n) => n.loc === l.id); if (list.length) npcGroups.push({ key: l.id, label: locPath(l.id), list }); });
+  const unfiled = shownNpcs.filter((n) => !n.loc || !locById(n.loc)); if (unfiled.length) npcGroups.push({ key: "__unfiled", label: "Unfiled", list: unfiled });
+
+  const dSingular = draft ? singularOf(draft.tab) : "";
+  const canParent = draft && draft.tab === "locations" && (!draft.id || childrenOf(draft.id).length === 0);
+  const label = NB_TABS.find(([k]) => k === tab)[1];
+
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -6154,44 +6254,89 @@ function DMNotebookModal({ party, onSave, onClose }) {
           </div>
           {draft ? (
             <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px" }}>
-              <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{draft.id ? `Edit ${singular}` : `New ${singular}`}</div>
-              <div className="frow"><input type="text" placeholder={`${singular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus /></div>
+              <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{draft.id ? `Edit ${dSingular}` : `New ${dSingular}`}</div>
+              <div className="frow"><input type="text" placeholder={`${dSingular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus /></div>
               <div className="frow"><input type="text" placeholder="Tag — optional (e.g. quest-giver, tavern, rumor)" style={{ flex: 1 }} value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} /></div>
+              {draft.tab === "npcs" && (<>
+                <div className="frow" style={{ alignItems: "center" }}>
+                  <label style={{ minWidth: 0 }}>📍 Location</label>
+                  <select style={{ flex: 1 }} value={draft.loc || ""} onChange={(e) => { if (e.target.value === "__new") setNewLoc({ name: "", parent: "" }); else { setDraft({ ...draft, loc: e.target.value }); setNewLoc(null); } }}>
+                    <option value="">— Unfiled —</option>
+                    {locOrder.map((l) => <option key={l.id} value={l.id}>{locPath(l.id)}</option>)}
+                    <option value="__new">＋ New location…</option>
+                  </select>
+                </div>
+                {newLoc && (
+                  <div className="frow" style={{ flexWrap: "wrap", marginTop: 4 }}>
+                    <input type="text" placeholder="New location name" style={{ flex: 1, minWidth: 120 }} value={newLoc.name} onChange={(e) => setNewLoc({ ...newLoc, name: e.target.value })} autoFocus />
+                    <select value={newLoc.parent} onChange={(e) => setNewLoc({ ...newLoc, parent: e.target.value })}>
+                      <option value="">top-level (city / region)</option>
+                      {topLocs.map((l) => <option key={l.id} value={l.id}>inside {l.name}</option>)}
+                    </select>
+                    <button className="btn small" disabled={!newLoc.name.trim()} onClick={addInlineLoc}>Add</button>
+                    <button className="btn small ghost" onClick={() => setNewLoc(null)}>Cancel</button>
+                  </div>
+                )}
+              </>)}
+              {draft.tab === "locations" && (canParent ? (
+                <div className="frow" style={{ alignItems: "center" }}>
+                  <label style={{ minWidth: 0 }}>Inside</label>
+                  <select style={{ flex: 1 }} value={draft.parent || ""} onChange={(e) => setDraft({ ...draft, parent: e.target.value })}>
+                    <option value="">— top-level (city / region) —</option>
+                    {topLocs.filter((l) => l.id !== draft.id).map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+              ) : <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>This place has buildings under it, so it stays a top-level location.</div>)}
               <SectionsEditor value={draft.sections} onChange={(secs) => setDraft({ ...draft, sections: secs })} />
               <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
-                <button className="btn small" onClick={() => setDraft(null)}>Cancel</button>
-                <button className="btn small primary" onClick={saveDraft}>{draft.id ? "Save changes" : `Save ${singular}`}</button>
+                <button className="btn small" onClick={() => { setDraft(null); setNewLoc(null); }}>Cancel</button>
+                <button className="btn small primary" onClick={saveDraft}>{draft.id ? "Save changes" : `Save ${dSingular}`}</button>
               </div>
             </div>
-          ) : (<>
+          ) : tab === "npcs" ? (<>
+            <div className="frow" style={{ marginBottom: 6, flexWrap: "wrap" }}>
+              <input type="text" placeholder="Search NPCs…" style={{ flex: 1, minWidth: 120 }} value={q} onChange={(e) => setQ(e.target.value)} />
+              {locations.length > 0 && (
+                <select value={locFilter} onChange={(e) => setLocFilter(e.target.value)} title="Filter by location">
+                  <option value="">All locations</option>
+                  {locOrder.map((l) => <option key={l.id} value={l.id}>{locPath(l.id)}</option>)}
+                  <option value="__unfiled">Unfiled</option>
+                </select>
+              )}
+            </div>
             <div style={{ maxHeight: 360, overflowY: "auto" }}>
-              {entries.length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No {tabLabel.toLowerCase()} yet.</div>}
-              {entries.map((e) => {
-                const secs = (e.sections || []).filter((s) => (s.title || "").trim() || (s.body || "").trim());
-                const isOpen = !!open[e.id];
+              {npcs.length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No NPCs yet.</div>}
+              {npcs.length > 0 && npcGroups.length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No NPCs match.</div>}
+              {npcGroups.map((g) => {
+                const gk = "grp:" + g.key; const gOpen = open[gk] !== false;
                 return (
-                  <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
-                    <div className="frow" style={{ alignItems: "center" }}>
-                      <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-                      <span style={{ flex: 1, minWidth: 0 }}>
-                        <b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}
-                      </span>
-                      <button className="btn small ghost" title="Edit" onClick={() => startEdit(e)}>✎</button>
-                      <button className="btn small ghost warn" title="Delete" onClick={() => commit(entries.filter((x) => x.id !== e.id))}>✕</button>
-                    </div>
-                    {isOpen && secs.map((s, i) => (
-                      <div key={i} style={{ margin: "6px 0 2px 22px" }}>
-                        {(s.title || "").trim() && <div style={{ fontWeight: 700, color: "var(--gold)", fontSize: 13, marginBottom: 2 }}>{s.title}</div>}
-                        {(s.body || "").trim() && <div style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.4 }}>{s.body}</div>}
-                      </div>
-                    ))}
+                  <div key={g.key} style={{ marginBottom: 8 }}>
+                    <button className="frow" style={{ width: "100%", alignItems: "center", background: "none", border: "none", padding: "2px 0", cursor: "pointer" }} onClick={() => setOpen({ ...open, [gk]: !gOpen })}>
+                      <span className="dgn-fold">{gOpen ? "▾" : "▸"}</span>
+                      <span style={{ flex: 1, textAlign: "left", color: "var(--gold)", fontSize: 12, fontWeight: 700 }}>📍 {g.label}</span>
+                      <span className="ad" style={{ fontSize: 11 }}>{g.list.length}</span>
+                    </button>
+                    {gOpen && g.list.map((n) => entryRow(n, "npcs"))}
                   </div>
                 );
               })}
             </div>
-            <div className="frow" style={{ marginTop: 8 }}><button className="btn small" onClick={startNew}>＋ New {singular}</button></div>
-            <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Saved with the active party across sessions. Keep it light — names, tags, and a few sections of notes.</div>
+            <div className="frow" style={{ marginTop: 8 }}><button className="btn small" onClick={() => startNew("npcs")}>＋ New NPC</button></div>
+          </>) : tab === "locations" ? (<>
+            <div style={{ maxHeight: 360, overflowY: "auto" }}>
+              {locations.length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No locations yet. Add a city or region, then place NPCs and buildings inside it.</div>}
+              {topLocs.flatMap((city) => [locRow(city, false), ...childrenOf(city.id).map((b) => locRow(b, true))])}
+              {orphans.map((o) => locRow(o, false))}
+            </div>
+            <div className="frow" style={{ marginTop: 8 }}><button className="btn small" onClick={() => startNew("locations")}>＋ New Location</button></div>
+          </>) : (<>
+            <div style={{ maxHeight: 360, overflowY: "auto" }}>
+              {get(tab).length === 0 && <div className="trait" style={{ marginBottom: 6 }}>No {label.toLowerCase()} yet.</div>}
+              {get(tab).map((e) => entryRow(e, tab))}
+            </div>
+            <div className="frow" style={{ marginTop: 8 }}><button className="btn small" onClick={() => startNew(tab)}>＋ New {singularOf(tab)}</button></div>
           </>)}
+          {!draft && <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Saved with the active party across sessions. NPCs group by location; place them in a city or a building within it.</div>}
         </>)}
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
       </div>
