@@ -310,6 +310,10 @@ input[type=number]{width:64px}
 .tut-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
 .tut-dot.on{background:var(--gold)}
 .tut-actions{display:flex;align-items:center;gap:6px}
+.tut-dim{position:fixed;inset:0;z-index:54;background:rgba(150,120,45,.4);pointer-events:none}
+.tut-spot{position:fixed;z-index:54;border-radius:10px;border:2px solid var(--gold);box-shadow:0 0 0 9999px rgba(150,120,45,.5),0 0 14px 2px rgba(232,178,58,.7);pointer-events:none;transition:left .25s ease,top .25s ease,width .25s ease,height .25s ease}
+.tut-arrow{position:fixed;z-index:56;color:var(--gold);font-size:26px;line-height:1;pointer-events:none;text-shadow:0 1px 5px rgba(0,0,0,.8);animation:tutbounce 1s ease-in-out infinite}
+@keyframes tutbounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .btn.danger{border-color:var(--danger);color:var(--danger)}
 .btn.small{padding:3px 8px;font-size:12px;border-radius:6px}
 .btn.ghost{border-color:transparent;color:var(--dim)}
@@ -8116,17 +8120,17 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
 // which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
 const TUTORIAL_STEPS = [
   { title: "Welcome to the tour 🎓", body: "This walkthrough builds a fight from scratch — you'll bring in a party, add monsters, balance them, run combat, and pick up a few tricks along the way. Tap Next to step through it; the app stays tappable underneath, so try things as you go." },
-  { title: "1 · Add your party", body: "Your heroes go in first. That's the + Add ▸ Player / ally box up top — enter each one by name, AC and HP. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them all in with one tap. But we'll drop in a premade party of three for now — tap Next." },
-  { title: "2 · Your party", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
-  { title: "3 · Add some monsters", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
-  { title: "4 · Balance to your party ⚖", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
-  { title: "5 · Start combat", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
-  { title: "6 · Take a turn — attack", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
-  { title: "7 · Want an easier pace? 🕯", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
-  { title: "8 · Layer an effect", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
-  { title: "9 · End the turn", body: "Tap End turn to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
-  { title: "10 · Rest between fights", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
-  { title: "11 · Build dungeons 🗺", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
+  { title: "1 · Add your party", target: "add", body: "Your heroes go in first. That's the + Add ▸ Player / ally box up top — enter each one by name, AC and HP. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them all in with one tap. But we'll drop in a premade party of three for now — tap Next." },
+  { title: "2 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
+  { title: "3 · Add some monsters", target: "add", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
+  { title: "4 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
+  { title: "5 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
+  { title: "6 · Take a turn — attack", target: "roster", body: "On the active creature's turn, tap a target to open the attack & damage picker, or just type damage into its HP box. Watch the hit effect play — monsters even roll their own attacks for you." },
+  { title: "7 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
+  { title: "8 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
+  { title: "9 · End the turn", target: "roster", body: "On the active creature's card, tap the turn arrow to pass initiative to the next combatant. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
+  { title: "10 · Rest between fights", target: "rest", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
+  { title: "11 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones." },
   { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
 ];
 function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
@@ -8152,6 +8156,39 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
         </>)}
       </div>
     </div>
+  );
+}
+
+// Wraps the tour card with a golden spotlight scrim + a bouncing arrow that follows the step's target
+// element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
+// so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
+// has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
+function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish }) {
+  const s = TUTORIAL_STEPS[step];
+  const [rect, setRect] = useState(null);
+  useEffect(() => {
+    const measure = () => {
+      const el = s.target ? document.querySelector(`[data-tut="${s.target}"]`) : null;
+      if (el) { const r = el.getBoundingClientRect(); if (r.width && r.height) { setRect({ x: r.left, y: r.top, w: r.width, h: r.height }); return; } }
+      setRect(null);
+    };
+    measure();
+    const id = setInterval(measure, 300); // track layout shifts (roster grows, menus open, mode changes)
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => { clearInterval(id); window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
+  }, [step, s.target]);
+  const pad = 6;
+  // arrow sits just below the target, pointing up at it (targets live in the header / upper roster)
+  const arrow = rect ? { left: Math.min(window.innerWidth - 40, Math.max(8, rect.x + rect.w / 2 - 13)), top: rect.y + rect.h + 7 } : null;
+  return (
+    <>
+      {rect
+        ? <div className="tut-spot" style={{ left: rect.x - pad, top: rect.y - pad, width: rect.w + pad * 2, height: rect.h + pad * 2 }} />
+        : <div className="tut-dim" />}
+      {arrow && <div className="tut-arrow" style={{ left: arrow.left, top: arrow.top }}>▲</div>}
+      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} />
+    </>
   );
 }
 
@@ -10232,13 +10269,13 @@ export default function App() {
           <button className="btn primary" onClick={requestNext}>Next ▶</button>
         </>)}
         {state.mode === "setup" && state.combatants.some((c) => c.side === "enemy" && c.type !== "effect" && c.type !== "object") && (
-          <button className="btn primary" onClick={startCombat}>Start combat</button>
+          <button className="btn primary" data-tut="start" onClick={startCombat}>Start combat</button>
         )}
         <span className="spacer" />
         <button className="btn small ghost" title="Undo last change" disabled={undoN === 0} onClick={undo}>↩</button>
         {redoN > 0 && <button className="btn small ghost" title="Redo — reapply what you just undid" onClick={redo}>↪</button>}
         <span className="menu-anchor">
-          <button className="btn small" onClick={() => { setAddMenu(!addMenu); setClearMenu(false); setMoreMenu(false); }}>+ Add</button>
+          <button className="btn small" data-tut="add" onClick={() => { setAddMenu(!addMenu); setClearMenu(false); setMoreMenu(false); }}>+ Add</button>
           {addMenu && (
             <div className="menu" onClick={() => setAddMenu(false)}>
               <button onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
@@ -10272,7 +10309,7 @@ export default function App() {
           </span>
         </span>
         <span className="menu-anchor hdr-narrow">
-          <button className="btn small ghost" onClick={() => { setMoreMenu(!moreMenu); setAddMenu(false); }}>⋯</button>
+          <button className="btn small ghost" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setAddMenu(false); }}>⋯</button>
           {moreMenu && (
             <div className="menu" onClick={() => setMoreMenu(false)}>
               <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
@@ -10337,14 +10374,14 @@ export default function App() {
             <span>{state.mode === "combat" ? "Initiative order" : "Roster"}</span>
             <span className="spacer" style={{ flex: 1 }} />
             {state.mode !== "combat" && restable.length > 0 && (
-              <button className="btn small ghost" onClick={() => setModal({ type: "rest" })} title="Set everyone's HP after a rest — heals play for anyone who gains HP">🌙 Rest</button>
+              <button className="btn small ghost" data-tut="rest" onClick={() => setModal({ type: "rest" })} title="Set everyone's HP after a rest — heals play for anyone who gains HP">🌙 Rest</button>
             )}
             {state.combatants.some((c) => c.dead && (c.loot || []).length > 0) && (
               <button className="btn small ghost" onClick={() => setModal({ type: "loot-fallen" })}>💰 Loot the fallen</button>
             )}
             <button className="btn small ghost" onClick={() => setRailOpen(!railOpen)}>{railOpen ? "collapse ▲" : "expand ▼"}</button>
           </div>
-          <div className={`rail ${railOpen ? "" : "collapsed"}`}>
+          <div className={`rail ${railOpen ? "" : "collapsed"}`} data-tut="roster">
             {order.map((c, i) => (
               <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} />
             ))}
@@ -10354,10 +10391,10 @@ export default function App() {
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {tutorial != null && (
-          <TutorialCard step={tutorial}
+          <TutorialOverlay step={tutorial}
             onBack={() => setTutorial((s) => Math.max(0, s - 1))}
             onNext={nextTutorialStep}
-            onSkip={() => endTutorial(false)} onFinish={endTutorial} />
+            onSkip={() => endTutorial(true)} onFinish={endTutorial} />
         )}
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
           <DungeonPlayPanel dungeon={dungeons.find((d) => d.id === dungeonPlayId)} mode={state.mode} allDungeons={dungeons}
