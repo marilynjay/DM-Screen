@@ -8645,7 +8645,7 @@ function PlayerModeBoard({ onExit }) {
     // so HP is allowed to run negative — "0" doesn't mean "down", so no death saves.
     if (max != null) nhp = Math.max(0, Math.min(max, nhp));
     const patch = { hp: String(nhp) };
-    if (max != null && nhp > 0) patch.ds = { s: 0, f: 0 }; // back above 0 with a known max → clear death saves
+    if (max != null && nhp > 0) { patch.ds = { s: 0, f: 0 }; patch.down = false; } // back above 0 with a known max → revived
     setAlly(id, patch);
     setAmts({ ...amts, [id]: "" });
   };
@@ -8744,8 +8744,9 @@ function PlayerModeBoard({ onExit }) {
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="amt" value={amts[a.id] || ""} onChange={(ev) => setAmts({ ...amts, [a.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && applyToAlly(a.id, -1)} />
                 <button className="btn small" title="Subtract this much HP" onClick={() => applyToAlly(a.id, -1)}>− Damage</button>
                 <button className="btn small ghost" title="Add this much HP (up to max)" onClick={() => applyToAlly(a.id, +1)}>＋ Heal</button>
+                <button className={`btn small ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — show death saves. Use when the DM says a party member has dropped, even if you don't know their max HP." onClick={() => { const nowDown = !a.down; setAlly(a.id, { down: nowDown, ...(nowDown ? {} : { ds: { s: 0, f: 0 } }) }); }}>💀</button>
               </div>
-              {a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "" && dsUI(a)}
+              {(a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
               {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
