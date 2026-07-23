@@ -389,7 +389,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   border-radius:6px;padding:1px 6px;margin:0 1px}
 .rolltotal.good{background:rgba(94,168,96,.22);border:1px solid rgba(94,168,96,.65);color:#9fd8a0}
 .rolltotal.bad{background:rgba(198,84,74,.2);border:1px solid rgba(198,84,74,.6);color:#eda49c}
-.srd-attrib{max-width:860px;margin:48px auto 0;padding:20px 14px 0;font-size:10.5px;line-height:1.5;color:var(--faint);
+.srd-attrib{max-width:860px;margin:48px auto 0;padding:20px 14px 64px;font-size:10.5px;line-height:1.5;color:var(--faint);
   border-top:1px solid var(--line)}
 .srd-attrib a{color:var(--dim)}
 .savetag{cursor:pointer;font-size:10px;font-family:var(--mono);border:1px solid var(--line2);border-radius:8px;padding:0 5px;margin-left:6px;color:var(--dim);white-space:nowrap}
@@ -9463,6 +9463,7 @@ export default function App() {
               )}
               {state.startSnap && <button onClick={() => setModal({ type: "confirm-combatreset" })}>↺ Reset combat (rewind to start)</button>}
               <button className="warn" onClick={() => setModal({ type: "confirm-clear" })}>Clear everything</button>
+              <button onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>
             </div>
           )}
         </span>
@@ -9591,14 +9592,17 @@ export default function App() {
       </div>
 
 
-      <div className="srd-attrib">
-        This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC,
-        available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The
-        SRD 5.2.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">Creative
-        Commons Attribution 4.0 International License</a>.
-        {" "}Optional expanded bestiary content from <b>Tome of Beasts</b> © Kobold Press, used under the Open Game License v 1.0a —{" "}
-        <a href="#licenses" onClick={(e) => { e.preventDefault(); setModal({ type: "licenses" }); }}>full licenses</a>.
-      </div>
+      {order.length === 0 && (
+        <div className="srd-attrib">
+          This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1") by Wizards of the Coast LLC,
+          available at <a href="https://www.dndbeyond.com/srd" target="_blank" rel="noreferrer">dndbeyond.com/srd</a>. The
+          SRD 5.2.1 is licensed under the <a href="https://creativecommons.org/licenses/by/4.0/legalcode" target="_blank" rel="noreferrer">Creative
+          Commons Attribution 4.0 International License</a>.
+          {" "}Optional expanded bestiary content from <b>Tome of Beasts</b> © Kobold Press, used under the Open Game License v 1.0a —{" "}
+          <a href="#licenses" onClick={(e) => { e.preventDefault(); setModal({ type: "licenses" }); }}>full licenses</a>.
+          {" "}Attribution is always available in the <b>⋯ menu → Attribution &amp; licenses</b>.
+        </div>
+      )}
 
       {showTouches && <TouchViz />}
       {oldSchool && state.mode === "combat" && order.some((c) => c.hp != null && c.type !== "effect") && (
