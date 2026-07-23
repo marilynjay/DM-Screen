@@ -366,8 +366,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .atkbudget .btn.tiny{font-size:9px;padding:0 5px;margin-left:5px;line-height:1.5}
 .actlbl{font-size:12.5px}
 .actlbl .actword{color:var(--gold)}
-.actlbl.spent{opacity:.55;text-decoration:line-through}
-.actlbl.spent .actword,.actlbl.spent .atkbudget{color:var(--faint)}
+.actlbl.spent .actword,.actlbl.spent .atkbudget{color:var(--faint);text-decoration:line-through}
+.actlbl .spenttag{color:var(--dim);margin-left:6px;font-family:var(--mono);font-size:13px;letter-spacing:.5px;text-decoration:none}
 .usepips{font-size:9px;letter-spacing:1.5px;color:var(--gold);white-space:nowrap;margin-right:2px}
 .usepips .off{color:var(--line2)}
 .usepips.spent{opacity:.55}
@@ -3866,9 +3866,10 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool }) {
               <span className={hasBudget ? "actword" : undefined}>Actions</span>
               {hasBudget && (
                 <span className="atkbudget" title={`Attack rolls left this turn (Multiattack allows ${atkMaxOf(c)}). Grant an extra one from the roster ⋮ menu.`}>
-                  ⚔ {left}/{atkMaxOf(c)}{spent ? " · spent" : ""}
+                  ⚔ {left}/{atkMaxOf(c)}
                 </span>
               )}
+              {spent && <span className="spenttag">· spent</span>}
             </div>
           );
         })()}
