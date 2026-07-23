@@ -310,8 +310,7 @@ input[type=number]{width:64px}
 .tut-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
 .tut-dot.on{background:var(--gold)}
 .tut-actions{display:flex;align-items:center;gap:6px}
-.tut-dim{position:fixed;inset:0;z-index:54;background:rgba(150,120,45,.4);pointer-events:none}
-.tut-spot{position:fixed;z-index:54;border-radius:10px;border:2px solid var(--gold);box-shadow:0 0 0 9999px rgba(150,120,45,.5),0 0 14px 2px rgba(232,178,58,.7);pointer-events:none;transition:left .25s ease,top .25s ease,width .25s ease,height .25s ease}
+.tut-scrim{position:fixed;inset:0;z-index:54;pointer-events:none}
 .tut-arrow{position:fixed;z-index:56;color:var(--gold);font-size:26px;line-height:1;pointer-events:none;text-shadow:0 1px 5px rgba(0,0,0,.8);animation:tutbounce 1s ease-in-out infinite}
 @keyframes tutbounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .btn.danger{border-color:var(--danger);color:var(--danger)}
@@ -8120,7 +8119,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], onRun, onEdit, onUp
 // which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
 const TUTORIAL_STEPS = [
   { title: "Welcome to the tour 🎓", body: "This walkthrough builds a fight from scratch — you'll bring in a party, add monsters, balance them, run combat, and pick up a few tricks along the way. Tap Next to step through it; the app stays tappable underneath, so try things as you go." },
-  { title: "1 · Add your party", target: "add", body: "Your heroes go in first. That's the + Add ▸ Player / ally box up top — enter each one by name, AC and HP. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them all in with one tap. But we'll drop in a premade party of three for now — tap Next." },
+  { title: "1 · Add your party", target: ["party", "add"], body: "Your heroes go in first — fill in the Add your party box (name, AC, HP), or use + Add ▸ Player / ally up top. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them in with one tap. But we'll drop in a premade party of three for now — tap Next." },
   { title: "2 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
   { title: "3 · Add some monsters", target: "add", body: "Time for foes. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones." },
   { title: "4 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
@@ -8165,27 +8164,42 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish }) {
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
 function TutorialOverlay({ step, onBack, onNext, onSkip, onFinish }) {
   const s = TUTORIAL_STEPS[step];
-  const [rect, setRect] = useState(null);
+  const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
+  const [rects, setRects] = useState([]);
+  const [vp, setVp] = useState({ w: 0, h: 0 });
   useEffect(() => {
     const measure = () => {
-      const el = s.target ? document.querySelector(`[data-tut="${s.target}"]`) : null;
-      if (el) { const r = el.getBoundingClientRect(); if (r.width && r.height) { setRect({ x: r.left, y: r.top, w: r.width, h: r.height }); return; } }
-      setRect(null);
+      setVp({ w: window.innerWidth, h: window.innerHeight });
+      const rs = targets.map((t) => {
+        const el = document.querySelector(`[data-tut="${t}"]`);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
+      }).filter(Boolean);
+      setRects(rs);
     };
     measure();
     const id = setInterval(measure, 300); // track layout shifts (roster grows, menus open, mode changes)
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
     return () => { clearInterval(id); window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
-  }, [step, s.target]);
-  const pad = 6;
-  // arrow sits just below the target, pointing up at it (targets live in the header / upper roster)
-  const arrow = rect ? { left: Math.min(window.innerWidth - 40, Math.max(8, rect.x + rect.w / 2 - 13)), top: rect.y + rect.h + 7 } : null;
+  }, [step, JSON.stringify(targets)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pad = 6, r0 = rects[0];
+  const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   return (
     <>
-      {rect
-        ? <div className="tut-spot" style={{ left: rect.x - pad, top: rect.y - pad, width: rect.w + pad * 2, height: rect.h + pad * 2 }} />
-        : <div className="tut-dim" />}
+      {vp.w > 0 && (
+        <svg className="tut-scrim" width={vp.w} height={vp.h} viewBox={`0 0 ${vp.w} ${vp.h}`}>
+          <defs>
+            <mask id="tut-mask">
+              <rect x="0" y="0" width={vp.w} height={vp.h} fill="#fff" />
+              {rects.map((r, i) => <rect key={i} x={r.x - pad} y={r.y - pad} width={r.w + pad * 2} height={r.h + pad * 2} rx="10" fill="#000" />)}
+            </mask>
+          </defs>
+          <rect x="0" y="0" width={vp.w} height={vp.h} fill="rgba(150,120,45,.5)" mask="url(#tut-mask)" />
+          {rects.map((r, i) => <rect key={`ring${i}`} x={r.x - pad} y={r.y - pad} width={r.w + pad * 2} height={r.h + pad * 2} rx="10" fill="none" stroke="var(--gold)" strokeWidth="2" />)}
+        </svg>
+      )}
       {arrow && <div className="tut-arrow" style={{ left: arrow.left, top: arrow.top }}>▲</div>}
       <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} />
     </>
@@ -10416,7 +10430,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} />
+          <div data-tut="party"><PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} /></div>
         )}
 
         {legendaryWatch.map((c) => (
