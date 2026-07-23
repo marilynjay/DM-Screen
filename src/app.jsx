@@ -8639,11 +8639,13 @@ function PlayerModeBoard({ onExit }) {
     const a = board.allies.find((x) => x.id === id); if (!a) return;
     const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return;
     const max = a.maxHp !== "" && !isNaN(Number(a.maxHp)) ? Number(a.maxHp) : null;
-    if (a.hp === "" && max == null) { setAmts({ ...amts, [id]: "" }); return; } // nothing to track yet
-    const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : max;
-    const nhp = sign < 0 ? Math.max(0, base - amt) : (max != null ? Math.min(max, base + amt) : base + amt);
+    const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : (max != null ? max : 0);
+    let nhp = base + sign * amt;
+    // Only clamp / floor at 0 when the max is known. Without a max we're just logging damage,
+    // so HP is allowed to run negative — "0" doesn't mean "down", so no death saves.
+    if (max != null) nhp = Math.max(0, Math.min(max, nhp));
     const patch = { hp: String(nhp) };
-    if (nhp > 0) patch.ds = { s: 0, f: 0 }; // back above 0 → clear any death saves
+    if (max != null && nhp > 0) patch.ds = { s: 0, f: 0 }; // back above 0 with a known max → clear death saves
     setAlly(id, patch);
     setAmts({ ...amts, [id]: "" });
   };
@@ -8743,7 +8745,7 @@ function PlayerModeBoard({ onExit }) {
                 <button className="btn small" title="Subtract this much HP" onClick={() => applyToAlly(a.id, -1)}>− Damage</button>
                 <button className="btn small ghost" title="Add this much HP (up to max)" onClick={() => applyToAlly(a.id, +1)}>＋ Heal</button>
               </div>
-              {Number(a.hp) === 0 && a.hp !== "" && dsUI(a)}
+              {a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "" && dsUI(a)}
               {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
