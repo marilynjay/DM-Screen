@@ -5263,6 +5263,7 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
     return { list, sel };
   });
   const [applyLive, setApplyLive] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
   const d = st.list.find((x) => x.id === st.sel);
   const upd = (patch) => setSt((s) => ({ ...s, list: s.list.map((x) => (x.id === s.sel ? { ...x, ...patch } : x)) }));
   const addParty = () => setSt((s) => { const nd = newDraft(); return { list: [...s.list, nd], sel: nd.id }; });
@@ -5283,8 +5284,9 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
     if (applyLive && liveCount && onApply) onApply(clean); // onApply owns the modal transition (heal prompt or close)
     else onClose();
   };
+  const curLabel = (d?.teamName || "").trim();
   return (
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={() => { if (!confirmDel) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Edit parties</h3>
         <div className="sbook-lvls" style={{ marginBottom: 8 }}>
@@ -5302,12 +5304,16 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
           <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time a party is added to the screen — players already in the fight aren't modified. Only names are required; a party with no named members is discarded when you save.</div>
         )}
         <div className="frow">
-          <button className="btn small danger" onClick={deleteParty}>Delete this party</button>
+          <button className="btn small danger" onClick={() => setConfirmDel(true)}>Delete this party</button>
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>Cancel</button>
           <button className="btn primary" disabled={!anyNamed && parties.length === 0} onClick={save}>Save parties</button>
         </div>
       </div>
+      {confirmDel && (
+        <ConfirmModal text={`Delete ${curLabel ? `the “${curLabel}” party` : "this party"}? This removes it from your saved parties when you save.`} confirmLabel="Delete party"
+          onYes={() => { deleteParty(); setConfirmDel(false); }} onClose={() => setConfirmDel(false)} />
+      )}
     </div>
   );
 }
