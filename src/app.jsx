@@ -11467,6 +11467,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
               <button onClick={() => setModal({ type: "player" })}>Player / ally…</button>
+              <button onClick={() => setModal({ type: "notebook" })}>👤 NPC (build or add)…</button>
               <button onClick={() => setModal({ type: "suggest-enc" })}>🎲 Suggest encounter…</button>
               <button onClick={() => setModal({ type: "slots", focus: "groups" })}>📦 Monster groups (save / add)…</button>
               <button onClick={addEffectPrompt}>Effect / lair actions…</button>
