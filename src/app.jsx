@@ -514,6 +514,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   gap:3px;flex-shrink:0}
 .shield{cursor:pointer;opacity:.5;font-size:13px}
 .shield.on{opacity:1;filter:drop-shadow(0 0 3px var(--gold))}
+.dispchip{font-size:11px;font-weight:600;border:1px solid var(--line2);border-radius:5px;padding:1px 7px;background:var(--panel);color:var(--dim);cursor:pointer;flex-shrink:0}
+.npctag{font-size:12px;color:var(--faint);font-style:italic;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.npchint{font-size:10px;color:var(--faint);opacity:.55;margin-left:auto;flex-shrink:0}
 .badges{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1 1 auto}
 .cond{display:inline-flex;align-items:center;font-size:11px;background:var(--raised);border:1px solid var(--line2);border-radius:10px;
   padding:0 7px;line-height:18px;min-height:18px;cursor:pointer;white-space:nowrap;vertical-align:middle}
@@ -3018,13 +3021,18 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   const vsTitle = advParts.length ? advParts.join(" · ") + " — tap to adjust"
     : "Advantage — tap to set this creature's own rolls and attacks against it";
   const bloody = isBloodied(c);
+  // An NPC out of combat reads as a social contact: name + disposition + tag, no HP/AC/initiative.
+  // Its full statblock stays a tap away (peek = the DM reveal); it becomes a normal combatant in a fight.
+  const socialNpc = c.npc && !inCombat;
+  const dispWord = c.side === "ally" ? "🙂 ally" : c.side === "enemy" ? "⚔ enemy" : "• neutral";
+  const nextDisp = c.side === "neutral" ? "ally" : c.side === "ally" ? "enemy" : "neutral";
 
   return (
     <div data-uid={c.uid} className={`row ${active ? "active" : ""} ${spot ? "spot" : ""} ${c.dead ? "dead" : ""} ${skull ? "dying" : ""} ${bloody ? "bloody" : ""} ${fx && SHAKE_FX.has(String(fx.dtype || "").toLowerCase()) ? "fxshake" : ""} ${!c.dead && c.type !== "effect" && shown === "adv" ? "vs-adv" : ""} ${!c.dead && c.type !== "effect" && shown === "dis" ? "vs-dis" : ""} ${!c.dead && c.type !== "effect" && shown === "adv*" ? "vs-mix" : ""}`}>
       {!c.dead && c.concentration && <span className="concring" />}
       {fx && <DmgFx key={fx.id} type={fx.dtype} />}
       <div className="rline r1">
-      <span className={`initmark ${active ? "turn" : ""}`} title={active ? `${c.name}'s turn (initiative ${c.init})` : c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{active ? "▶" : (c.init ?? "—")}</span>
+      <span className={`initmark ${active ? "turn" : ""}`} title={active ? `${c.name}'s turn (initiative ${c.init})` : socialNpc ? "NPC — no initiative until a fight starts" : c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{active ? "▶" : socialNpc ? "👤" : (c.init ?? "—")}</span>
       <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "neutral" ? "neutral" : c.side === "effect" ? "effect" : "enemy"}`} />
       <span className="nm" style={c.type === "monster" || c.type === "player" ? { cursor: "pointer" } : undefined}
         title={c.type === "monster" || c.type === "player" ? "Tap to peek at this creature's card" : undefined}
@@ -3054,11 +3062,17 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       </div>
 
       <div className="rline r2">
-      {oldSchoolHp && c.hp != null && c.type !== "effect" && (
+      {socialNpc && (
+        <button className="dispchip" title="Disposition — tap to cycle neutral → ally → enemy when the mood shifts"
+          onClick={() => api.setDisposition(c.uid, nextDisp)}>{dispWord}</button>
+      )}
+      {socialNpc && c.npcTag && <span className="npctag" title="From the DM Notebook">{c.npcTag}</span>}
+      {socialNpc && <span className="npchint" title="Full statblock is a tap away — tap the name">tap name for statblock</span>}
+      {oldSchoolHp && !socialNpc && c.hp != null && c.type !== "effect" && (
         <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="–" value={entry?.dmg ?? ""}
           title="Damage — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("dmg", e.target.value)} />
       )}
-      {c.hp != null && c.type !== "effect" && (
+      {!socialNpc && c.hp != null && c.type !== "effect" && (
         <span className="hpbox">
           <span key={pulse ? pulse.id : "still"}
             className={`hpval ${pulse ? (pulse.delta < 0 ? "pd" : "ph") : ""}`}
@@ -3081,12 +3095,12 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           {skull && <span key={skull.id} className="skullghost">💀</span>}
         </span>
       )}
-      {oldSchoolHp && c.hp != null && c.type !== "effect" && (
+      {oldSchoolHp && !socialNpc && c.hp != null && c.type !== "effect" && (
         <input className="osfield osheal" type="number" inputMode="numeric" placeholder="–" value={entry?.heal ?? ""}
           title="Healing — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("heal", e.target.value)} />
       )}
 
-      {effAc != null && (
+      {!socialNpc && effAc != null && (
         <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
           AC {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? "*" : ""}
           {c.acReaction && (
@@ -3131,7 +3145,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
         )}
       </span>
 
-      {c.type !== "effect" && c.type !== "object" && !c.dead && (
+      {c.type !== "effect" && c.type !== "object" && !c.dead && !socialNpc && (
         <button className={`advchip ${(ownShown !== "none" || shown !== "none") ? "on" : ""}`}
           title={vsTitle} onClick={() => api.openAdv(c.uid)}>
           {ownShown === "none" && shown === "none" ? "A/D" : (<>
@@ -3141,9 +3155,9 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
         </button>
       )}
 
-      {c.legRes && <Pips label="LR" cur={c.legRes.rem} max={c.legRes.max} onSpend={() => api.confirmUse(c.uid, "lr")} onReset={() => api.confirmUse(c.uid, "lr")} />}
-      {c.legendary && <Pips label="LA" cur={c.legendary.rem} max={c.legendary.max} onSpend={() => api.confirmUse(c.uid, "la")} onReset={() => api.confirmUse(c.uid, "la")} />}
-      {c.uses && !c.dead && Object.keys(c.uses).filter((k) => k[0] === "r").map((k) => (
+      {c.legRes && !socialNpc && <Pips label="LR" cur={c.legRes.rem} max={c.legRes.max} onSpend={() => api.confirmUse(c.uid, "lr")} onReset={() => api.confirmUse(c.uid, "lr")} />}
+      {c.legendary && !socialNpc && <Pips label="LA" cur={c.legendary.rem} max={c.legendary.max} onSpend={() => api.confirmUse(c.uid, "la")} onReset={() => api.confirmUse(c.uid, "la")} />}
+      {c.uses && !c.dead && !socialNpc && Object.keys(c.uses).filter((k) => k[0] === "r").map((k) => (
         <Pips key={k} label={c.uses[k].n.replace(USES_RE, "").trim().split(" ").map((w) => w[0]).join("")}
           cur={c.uses[k].rem} max={c.uses[k].max}
           onSpend={() => api.confirmUse(c.uid, "use", k)} onReset={() => api.confirmUse(c.uid, "use", k)} />
@@ -10536,7 +10550,7 @@ export default function App() {
       const side = npc.lastSide || "neutral";
       mutate((d, L, T) => {
         const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
-        c.npc = true; c.npcId = npc.id;
+        c.npc = true; c.npcId = npc.id; c.npcTag = npc.tag || "";
         if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
         d.combatants.push(c);
         const word = side === "ally" ? " as an ally" : side === "enemy" ? " as an enemy" : " (neutral)";
