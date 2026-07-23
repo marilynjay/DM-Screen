@@ -9897,7 +9897,7 @@ export default function App() {
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
-      {dungeons.length > 0 && state.mode === "setup" && !dungeonPlayId && !dungeonEditId && (
+      {dungeons.some((d) => Object.keys(d.rooms || {}).length > 0) && state.mode === "setup" && !dungeonPlayId && !dungeonEditId && (
         <button className="loaddgn-fab" title="Load a dungeon into the play panel" onClick={() => setModal({ type: "dungeons" })}>🗺 Load Dungeon</button>
       )}
       {modal?.type === "item-compendium" && (
