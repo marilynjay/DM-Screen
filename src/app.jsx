@@ -7581,6 +7581,7 @@ export default function App() {
   const saveDungeons = (list) => { setDungeonsState(list); stSet("dm5e:dungeons", list); };
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
+  const [dgnDelId, setDgnDelId] = useState(null); // dungeon pending a delete confirmation, or null
   const savePartiesAll = (list, activeId) => {
     setPartiesState(list); stSet("dm5e:parties", list);
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
@@ -9897,7 +9898,7 @@ export default function App() {
                   <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
                   {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { setDungeonPlayId(d.id); setModal(null); }}>▶ Play</button>}
                   <button className="btn small" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>Edit</button>
-                  <button className="btn small danger" title="Delete this dungeon" onClick={() => saveDungeons(dungeons.filter((x) => x.id !== d.id))}>✕</button>
+                  <button className="btn small danger" title="Delete this dungeon" onClick={() => setDgnDelId(d.id)}>✕</button>
                 </div>
               );
             })}
@@ -9913,6 +9914,15 @@ export default function App() {
           onSave={(nd) => saveDungeons(dungeons.map((x) => (x.id === nd.id ? nd : x)))}
           onClose={() => setDungeonEditId(null)} />
       )}
+      {dgnDelId && (() => {
+        const dg = dungeons.find((x) => x.id === dgnDelId);
+        const nm = (dg && dg.name && dg.name.trim()) || "this dungeon";
+        return (
+          <ConfirmModal text={`Delete ${nm === "this dungeon" ? "this dungeon" : `the “${nm}” dungeon`}? Its rooms and notes will be lost — this can't be undone.`} confirmLabel="Delete dungeon"
+            onYes={() => { saveDungeons(dungeons.filter((x) => x.id !== dgnDelId)); if (dungeonPlayId === dgnDelId) setDungeonPlayId(null); setDgnDelId(null); }}
+            onClose={() => setDgnDelId(null)} />
+        );
+      })()}
       {dungeons.some((d) => Object.keys(d.rooms || {}).length > 0) && state.mode === "setup" && !dungeonPlayId && !dungeonEditId && (
         <button className="loaddgn-fab" title="Load a dungeon into the play panel" onClick={() => setModal({ type: "dungeons" })}>🗺 Load Dungeon</button>
       )}
