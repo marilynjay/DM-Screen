@@ -570,6 +570,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   width:100%;max-width:520px;max-height:88vh;overflow-y:auto}
 .modal h3{font-family:var(--disp);font-size:14px;letter-spacing:.08em;text-transform:uppercase;
   color:var(--gold);margin-bottom:12px}
+.modalhd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:12px}
+.modalhd h3{flex:1;min-width:0;margin-bottom:0}
+.modal-x{background:none;border:none;color:var(--faint);font-size:22px;line-height:1;cursor:pointer;padding:0 2px;flex-shrink:0;align-self:flex-start}
 .frow{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
 .frow label{font-size:12px;color:var(--dim);min-width:90px}
 .rxlist{display:flex;flex-direction:column;gap:6px}
@@ -4806,7 +4809,7 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Save / load</h3>
+        <div className="modalhd"><h3>Save / load</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
         {!hasStorage() && <div className="trait" style={{ color: "var(--danger)" }}>Storage isn't available in this environment — saves only work inside Claude.</div>}
         <div className="frow">
           <input type="text" placeholder="Name…" autoComplete="off" autoCorrect="off" spellCheck={false} value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
@@ -5693,7 +5696,7 @@ function LootGiveModal({ c, customItems = [], compendium, onSaveCustomItem, onDe
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>{compendium ? "📦 Item Compendium" : c.type === "player" ? `🎒 ${c.name}'s bag` : `Loot — ${c.name}`}</h3>
+        <div className="modalhd"><h3>{compendium ? "📦 Item Compendium" : c.type === "player" ? `🎒 ${c.name}'s bag` : `Loot — ${c.name}`}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
         {!compendium && (<>
           {items.length === 0 && <div className="trait">Nothing carried yet.</div>}
           {items.map((it, i) => (
