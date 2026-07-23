@@ -461,7 +461,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   flex-shrink:0;position:relative}
 .initmark.turn{color:var(--gold)}
 .sidebar-dot{width:7px;height:7px;transform:rotate(45deg);flex-shrink:0}
-.side-enemy{background:var(--enemy)} .side-ally{background:var(--ally)} .side-effect{background:var(--fx)}
+.side-enemy{background:var(--enemy)} .side-ally{background:var(--ally)} .side-effect{background:var(--fx)} .side-neutral{background:#8b93a3}
 .nm{font-weight:600;min-width:0;flex:1}
 .nm-color{border-radius:5px;padding:1px 7px;color:#fff;-webkit-text-fill-color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.55);-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .clr-sw{width:22px;height:22px;border-radius:5px;border:1px solid var(--line2);cursor:pointer;padding:0;line-height:1;font-size:12px}
@@ -3025,7 +3025,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       {fx && <DmgFx key={fx.id} type={fx.dtype} />}
       <div className="rline r1">
       <span className={`initmark ${active ? "turn" : ""}`} title={active ? `${c.name}'s turn (initiative ${c.init})` : c.initText || (c.init != null ? `Initiative ${c.init}` : "No initiative yet")}>{active ? "▶" : (c.init ?? "—")}</span>
-      <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
+      <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "neutral" ? "neutral" : c.side === "effect" ? "effect" : "enemy"}`} />
       <span className="nm" style={c.type === "monster" || c.type === "player" ? { cursor: "pointer" } : undefined}
         title={c.type === "monster" || c.type === "player" ? "Tap to peek at this creature's card" : undefined}
         onClick={(c.type === "monster" || c.type === "player") ? () => api.peek(c.uid) : undefined}>
@@ -3184,7 +3184,11 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
             {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>}
+            {c.npc ? (<>
+              {c.side !== "neutral" && <button onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>}
+              {c.side !== "ally" && <button onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>}
+              {c.side !== "enemy" && <button onClick={() => api.setDisposition(c.uid, "enemy")}>Make enemy</button>}
+            </>) : (c.type !== "effect" && c.type !== "object" && <button onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>)}
             {c.type === "monster" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark dead</button>}
             {c.type === "object" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark destroyed</button>}
             {(c.dead || c.unconscious) && <button onClick={() => api.revive(c.uid)}>Revive (1 HP)</button>}
@@ -3991,7 +3995,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
   const effAc = effAcOf(c);
   return (
     <div className="card torch">
-      <h3>{c.name}{c.cr ? <span style={{ color: "var(--faint)", marginLeft: 8, fontSize: 11 }}>CR {c.cr}</span> : null}</h3>
+      <h3>{c.name}{c.npc ? <span style={{ color: "var(--faint)", marginLeft: 8, fontSize: 11 }}>{c.side === "ally" ? "ally NPC" : c.side === "enemy" ? "hostile NPC" : "neutral NPC"}</span> : null}{c.cr ? <span style={{ color: "var(--faint)", marginLeft: 8, fontSize: 11 }}>CR {c.cr}</span> : null}</h3>
       <div className="statline">
         <b>AC</b> {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? ` (base ${c.ac}${cov ? `, +${cov} cover` : ""}${hasteAc ? `, +${hasteAc} Haste` : ""}${slowAc ? `, −${slowAc} Slow` : ""})` : ""} · <b>HP</b> {c.hp}/{c.maxHp}{isBloodied(c) && <span className="bloodtag">Bloodied</span>} · <b>Speed</b> {c.spd}
         {c.resist?.length > 0 && <> · <b>Resist</b> {c.resist.join(", ")}</>}
@@ -6215,7 +6219,7 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
 }
 
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
-function DMNotebookModal({ party, onSave, onClose, partyLevel }) {
+function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard }) {
   const [tab, setTab] = useState("npcs");
   const [draft, setDraft] = useState(null); // entry being edited: { tab, id|null, name, tag, sections, loc, parent }
   const [open, setOpen] = useState({}); // expanded rows / collapsed groups
@@ -6280,6 +6284,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel }) {
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
           <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.stats && <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span>}</span>
+          {rowTab === "npcs" && onAddToBoard && <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
         </div>
@@ -8960,7 +8965,7 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
           {list.length === 0 && <div className="trait">No combatants on the board yet.</div>}
           {list.map((c) => (
             <div key={c.uid} className="frow" style={{ alignItems: "center", gap: 8, marginBottom: 7, flexWrap: "wrap" }}>
-              <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "effect" ? "effect" : "enemy"}`} />
+              <span className={`sidebar-dot side-${c.side === "ally" ? "ally" : c.side === "neutral" ? "neutral" : c.side === "effect" ? "effect" : "enemy"}`} />
               <span style={{ flex: 1, minWidth: 84, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {c.color ? <span className="nm-color" style={{ background: c.color }}>{c.name}</span> : c.name}
               </span>
@@ -10463,6 +10468,38 @@ export default function App() {
       L.push(`<b>${c.name}</b> is now ${c.side === "ally" ? "an <b>ally</b> — fights with the party and survives End Combat" : "an <b>enemy</b>"}.`);
       T.push({ kind: c.side === "ally" ? "good" : "bad", text: `${c.name} ${c.side === "ally" ? "joins the party!" : "turns against the party!"}` });
     }),
+    // Set an NPC's disposition (neutral/ally/enemy) and remember it on the linked notebook NPC.
+    setDisposition: (uid, side) => {
+      const before = stateRef.current.combatants.find((x) => x.uid === uid);
+      const npcId = before?.npcId;
+      mutate((d, L, T) => {
+        const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+        c.side = side;
+        if (c.hp === 0) {
+          if (side === "ally" && c.dead) { c.dead = false; c.unconscious = true; c.ds = { s: 0, f: 0 }; c.stable = false; }
+          if (side === "enemy" && c.unconscious) { c.unconscious = false; c.dead = true; }
+        }
+        const word = side === "ally" ? "an <b>ally</b>" : side === "enemy" ? "an <b>enemy</b>" : "<b>neutral</b>";
+        L.push(`<b>${c.name}</b> is now ${word}.`);
+        T.push({ kind: side === "enemy" ? "bad" : "good", text: `${c.name} → ${side}` });
+      });
+      if (npcId && activeRoster?.notebook) {
+        const npcs = (activeRoster.notebook.npcs || []).map((n) => (n.id === npcId ? { ...n, lastSide: side } : n));
+        saveNotebook({ ...activeRoster.notebook, npcs });
+      }
+    },
+    // Drop a notebook NPC onto the board — neutral by default, or whatever it was set to last time.
+    addNpcToBoard: (npc) => {
+      const side = npc.lastSide || "neutral";
+      mutate((d, L, T) => {
+        const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
+        c.npc = true; c.npcId = npc.id;
+        d.combatants.push(c);
+        const word = side === "ally" ? " as an ally" : side === "enemy" ? " as an enemy" : " (neutral)";
+        L.push(`Added NPC <b>${c.name}</b>${word}.`);
+        T.push({ kind: "good", text: `${c.name} added to the board.` });
+      });
+    },
     equipItem: (uid, idx) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const it = lootObj((c.loot || [])[idx]); if (!it) return;
@@ -11959,7 +11996,7 @@ export default function App() {
         <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
       )}
       {modal?.type === "notebook" && (
-        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onClose={() => setModal(null)} />
+        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
