@@ -6890,7 +6890,8 @@ function TextureDefs() {
       <pattern id="tex-mud" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-mud)" /></pattern>
       <pattern id="tex-mist" width="160" height="160" patternUnits="userSpaceOnUse"><rect width="160" height="160" filter="url(#f-mist)" /></pattern>
       <pattern id="tex-brick" width="34" height="20" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.42)" strokeWidth="1.6" fill="none"><path d="M0 10H34M0 20H34M17 0V10M0 10V20M34 10V20" /></g><g stroke="rgba(255,255,255,.08)" strokeWidth="1" fill="none"><path d="M0 8.5H34M0 18.5H34" /></g></pattern>
-      <pattern id="tex-cobble" width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><ellipse cx="9" cy="9" rx="8.5" ry="7.5" /><ellipse cx="27" cy="12" rx="8" ry="8.5" /><ellipse cx="16" cy="27" rx="8.5" ry="7.5" /><ellipse cx="33" cy="30" rx="7" ry="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><ellipse cx="9" cy="8" rx="7.5" ry="6.5" /><ellipse cx="16" cy="26" rx="7.5" ry="6.5" /></g></pattern>
+      {/* Round cobbles (circles, not <ellipse> — WebKit renders a stroked-ellipse pattern as solid black). */}
+      <pattern id="tex-cobble" width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><circle cx="9" cy="9" r="8" /><circle cx="27" cy="12" r="8.2" /><circle cx="16" cy="27" r="8" /><circle cx="33" cy="30" r="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><circle cx="9" cy="8" r="7" /><circle cx="16" cy="26" r="7" /></g></pattern>
       <pattern id="tex-wood" width="26" height="70" patternUnits="userSpaceOnUse"><path d="M0 0V70M26 0V70" stroke="rgba(0,0,0,.38)" strokeWidth="1.6" /><path d="M7 4q6 14 0 28q-6 14 0 30" stroke="rgba(0,0,0,.16)" fill="none" /><path d="M17 2q5 16 0 32q-5 14 0 30" stroke="rgba(0,0,0,.12)" fill="none" /><line x1="0" y1="34" x2="26" y2="34" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" /></pattern>
       <pattern id="tex-tile" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgba(255,255,255,.06)" /><rect x="20" y="20" width="20" height="20" fill="rgba(255,255,255,.06)" /><path d="M0 20H40M20 0V40M0 0H40M0 40H40M40 0V40" stroke="rgba(0,0,0,.3)" strokeWidth="1" fill="none" /></pattern>
       <pattern id="tex-grass" width="26" height="26" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.3" fill="none"><path d="M6 21l-2-8M6 21l0-9M6 21l2-8" /><path d="M17 24l-2-7M17 24l0-8M17 24l2-7" /><path d="M22 13l-1-6M22 13l1-6" /></g><g stroke="rgba(255,255,255,.16)" strokeWidth="1" fill="none"><path d="M6 21l0-9M17 24l0-8" /></g></pattern>
@@ -7014,7 +7015,9 @@ function RoomShape({ room, cx, cy, hexKey }) {
       )}
       <g filter={fxOn ? `url(#${fxId})` : undefined}>
         {draw(col, stroke)}
-        {texId && draw(`url(#${texId})`, "none")}
+        {/* `… none` fallback: if a pattern ever fails to resolve, the overlay paints nothing (shows the
+            base colour) instead of blacking out the room. */}
+        {texId && draw(`url(#${texId}) none`, "none")}
       </g>
     </>
   );
