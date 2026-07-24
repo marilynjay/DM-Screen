@@ -9515,8 +9515,8 @@ const TUTORIAL_STEPS = [
   { title: "3 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
   { title: "4 · Add some monsters", target: "add", gate: "monster", body: "Time for foes — give it a try. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones. (Next unlocks once a monster's on the board.)" },
   { title: "5 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
-  { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat and punch in each hero's initiative as they call it out — the goblins roll their own. A round counter appears and the active turn lights up." },
-  { title: "7 · Take a turn — attack", target: ["active", "roster"], body: "On the active creature's turn, use its card to attack — tap a target to open the attack & damage picker, or just type damage into its HP box in the roster. Watch the hit effect play — monsters even roll their own attacks for you." },
+  { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat. Normally you'd punch in each hero's initiative as they call it out and the monsters roll their own — but for this tour we've set the order for you so it plays the same every time: the fighter leads. A round counter appears and the active turn lights up." },
+  { title: "7 · Take a turn — attack", target: ["active", "roster"], body: "Krusk the Fighter is up first — his card is lit at the top. Tap ⚔ Attack on his card to open the attack & damage picker, mark a HIT and enter the damage (your players roll their own dice; you just record it). Then tap ⏭ End turn: when a goblin comes up, tap its attack and pick a hero — the app rolls to hit and damage for you, and in this demo it always lands so you can watch the hit flourish. Prefer it faster? Skip the picker and just type damage into any HP box in the roster." },
   { title: "8 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
   { title: "9 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
   { title: "10 · End the turn", target: "active", body: "When a creature is done, tap the red ⏭ End turn button at the bottom of its card to pass to the next combatant — or use Next ▶ in the bar at the top or bottom of the screen. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
@@ -10226,6 +10226,7 @@ export default function App() {
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
   const [dungeonNav, setDungeonNav] = useState([]); // stack of dungeon ids we descended FROM, for going back up a level
   const [tutorial, setTutorial] = useState(null); // guided-tour step index, or null
+  const tutorialRef = useRef(tutorial); tutorialRef.current = tutorial; // read the live value inside combat closures
   // add the ready-made starter dungeons, with fresh ids (level-exit links remapped to match)
   const addSampleDungeons = () => {
     const idMap = {}; SAMPLE_DUNGEONS.forEach((d) => { idMap[d.id] = newUid(); });
@@ -10679,10 +10680,15 @@ export default function App() {
       }
       const manual = opts.manual || null;
       const hitBonus = (a.hit || 0) - exhaustPen(c); // Exhaustion: −2 per level to the attack roll
+      // Tutorial: a demo monster's auto-rolled attack is rigged to land (nat 18, no crit) so the tour can
+      // reliably show off the hit flourish without risking a miss or downing a demo hero.
+      const forceHit = tutorialRef.current != null && c._demo && c.type === "monster" && t && !opts.preRolled && !manual;
       const atk = opts.preRolled // a reaction resolution re-runs this attack with the same to-hit roll
         ? opts.preRolled
         : manual
         ? { nat: manual.d20, total: manual.d20 + hitBonus, crit: manual.d20 === 20, fumble: manual.d20 === 1, adv: "none", text: `${manual.d20}(d20)${hitBonus ? fmtMod(hitBonus) : ""} = ${manual.d20 + hitBonus} (your roll)` }
+        : forceHit
+        ? { nat: 18, total: 18 + hitBonus, crit: false, fumble: false, adv: "none", text: `18(d20)${hitBonus ? fmtMod(hitBonus) : ""} = ${18 + hitBonus} (tour)` }
         : d20(hitBonus, mode);
       let bbNote = "";
       if (!opts.preRolled) { const bb = blessBaneRoll(c); atk.total += bb.delta; bbNote = bb.note; } // Bless +1d4 / Bane −1d4 on the attack
@@ -11787,6 +11793,21 @@ export default function App() {
     });
   };
   const startCombat = () => {
+    // Tutorial: scripts a repeatable fight — every combatant gets fixed initiative so the fighter always
+    // leads (no roll-init prompt, no random order), which lets the tour narrate the attack step. Set the
+    // inits, then jump straight to the ties check (which runs post-render on fresh state) → reallyStart.
+    if (tutorialRef.current != null && stateRef.current.combatants.some((c) => c._demo)) {
+      mutate((d) => {
+        const pInits = [20, 12, 4], mInits = [15, 10]; let pi = 0, mi = 0;
+        d.combatants.forEach((c) => {
+          if (c.dead || c.type === "effect" || c.type === "object" || c.init != null) return;
+          const v = c.type === "player" ? (pInits[pi++] ?? 6) : (mInits[mi++] ?? 9);
+          c.init = v; c.initText = `Initiative ${v}`;
+        });
+      });
+      setModal({ type: "init-ties-check" });
+      return;
+    }
     const cur = stateRef.current;
     // monsters without initiative auto-roll — EXCEPT in Old School Mode, where the DM enters them by hand
     if (!OLDSCHOOL.on && cur.combatants.some((c) => !c.dead && c.init == null && c.type === "monster")) {
