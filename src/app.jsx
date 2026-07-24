@@ -9508,21 +9508,18 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
 
 // A quick guided tour. Narration only — it loads a demo scenario and walks the DM through the real UI,
 // which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
+// A guided *show*: each step's `act` fires an action automatically when you reach it (load the party,
+// add goblins, start combat, run an attack), so the tour drives the demo and the DM just taps Next.
 const TUTORIAL_STEPS = [
-  { title: "Welcome to the tour 🎓", body: "This walkthrough builds a fight from scratch — you'll bring in a party, add monsters, balance them, run combat, and pick up a few tricks along the way. Tap Next to step through it; the app stays tappable underneath, so try things as you go." },
-  { title: "1 · Add your party", target: ["party", "add"], body: "Your heroes go in first — fill in the Add your party box (name, AC, HP), or use + Add ▸ Player / ally up top. You can also save a whole party under ⋯ ▸ 👥 Edit parties and drop them in with one tap. But we'll drop in a premade party of three for now — tap Next." },
-  { title: "2 · Just the essentials", target: "party", body: "Only a name is required — that's enough for the app to track initiative and turns. Add AC and HP if you'd like it to track hits and damage, and a Spell save DC is recommended for casters so their save prompts fill in automatically. Everything else (passive Perception, DEX, and more under “Track more stats”) is there purely if you want it — fill in as much or as little as your table needs." },
-  { title: "3 · Your party", target: "roster", body: "There they are in the roster. Tap any card to expand its HP, AC, conditions and notes. Monsters and effects will slot in here too, sorted by initiative once combat starts." },
-  { title: "4 · Add some monsters", target: "add", gate: "monster", body: "Time for foes — give it a try. Tap + Add ▸ Monster from bestiary, search “Goblin”, and add a couple of Goblin Warriors. That's how you pull in any of 300+ SRD monsters — or your own custom ones. (Next unlocks once a monster's on the board.)" },
-  { title: "5 · Balance to your party ⚖", target: "more", body: "With monsters on the board, a ⚖ Balance encounter option appears — on a phone it's in the ⋯ menu. It scales the monsters' stats up or down to fit your party's size and level, so you can nudge a fight easier or nastier in one tap, then apply the changes." },
-  { title: "6 · Start combat", target: "start", body: "Tap ⚔ Start combat. Normally you'd punch in each hero's initiative as they call it out and the monsters roll their own — but for this tour we've set the order for you so it plays the same every time: the fighter leads. A round counter appears and the active turn lights up." },
-  { title: "7 · Take a turn — attack", target: ["active", "roster"], body: "Krusk the Fighter is up first — his card is lit at the top. Tap ⚔ Attack on his card to open the attack & damage picker, mark a HIT and enter the damage (your players roll their own dice; you just record it). Then tap ⏭ End turn: when a goblin comes up, tap its attack and pick a hero — the app rolls to hit and damage for you, and in this demo it always lands so you can watch the hit flourish. Prefer it faster? Skip the picker and just type damage into any HP box in the roster." },
-  { title: "8 · Want an easier pace? 🕯", target: "more", body: "Prefer rolling your own dice like at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes — initiative is entered by hand and monster attacks show as reference. Toggle it on or off any time." },
-  { title: "9 · Layer an effect", target: "add", body: "Open + Add ▸ Effect / lair actions to drop a spell effect like Bless, Hunter's Mark, or a torch. Effects ride along in initiative and nudge you each round until they run out — great for concentration spells and auras." },
-  { title: "10 · End the turn", target: "active", body: "When a creature is done, tap the red ⏭ End turn button at the bottom of its card to pass to the next combatant — or use Next ▶ in the bar at the top or bottom of the screen. Conditions and effects tick down on their own, concentration is tracked, and anyone Regenerating or dying is handled at the right moment." },
-  { title: "11 · Rest between fights", target: "rest", body: "Out of combat, tap 🌙 Rest to set HP — pre-filled to full for a long rest, or tap Short rest and type in each hero's hit-dice healing. Anyone who gains HP gets a little heal flourish." },
-  { title: "12 · Build dungeons 🗺", target: "more", body: "The ⋯ menu ▸ Dungeon Builder lets you map rooms on a hex grid — shapes, textures, encounters, loot, secret passages and level exits — then run them from a play panel below the roster. Tap 'Add sample dungeons' in there to try three ready-made ones. Dungeons are prepped and run between fights — the play panel isn't available during combat, so wrap up the current fight before opening one." },
-  { title: "You're ready! 🎉", body: "That's the whole tour. Clear & finish rolls the board back to how it was before, or keep it to keep experimenting. You can reopen this any time from the ⋯ menu." },
+  { key: "welcome", title: "Welcome — sit back and watch 🎓", body: "This is a quick guided show. I'll build a party, pull in monsters, and run a couple of turns of combat while you just tap Next to follow along — no fiddly taps required. Nothing here touches your real game: “Clear & finish” at the end puts the board back exactly how it was." },
+  { key: "party", act: "party", title: "1 · Your party", target: "roster", body: "First, the heroes. I've dropped a demo party into the roster — Krusk the Fighter, Mika the Cleric, and Ellywick the Wizard. At your table you'd add your own with + Add ▸ Player / ally, or load a saved party from ⋯ ▸ 👥 Edit parties. Tap any card to expand its HP, AC, conditions and notes." },
+  { key: "monsters", act: "monsters", title: "2 · Add monsters", target: "roster", body: "Now some foes. I've pulled two Goblin Warriors straight from the bestiary and dropped them in — that's + Add ▸ Monster from bestiary, where you can search 300+ SRD monsters or add your own. They slot into the roster, ready to fight." },
+  { key: "start", act: "start", title: "3 · Start combat", target: "roster", body: "Combat's on. I've set initiative so it plays the same every time — Krusk leads. A round counter shows up top and the active turn lights up gold. (At your table you'd just enter each hero's initiative as they call it; monsters roll their own.)" },
+  { key: "playerAttack", act: "playerAttack", title: "4 · A hero attacks", target: "roster", body: "It's Krusk's turn, so he swings at a goblin — watch its HP drop in the roster. Your players roll their own dice: you tap ⚔ Attack on the hero's card, mark HIT and enter the damage, and the app tracks the rest." },
+  { key: "monsterAttack", act: "monsterAttack", title: "5 · The monster strikes back", target: "roster", body: "Now it's a goblin's turn — and here's the good part: the app rolls the monster's attack and applies the damage for you. Watch it connect with Krusk. No flipping through statblocks mid-fight." },
+  { key: "oldschool", title: "6 · Prefer your own dice? 🕯", target: "more", body: "Like rolling everything at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, with monster attacks shown as reference. Toggle it on or off any time." },
+  { key: "clear", title: "7 · Wrap up & keep your party", target: "clear", body: "When a fight ends, tap Clear up top to reset the board for the next one. Your party isn't lost — save it under ⋯ ▸ 👥 Edit parties and drop it back in with one tap next session. (There's lots more to explore too: a dungeon builder, spell effects, and rests, all in the + Add and ⋯ menus.)" },
+  { key: "done", title: "That's the tour! 🎉", body: "“Clear & finish” rolls the board back to exactly how it was before the tour — or keep it to poke around. You can reopen this any time from the ⋯ menu." },
 ];
 function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
   const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
@@ -9569,10 +9566,11 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
     const measure = () => {
       setVp({ w: window.innerWidth, h: window.innerHeight });
       const rs = targets.map((t) => {
-        const el = document.querySelector(`[data-tut="${t}"]`);
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return r.width && r.height ? { x: r.left, y: r.top, w: r.width, h: r.height } : null;
+        // some controls exist twice (wide + narrow layouts); pick the VISIBLE one, else the spotlight
+        // lands on a hidden 0-size copy and the scrim ends up covering what we're pointing at.
+        const els = document.querySelectorAll(`[data-tut="${t}"]`);
+        for (const el of els) { const r = el.getBoundingClientRect(); if (r.width && r.height) return { x: r.left, y: r.top, w: r.width, h: r.height }; }
+        return null;
       }).filter(Boolean);
       setRects(rs);
     };
@@ -12212,10 +12210,10 @@ export default function App() {
   };
   const deleteGroup = async (name) => stDel(`dm5e:group:${name}`);
   // Drop a dungeon room's encounter (inline monsters + any saved-group reference) into the roster.
-  // Guided tour: load a demo party only (the DM adds monsters themselves during the tour). We snapshot
-  // the board on start so "Clear & finish" can restore whatever was there before — party, the monsters
-  // they added, and any combat state all revert cleanly.
+  // Guided show: the tour drives the demo itself (loads a party, pulls in goblins, starts combat, runs an
+  // attack). We snapshot the board on start so "Clear & finish" restores whatever was there before.
   const tutSnapRef = useRef(null);
+  const tutPlayedRef = useRef(new Set()); // one-shot actions already fired (so Back/Next doesn't repeat them)
   const loadTutorialDemo = () => mutate((d, L) => {
     if (d.combatants.some((c) => c._demo)) return;
     [
@@ -12225,30 +12223,46 @@ export default function App() {
     ].forEach((p) => d.combatants.push({ ...p, _demo: true }));
     L.push("🎓 Tutorial demo party loaded — three adventurers ready to fight.");
   });
-  const unloadTutorialDemo = () => mutate((d) => {
-    if (!d.combatants.some((c) => c._demo)) return;
-    d.combatants = d.combatants.filter((c) => !c._demo);
-    if (d.combatants.length === 0) { d.mode = "setup"; d.round = 0; d.activeUid = null; }
-  });
-  // escape hatch for the gated "add monsters" step — drops in two goblins so nobody gets stuck
   const tutAddGoblins = () => mutate((d, L) => {
+    if (d.combatants.some((c) => c._demo && c.type === "monster")) return;
     const gsb = fullBestiary().find((b) => b.name === "Goblin Warrior");
     if (!gsb) return;
     for (let i = 0; i < 2; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
-    L.push("🎓 Added two goblins for the tour.");
+    L.push("🎓 Pulled two Goblin Warriors from the bestiary.");
   });
-  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); setTutorial(0); }; // party drops in a few steps later
-  const TUT_PARTY_STEP = 3; // the premade party appears once the tour reaches the "Your party" step
-  const nextTutorialStep = () => {
-    const ns = Math.min(TUTORIAL_STEPS.length - 1, (tutorial ?? 0) + 1);
-    if (ns >= TUT_PARTY_STEP) loadTutorialDemo(); // idempotent — only loads once
-    setTutorial(ns);
+  // Demo attacks: the hero swing is recorded like a real player attack; the goblin's is auto-rolled (rigged to land).
+  const doTutPlayerAttack = () => {
+    const cs = stateRef.current.combatants;
+    const hero = cs.find((c) => c._demo && c.type === "player" && !c.dead);
+    const goblin = cs.find((c) => c._demo && c.type === "monster" && !c.dead);
+    if (hero && goblin) { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* ignore */ } api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }
   };
-  const prevTutorialStep = () => {
-    const ns = Math.max(0, (tutorial ?? 0) - 1);
-    if (ns < TUT_PARTY_STEP) unloadTutorialDemo(); // stepping back before the party arrives un-adds it
-    setTutorial(ns);
+  const doTutMonsterAttack = () => {
+    const cs = stateRef.current.combatants;
+    const goblin = cs.find((c) => c._demo && c.type === "monster" && !c.dead);
+    const hero = cs.find((c) => c._demo && c.type === "player" && !c.dead);
+    if (!goblin || !hero) return;
+    const ai = Math.max(0, (goblin.actions || []).findIndex((a) => a && a.hit != null));
+    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* ignore */ }
+    next(); // advance the turn so a goblin is active, then it strikes
+    setTimeout(() => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }), 550);
   };
+  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); tutPlayedRef.current = new Set(); setTutorial(0); };
+  const nextTutorialStep = () => setTutorial((t) => Math.min(TUTORIAL_STEPS.length - 1, (t ?? 0) + 1));
+  const prevTutorialStep = () => setTutorial((t) => Math.max(0, (t ?? 0) - 1));
+  // Fire each step's scripted action once, when the tour reaches it.
+  useEffect(() => {
+    if (tutorial == null) return;
+    const act = TUTORIAL_STEPS[tutorial]?.act;
+    if (!act) return;
+    if (act === "party") return loadTutorialDemo();     // idempotent
+    if (act === "monsters") return tutAddGoblins();      // idempotent
+    if (tutPlayedRef.current.has(act)) return;           // one-shots fire once
+    tutPlayedRef.current.add(act);
+    if (act === "start") startCombat();
+    else if (act === "playerAttack") doTutPlayerAttack();
+    else if (act === "monsterAttack") doTutMonsterAttack();
+  }, [tutorial]); // eslint-disable-line react-hooks/exhaustive-deps
   const endTutorial = (clear) => {
     setTutorial(null);
     if (clear && tutSnapRef.current) setState(tutSnapRef.current); // roll the board back to before the tour
@@ -12407,7 +12421,7 @@ export default function App() {
           )}
           <button className="btn small ghost" onClick={() => setModal({ type: "slots" })}>Saves</button>
           <span className="menu-anchor">
-            <button className="btn small ghost" onClick={() => { setClearMenu(!clearMenu); setAddMenu(false); }}>Clear</button>
+            <button className="btn small ghost" data-tut="clear" onClick={() => { setClearMenu(!clearMenu); setAddMenu(false); }}>Clear</button>
             {clearMenu && (
               <div className="menu" onClick={() => setClearMenu(false)}>
                 {state.combatants.some((c) => c.side === "ally") && (
@@ -12421,7 +12435,7 @@ export default function App() {
         </span>
         <span className="hdr-narrow">
           <span className="menu-anchor">
-            <button className="btn small ghost" onClick={() => { setClearMenu(!clearMenu); setMoreMenu(false); setAddMenu(false); }}>Clear</button>
+            <button className="btn small ghost" data-tut="clear" onClick={() => { setClearMenu(!clearMenu); setMoreMenu(false); setAddMenu(false); }}>Clear</button>
             {clearMenu && (
               <div className="menu" onClick={() => setClearMenu(false)}>
                 {state.combatants.some((c) => c.side === "ally") && (
