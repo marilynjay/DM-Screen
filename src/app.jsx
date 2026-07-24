@@ -322,6 +322,7 @@ input[type=number]{width:64px}
 .tut-title{flex:1;font-family:var(--disp);font-weight:700;color:var(--gold);font-size:15px}
 .tut-x{background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
 .tut-body{font-size:13px;line-height:1.42;color:var(--text)}
+.tut-playing{font-size:11px;color:var(--gold);margin-top:6px;letter-spacing:.04em}
 .tut-dots{display:flex;gap:5px;justify-content:center;margin:9px 0 8px}
 .tut-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
 .tut-dot.on{background:var(--gold)}
@@ -5632,12 +5633,25 @@ const partyLabel = (p, i) => (p.name && String(p.name).trim()) || (p.teamName &&
    party button, which expands into a list with one-tap Load and an edit link
    that prefills the grid. Adding from a blank grid creates a NEW remembered
    party; adding after "edit" updates that one. */
-function PartySetupCard({ parties, onPick, onAdd, onSave }) {
+function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
   const [rows, setRows] = useState([{ ...PARTY_BLANK_ROW }]);
   const [level, setLevel] = useState("");
   const [teamName, setTeamName] = useState("");
   const [loadOpen, setLoadOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  /* Guided tour: the tour types into this card for real, because this is the path that *remembers* a
+     party for next session — + Add ▸ Player / ally only drops someone on tonight's board. */
+  const demoName = demo?.teamName, demoLevel = demo?.level, demoFill = demo?.fill, demoLoad = demo?.loadOpen;
+  useEffect(() => {
+    if (!demo) return;
+    if (demoName != null) setTeamName(demoName);
+    if (demoLevel != null) setLevel(demoLevel);
+    if (demoLoad != null) setLoadOpen(!!demoLoad);
+    if (demoFill != null && Array.isArray(demo.members)) {
+      const filled = demo.members.slice(0, demoFill).map((m) => ({ ...PARTY_BLANK_ROW, ...m }));
+      setRows(filled.length ? [...filled, { ...PARTY_BLANK_ROW }] : [{ ...PARTY_BLANK_ROW }]);
+    }
+  }, [demoName, demoLevel, demoFill, demoLoad]); // eslint-disable-line react-hooks/exhaustive-deps
   const going = rows.filter((r) => r.name.trim() && r.here);
   const editingParty = editingId ? parties.find((p) => p.id === editingId) : null;
   const resetBlank = () => { setRows([{ ...PARTY_BLANK_ROW }]); setLevel(""); setTeamName(""); setEditingId(null); };
@@ -5678,7 +5692,7 @@ function PartySetupCard({ parties, onPick, onAdd, onSave }) {
       </div>
       <div className="frow" style={{ justifyContent: "flex-end" }}>
         {editingParty ? <button className="btn" onClick={resetBlank}>Cancel edit</button> : null}
-        <button className="btn primary" disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
+        <button className={`btn primary ${demo?.press === "add" ? "demo-press" : ""}`} disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
       </div>
     </div>
   );
@@ -9638,10 +9652,10 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   );
 }
 
-// A quick guided tour. Narration only — it loads a demo scenario and walks the DM through the real UI,
-// which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
-// A guided *show*: each step's `act` fires an action automatically when you reach it (load the party,
-// add goblins, start combat, run an attack), so the tour drives the demo and the DM just taps Next.
+/* A guided show. Each step reads first and plays second: the card explains what is about to happen and
+   waits, the primary button says "▶ Show me", and tapping it runs that step's scripted sequence against
+   the app's real dialogues. When the sequence finishes the button becomes "Next ▶". Nobody has to read
+   and watch at the same time, and nothing moves until the DM asks for it. */
 // The demo encounter, shared by the guided tour and the playable "demo fight" so the two never drift.
 const TUT_HEROES = [
   { name: "Bram · Fighter", ac: 17, hp: 28, dex: 1 },
@@ -9649,18 +9663,22 @@ const TUT_HEROES = [
   { name: "Wren · Wizard", ac: 12, hp: 18, dex: 3, spellDC: 13 },
 ];
 const TUT_MONSTER = "Goblin Warrior", TUT_MONSTER_N = 2;
+const TUT_PARTY_NAME = "Tutorial Party";
 const TUTORIAL_STEPS = [
-  { key: "welcome", title: "Welcome — sit back and watch 🎓", body: "This is a quick guided show. I'll build a party, pull in monsters, and run a couple of turns of combat while you just tap Next to follow along — no fiddly taps required. Nothing here touches your real game: “Clear & finish” at the end puts the board back exactly how it was." },
-  { key: "party", act: "party", title: "1 · Your party", target: ["add", "roster"], body: "First, the heroes. Watch — I'll tap + Add ▸ Player / ally and fill in Bram the Fighter: name, AC, and HP. That's all a character needs; the app tracks their damage from there. I'll drop Mika and Wren in behind him so we're not filling the same form three times." },
-  { key: "monsters", act: "monsters", title: "2 · Add monsters", target: ["add", "roster"], body: "Now some foes, the same way: + Add ▸ Monster from bestiary. I'll search for “goblin”, pick the Goblin Warrior out of the results, and add two of them. That's 300+ SRD monsters to search — full statblocks, no book required." },
-  { key: "start", act: "start", title: "3 · Roll initiative", target: ["active", "roster"], body: "The app rolls the monsters itself. For the heroes you get this dialogue — type each initiative as your players call it out, then Start combat. (I'm using fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
-  { key: "playerAttack", act: "playerAttack", title: "4 · A hero attacks", target: ["active", "roster"], body: "Bram is up. Your players roll their own dice, so you just record the result: tap ⚔ Attack, pick the target, say whether it hit, and type the damage. Watch the goblin's HP drop in the roster." },
-  { key: "monsterAttack", act: "monsterAttack", title: "5 · The monster strikes back", target: ["active", "roster"], body: "Now it's a goblin's turn — and here's the good part: the app rolls the monster's attack and applies the damage for you. Watch it connect with Bram. No flipping through statblocks mid-fight." },
-  { key: "oldschool", act: "more", title: "6 · Prefer your own dice? 🕯", target: ["oldschool", "more"], body: "Like rolling everything at the table? It's right here — 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, with monster attacks shown as reference. Toggle it on or off any time. (Have a look at what else lives in this menu while it's open.)" },
-  { key: "clear", act: "clear", title: "7 · Wrap up & keep your party", target: ["clear", "clearmenu"], body: "When a fight ends, tap Clear. “End combat (keep party)” clears the monsters but leaves your heroes standing, ready for the next fight. Your party isn't lost either — save it under ⋯ ▸ 👥 Edit parties and drop it back in with one tap next session." },
-  { key: "done", title: "That's the tour! 🎉", body: "“Clear & finish” rolls the board back to exactly how it was before the tour — or keep it to poke around. You can reopen this any time from the ⋯ menu." },
+  { key: "welcome", title: "Welcome — sit back and watch \ud83c\udf93", body: "A quick guided show. Every step explains itself first, then you tap \u201cShow me\u201d and watch it happen for real \u2014 no reading and watching at the same time. Nothing here touches your game: \u201cClear & finish\u201d at the end puts everything back." },
+  { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Player / ally is for a guest or a summoned ally \u2014 it drops someone on the board without saving them.)" },
+  { key: "monsters", act: "monsters", title: "2 \u00b7 Add monsters", target: ["add", "roster"], body: "Now the foes: \uff0b Add \u25b8 Monster from bestiary. Watch me search for \u201cgoblin\u201d, pick the Goblin Warrior out of the results, and add two. That\u2019s 300+ SRD monsters with full statblocks \u2014 no book required." },
+  { key: "start", act: "start", title: "3 \u00b7 Roll initiative", target: ["active", "roster"], body: "The app rolls the monsters itself. For your heroes you get this dialogue \u2014 type each initiative as the table calls it out, then Start combat. (I use fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
+  { key: "playerAttack", act: "playerAttack", title: "4 \u00b7 A hero attacks", target: ["active", "roster"], body: "Bram is up. Your players roll their own dice, so you just record what happened: tap \u2694 Attack, pick the target, say whether it hit, type the damage. Watch the goblin\u2019s HP drop in the roster." },
+  { key: "monsterAttack", act: "monsterAttack", title: "5 \u00b7 The monster strikes back", target: ["active", "roster"], body: "Now a goblin\u2019s turn \u2014 and here\u2019s the good part: the app rolls the monster\u2019s attack and applies the damage for you. No flipping through statblocks mid-fight." },
+  { key: "oldschool", act: "more", title: "6 \u00b7 Prefer your own dice? \ud83d\udd6f", body: "Like rolling everything yourself? Open the \u22ef menu and you\u2019ll find \ud83d\udd6f Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, showing monster attacks as reference. Toggle it any time.", target: ["oldschool", "more"] },
+  { key: "clear", act: "clear", title: "7 \u00b7 Wrap up", target: ["clear", "clearmenu"], body: "When a fight ends, tap Clear. \u201cEnd combat (keep party)\u201d clears the monsters and leaves your heroes standing, ready for the next one. Your saved party is untouched either way \u2014 reload it any time from the party card or \u22ef \u25b8 \ud83d\udc65 Edit parties." },
+  { key: "done", title: "That\u2019s the tour! \ud83c\udf89", body: "\u201cClear & finish\u201d puts the board back exactly as it was and removes the \u201cTutorial Party\u201d I saved \u2014 or keep it all and poke around. You can reopen this any time from the \u22ef menu." },
 ];
-function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto, restoreOnly }) {
+/* phase: "ready" (this step has a sequence waiting — button offers "Show me"), "playing" (running,
+   button is inert), or "done" (nothing left to watch — button advances). Steps with no sequence are
+   always "done". */
+function TutorialCard({ step, onBack, onNext, onSkip, onFinish, onPlay, phase, restoreOnly }) {
   const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
   return (
     <div className="tut-card">
@@ -9670,24 +9688,24 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, ga
         <button className="tut-x" title="Close the tour" onClick={onSkip}>✕</button>
       </div>
       <div className="tut-body">{s.body}</div>
-      {nextDisabled && gateHint && (
-        <div className="frow" style={{ alignItems: "center", gap: 8, marginTop: 6 }}>
-          <span className="ad" style={{ fontSize: 12, color: "var(--gold)" }}>⤷ {gateHint}</span>
-          {onAuto && <button className="btn tiny ghost" style={{ marginLeft: "auto" }} onClick={onAuto}>add them for me</button>}
-        </div>
-      )}
+      {phase === "playing" && <div className="tut-playing">▶ playing…</div>}
       <div className="tut-dots">{TUTORIAL_STEPS.map((_, i) => <span key={i} className={`tut-dot ${i === step ? "on" : ""}`} />)}</div>
       <div className="tut-actions">
-        <button className="btn small ghost" disabled={step === 0} onClick={onBack}>◀ Back</button>
+        <button className="btn small ghost" disabled={step === 0 || phase === "playing"} onClick={onBack}>◀ Back</button>
         <span style={{ flex: 1 }} />
-        {last ? (restoreOnly ? (
+        {phase === "ready" || phase === "playing" ? (<>
+          <button className="btn small ghost" disabled={phase === "playing"} onClick={onSkip}>Skip</button>
+          <button className="btn small primary" disabled={phase === "playing"} onClick={onPlay}>
+            {phase === "playing" ? "▶ Playing…" : "▶ Show me"}
+          </button>
+        </>) : last ? (restoreOnly ? (
           <button className="btn small primary" onClick={() => onFinish(true)}>Finish &amp; restore my roster</button>
         ) : (<>
           <button className="btn small ghost" onClick={() => onFinish(false)}>Keep demo</button>
           <button className="btn small primary" onClick={() => onFinish(true)}>Clear &amp; finish</button>
         </>)) : (<>
           <button className="btn small ghost" onClick={onSkip}>Skip</button>
-          <button className="btn small primary" disabled={nextDisabled} onClick={onNext}>Next ▶</button>
+          <button className="btn small primary" onClick={onNext}>Next ▶</button>
         </>)}
       </div>
     </div>
@@ -9698,7 +9716,7 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, ga
 // element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
 // so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
-function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto, restoreOnly }) {
+function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, onPlay, phase, restoreOnly }) {
   const s = TUTORIAL_STEPS[step];
   const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
   const [rects, setRects] = useState([]);
@@ -9724,7 +9742,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
-  if (suppressed) return <><div className="tut-block" onClickCapture={(e) => e.stopPropagation()} /><TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} /></>;
+  if (suppressed) return <><div className="tut-block" onClickCapture={(e) => e.stopPropagation()} /><TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} onPlay={onPlay} phase={phase} restoreOnly={restoreOnly} /></>;
   return (
     <>
       <div className="tut-block" onClickCapture={(e) => e.stopPropagation()} />
@@ -9741,7 +9759,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
         </svg>
       )}
       {arrow && <div className="tut-arrow" style={{ left: arrow.left, top: arrow.top }}>▲</div>}
-      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} />
+      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} onPlay={onPlay} phase={phase} restoreOnly={restoreOnly} />
     </>
   );
 }
@@ -12415,43 +12433,43 @@ export default function App() {
      about them. Leaving a step cancels whatever it still had queued. */
   const tutTimersRef = useRef([]);
   const tutStop = () => { tutTimersRef.current.forEach(clearTimeout); tutTimersRef.current = []; };
-  const tutPlay = (cues) => {
-    tutStop();
-    cues.forEach(([ms, fn]) => tutTimersRef.current.push(setTimeout(fn, ms)));
-  };
-  // patch the live demo modal's script (the modal reads it as a prop and mirrors it into its own state)
+  // patch the live demo dialogue's script (each dialogue reads it as a prop and mirrors it into its state)
   const tutDemo = (type, patch) => setModal((m) => (m && m.type === type ? { ...m, demo: { ...m.demo, ...patch } } : m));
   const tutTop = () => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* ignore */ } };
+  const [partyDemo, setPartyDemo] = useState(null); // scripts the party card during the tour
+  const tutPartyIdRef = useRef(null);               // the party the tour saved, so finishing can remove it
 
-  /* Step 1 — build the party the way a DM would: + Add ▸ Player / ally, fill the form, Add. */
-  const tutScriptParty = () => {
-    if (stateRef.current.combatants.some((c) => c._demo)) return; // already built (stepping Back)
-    const h = TUT_HEROES[0];
-    tutPlay([
-      [250, () => { tutTop(); setAddMenu(true); }],
-      [1500, () => {
-        setAddMenu(false);
-        setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp(""); setPDex("");
-        setModal({ type: "player", demo: {} });
+  /* Step 1 — the party card, because this is the path that REMEMBERS a party. + Add ▸ Player / ally
+     only puts someone on tonight's board, so teaching that as the way to build a party teaches the
+     wrong habit. The tour fills this in and presses Add party for real, which both saves the group
+     and puts it on screen; "Clear & finish" deletes the party it saved. */
+  const partyCues = () => {
+    if (stateRef.current.combatants.some((c) => c._demo)) return [];
+    const members = TUT_HEROES.map((h) => ({ name: h.name, ac: String(h.ac), hp: String(h.hp), here: true, dex: String(h.dex ?? ""), spellDC: h.spellDC ? String(h.spellDC) : "" }));
+    const cues = [
+      [200, () => { tutTop(); setPartyDemo({ members, teamName: "", level: "", fill: 0 }); }],
+      [900, () => setPartyDemo((d) => ({ ...d, teamName: TUT_PARTY_NAME }))],
+      [1600, () => setPartyDemo((d) => ({ ...d, level: "3" }))],
+    ];
+    members.forEach((_, i) => cues.push([2300 + i * 800, () => setPartyDemo((d) => ({ ...d, fill: i + 1 }))]));
+    cues.push(
+      [4900, () => setPartyDemo((d) => ({ ...d, press: "add" }))],
+      [5500, () => {
+        const roster = partyRosterOf(TUT_PARTY_NAME, "3", members);
+        tutPartyIdRef.current = newUid();
+        savePartyRoster(roster, tutPartyIdRef.current);   // remembered for next session…
+        addPartyNow(roster.members, roster.level);        // …and on the board tonight
+        setPartyDemo(null);
       }],
-      [2200, () => setPName(h.name)],
-      [2900, () => setPAc(String(h.ac))],
-      [3400, () => setPHp(String(h.hp))],
-      [4200, () => tutDemo("player", { press: "add" })],
-      [4700, () => {
-        setModal(null);
-        mutate((d, L) => { d.combatants.push({ ...makePlayer(h), _demo: true }); L.push(`Added <b>${h.name}</b> (AC ${h.ac}, ${h.hp} HP tracked)`); });
-      }],
-      [5900, () => mutate((d, L) => { // the other two, so we're not watching the same form three times
-        TUT_HEROES.slice(1).forEach((x) => d.combatants.push({ ...makePlayer(x), _demo: true }));
-        L.push("🎓 …and the rest of the party.");
-      })],
-    ]);
+      // flag them so the rest of the tour (fixed initiative, the rigged monster hit) can find them
+      [6100, () => mutate((d) => d.combatants.forEach((c) => { if (c.type === "player") c._demo = true; }))],
+    );
+    return cues;
   };
 
-  /* Step 2 — the requested show: + Add ▸ Monster from bestiary, search, pick, Add. */
-  const tutScriptMonsters = () => {
-    if (stateRef.current.combatants.some((c) => c._demo && c.type === "monster")) return;
+  /* Step 2 — ＋ Add ▸ Monster from bestiary: search, pick the result, press Add. */
+  const monsterCues = () => {
+    if (stateRef.current.combatants.some((c) => c._demo && c.type === "monster")) return [];
     const typed = "goblin";
     const cues = [
       [250, () => { tutTop(); setAddMenu(true); }],
@@ -12464,14 +12482,14 @@ export default function App() {
       [5500, () => tutDemo("bestiary", { press: "add" })],        // press Add ×2
       [6000, () => { setModal(null); tutAddGoblins(); }],
     );
-    tutPlay(cues);
+    return cues;
   };
 
   /* Step 3 — the app rolls the monsters, then the real Roll initiative dialogue gets filled in. */
-  const tutScriptStart = () => {
-    if (stateRef.current.mode === "combat") return;
+  const startCues = () => {
+    if (stateRef.current.mode === "combat") return [];
     const heroInits = [20, 12, 4];
-    tutPlay([
+    return [
       [200, () => { tutTop(); startCombat(); }], // fixes the goblins' initiative, leaves the heroes blank
       [900, () => setModal({ type: "roll-init", demo: {} })],
       ...heroInits.map((v, i) => [1700 + i * 850, () => setModal((m) => {
@@ -12482,16 +12500,16 @@ export default function App() {
       })]),
       [4500, () => tutDemo("roll-init", { press: "start" })],
       [5000, () => tutDemo("roll-init", { go: true })],
-    ]);
+    ];
   };
 
   /* Step 4 — the hero's attack, walked through the ⚔ Attack dialogue the DM actually uses. */
-  const tutScriptPlayerAttack = () => {
+  const playerAttackCues = () => {
     const cs = stateRef.current.combatants;
     const hero = cs.find((c) => c._demo && c.type === "player" && !c.dead);
     const goblin = cs.find((c) => c._demo && c.type === "monster" && !c.dead);
-    if (!hero || !goblin) return;
-    tutPlay([
+    if (!hero || !goblin) return [];
+    return [
       [200, () => { tutTop(); setModal({ type: "player-attack", uid: hero.uid, demo: {} }); }],
       [1400, () => tutDemo("player-attack", { pick: goblin.uid, press: "target" })],  // choose the goblin
       [2000, () => tutDemo("player-attack", { phase: "resolve", press: null })],       // hit or miss?
@@ -12501,24 +12519,50 @@ export default function App() {
       [5400, () => tutDemo("player-attack", { dtype: "slashing" })],
       [5900, () => tutDemo("player-attack", { press: "apply" })],
       [6400, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
-    ]);
+    ];
   };
 
-  /* Steps 6 & 7 — open the menu being talked about so the DM sees where the option lives. */
-  const tutScriptMenu = (which) => tutPlay([[350, () => {
-    tutTop();
-    setMoreMenu(which === "more"); setClearMenu(which === "clear"); setAddMenu(false);
-  }]]);
-
-  const doTutMonsterAttack = () => {
+  /* Step 5 — the goblin's turn, rolled and applied by the app. */
+  const monsterAttackCues = () => {
     const cs = stateRef.current.combatants;
     const goblin = cs.find((c) => c._demo && c.type === "monster" && !c.dead);
     const hero = cs.find((c) => c._demo && c.type === "player" && !c.dead);
-    if (!goblin || !hero) return;
+    if (!goblin || !hero) return [];
     const ai = Math.max(0, (goblin.actions || []).findIndex((a) => a && a.hit != null));
-    try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* ignore */ }
-    next(); // advance the turn so a goblin is active, then it strikes
-    setTimeout(() => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }), 550);
+    return [
+      [200, () => { tutTop(); next(); }], // advance the turn so a goblin is active…
+      [750, () => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid })], // …then it strikes
+    ];
+  };
+
+  /* Steps 6 & 7 — open the menu being talked about so the DM sees where the option lives. */
+  const menuCues = (which) => [[300, () => {
+    tutTop();
+    setMoreMenu(which === "more"); setClearMenu(which === "clear"); setAddMenu(false);
+  }]];
+
+  const cuesFor = (act) => {
+    if (act === "party") return partyCues();
+    if (act === "monsters") return monsterCues();
+    if (act === "start") return startCues();
+    if (act === "playerAttack") return playerAttackCues();
+    if (act === "monsterAttack") return monsterAttackCues();
+    if (act === "more" || act === "clear") return menuCues(act);
+    return [];
+  };
+  /* "Show me" — run this step's sequence, then hand the button back as Next. Read first, watch second:
+     nobody can take in the narration and the animation at the same time. */
+  const [tutPhase, setTutPhase] = useState("done"); // ready | playing | done
+  const playTutorialStep = () => {
+    const act = TUTORIAL_STEPS[tutorial]?.act;
+    const cues = act ? cuesFor(act) : [];
+    if (!cues.length) { setTutPhase("done"); return; }
+    tutPlayedRef.current.add(act);
+    setTutPhase("playing");
+    tutStop();
+    cues.forEach(([ms, fn]) => tutTimersRef.current.push(setTimeout(fn, ms)));
+    const last = cues.reduce((m, [ms]) => Math.max(m, ms), 0);
+    tutTimersRef.current.push(setTimeout(() => setTutPhase("done"), last + 900));
   };
   const startTutorial = () => {
     setModal(null);
@@ -12526,6 +12570,9 @@ export default function App() {
     tutSnapRef.current = snap;
     tutHadRosterRef.current = (snap.combatants || []).some((c) => c.type !== "effect");
     tutPlayedRef.current = new Set();
+    tutPartyIdRef.current = null;
+    setPartyDemo(null);
+    setTutPhase("done"); // the welcome step has nothing to play
     // wipe the board so the guided show always runs on a clean slate; the snapshot restores it on exit/finish
     setState((prev) => ({ ...prev, combatants: [], mode: "setup", round: 0, activeUid: null, startSnap: null, log: [] }));
     setTutorial(0);
@@ -12537,20 +12584,18 @@ export default function App() {
     document.body.classList.toggle("tut-on", tutorial != null);
     return () => document.body.classList.remove("tut-on");
   }, [tutorial]);
-  // Play each step's script when the tour reaches it; leaving the step cancels anything still queued
-  // and closes whatever that script had opened, so Back/Next can never strand a dialogue or menu.
+  /* Arriving at a step ARMS it rather than playing it — the DM reads, then taps "Show me". A step whose
+     sequence has already run (or that has none) goes straight to "done" so the button reads Next.
+     Leaving cancels anything still queued and closes whatever the script opened, so Back/Next/Skip can
+     never strand a dialogue, a menu, or a stale cue. */
   useEffect(() => {
     if (tutorial == null) return;
     const act = TUTORIAL_STEPS[tutorial]?.act;
-    if (act === "party") tutScriptParty();
-    else if (act === "monsters") tutScriptMonsters();
-    else if (act === "start") tutScriptStart();
-    else if (act === "playerAttack") { if (!tutPlayedRef.current.has(act)) { tutPlayedRef.current.add(act); tutScriptPlayerAttack(); } }
-    else if (act === "monsterAttack") { if (!tutPlayedRef.current.has(act)) { tutPlayedRef.current.add(act); doTutMonsterAttack(); } }
-    else if (act === "more" || act === "clear") tutScriptMenu(act);
+    setTutPhase(!act || tutPlayedRef.current.has(act) ? "done" : "ready");
     return () => {
       tutStop();
       setAddMenu(false); setMoreMenu(false); setClearMenu(false);
+      setPartyDemo(null);
       setModal((m) => (m && m.demo ? null : m)); // only ever closes a dialogue the tour itself opened
     };
   }, [tutorial]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -12566,6 +12611,14 @@ export default function App() {
       // started empty and they chose "Keep demo": promote the demo combatants to ordinary ones
       setState((prev) => ({ ...prev, combatants: prev.combatants.map((c) => { const { _demo, ...rest } = c; return rest; }) }));
     }
+    // The tour saves a real party (that's the point of step 1) — so clearing has to take it back out,
+    // or every run of the tutorial leaves another "Tutorial Party" behind.
+    if (clear && tutPartyIdRef.current) {
+      const id = tutPartyIdRef.current;
+      savePartiesAll(partiesRef.current.filter((x) => x.id !== id), activePartyId === id ? null : activePartyId);
+    }
+    tutPartyIdRef.current = null;
+    setPartyDemo(null);
     tutSnapRef.current = null;
     tutHadRosterRef.current = false;
   };
@@ -12847,7 +12900,6 @@ export default function App() {
 
       <div className="main" style={{ flex: "1 0 auto", paddingTop: toasts.length ? Math.min(12 + toasts.length * 44, 108) : undefined, transition: "padding-top .3s ease" }}>
         {tutorial != null && (() => {
-          const gateUnmet = TUTORIAL_STEPS[tutorial]?.gate === "monster" && !state.combatants.some((c) => c.type === "monster");
           // a dialogue brings its own backdrop, so drop the scrim rather than double-dimming. Menus keep
           // the scrim — the tour opens them deliberately and spotlights the item it's talking about.
           const suppressed = !!(modal || spellBook);
@@ -12855,9 +12907,8 @@ export default function App() {
             <TutorialOverlay step={tutorial} suppressed={suppressed}
               onBack={prevTutorialStep}
               onNext={nextTutorialStep}
-              nextDisabled={gateUnmet}
-              gateHint={gateUnmet ? "Add a monster to continue" : null}
-              onAuto={gateUnmet ? tutAddGoblins : null}
+              onPlay={playTutorialStep}
+              phase={tutPhase}
               restoreOnly={tutHadRosterRef.current}
               onSkip={() => endTutorial(true)} onFinish={endTutorial} />
           );
@@ -12884,7 +12935,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <div data-tut="party"><PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} /></div>
+          <div data-tut="party"><PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} demo={partyDemo} /></div>
         )}
 
         {legendaryWatch.map((c) => (
