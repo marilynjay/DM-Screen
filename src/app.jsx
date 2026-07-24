@@ -6848,7 +6848,7 @@ function SocialRollModal({ c, players = [], partyLevel, onClose }) {
 }
 
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
-function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, editNpcId }) {
+function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onBoardIds = [], editNpcId }) {
   const [tab, setTab] = useState("npcs");
   const [draft, setDraft] = useState(null); // entry being edited: { tab, id|null, name, tag, sections, loc, parent }
   const [nameLock, setNameLock] = useState(false); // lock the NPC name so the 🎲 button can't wipe a chosen one
@@ -6874,6 +6874,18 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
   const draftInitRef = useRef("");
   const openDraft = (d) => { draftInitRef.current = JSON.stringify(d); setDraft(d); };
   const draftDirty = () => !!draft && JSON.stringify(draft) !== draftInitRef.current;
+  /* Copy an NPC into a brand-new entry, then open it for editing. An entry is one person, so this is
+     how you make the evil twin: their own row, their own HP, their own standing with the party. The
+     copy starts with no approval history and not deceased — it hasn't met anyone yet. */
+  const duplicateNpc = (e) => {
+    const copy = JSON.parse(JSON.stringify(e));
+    copy.id = newUid();
+    copy.name = `${(e.name || "NPC").trim()} (twin)`;
+    delete copy.approval; delete copy.deceased;
+    (copy.sections || []).forEach((sc) => { sc.id = newUid(); });
+    commitTab("npcs", [...get("npcs"), copy]);
+    startEdit(copy, "npcs");
+  };
   const startNew = (forTab = tab) => { setNewLoc(null); setNameLock(false); openDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], look: blankLook() }); };
   const startEdit = (e, forTab = tab) => { setNewLoc(null); setNameLock(!!(e.name || "").trim()); openDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "", look: e.look ? { ...blankLook(), ...e.look } : blankLook() }); };
   // Opened from a board NPC's "Edit in Notebook" — jump straight to that NPC's editor.
@@ -6934,7 +6946,10 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
           {rowTab === "npcs" && hasLook(e.look) && <span style={{ flex: "none", marginRight: 4, lineHeight: 0 }}><NpcPortrait look={e.look} size={26} /></span>}
           <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
-          {rowTab === "npcs" && onAddToBoard && <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>}
+          {rowTab === "npcs" && onAddToBoard && (onBoardIds.includes(e.id)
+            ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)", flex: "none" }} title="This NPC is already on the encounter board — an entry is one person, so it gets one row. Use ⧉ to make a separate NPC for a twin or a double.">✓ on board</span>
+            : <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>)}
+          {rowTab === "npcs" && <button className="btn small ghost" title="Duplicate — a separate NPC with the same look and stats, for a twin, a double, or a whole family" onClick={() => duplicateNpc(e)}>⧉</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
         </div>
@@ -10598,24 +10613,18 @@ export default function App() {
     const nb = p?.notebook; if (!nb || !Array.isArray(nb.npcs)) return;
     const byId = {}; nb.npcs.forEach((n) => { byId[n.id] = n; });
     let changed = false, npcs = nb.npcs;
-    const linked = state.combatants.filter((c) => c.npcId && byId[c.npcId]);
-    // An NPC can be on the board more than once (a double, an illusion). Deciding "deceased" per copy
-    // let the last one visited win, so killing one of two marked the entry dead while the other stood
-    // there alive. The entry is only deceased once every copy of them is.
-    const allDeadById = {};
-    linked.forEach((c) => { allDeadById[c.npcId] = (allDeadById[c.npcId] ?? true) && !!c.dead; });
+    // One row per entry decides — adding an NPC twice is refused now, but a board saved before that
+    // guard existed could still hold two, and letting both write back means last-one-wins corruption.
     const seen = new Set();
-    linked.forEach((c) => {
+    state.combatants.forEach((c) => {
+      if (!c.npcId || !byId[c.npcId] || seen.has(c.npcId)) return;
+      seen.add(c.npcId);
       const stored = byId[c.npcId];
       const patch = {};
       const bag = c.loot || [];
-      // only the first copy owns the bag — otherwise two rows fight over one inventory
-      if (!seen.has(c.npcId)) {
-        seen.add(c.npcId);
-        if (JSON.stringify(stored.loot || []) !== JSON.stringify(bag)) patch.loot = bag;
-        const dead = allDeadById[c.npcId];
-        if (!!stored.deceased !== dead) patch.deceased = dead;
-      }
+      if (JSON.stringify(stored.loot || []) !== JSON.stringify(bag)) patch.loot = bag;
+      // die in battle → mark deceased in the notebook; revive on the board → clear it
+      if (!!stored.deceased !== !!c.dead) patch.deceased = !!c.dead;
       if (Object.keys(patch).length) { changed = true; npcs = npcs.map((n) => (n.id === c.npcId ? { ...n, ...patch } : n)); }
     });
     if (changed) saveNotebook({ ...nb, npcs });
@@ -11637,13 +11646,18 @@ export default function App() {
     // Drop a notebook NPC onto the board — neutral by default, or whatever it was set to last time.
     addNpcToBoard: (npc) => {
       const side = npc.lastSide || "neutral";
+      /* A notebook entry is one person, so it gets at most one row. Two copies would share an entry —
+         one HP bar, one bag, one approval tally, one deceased flag — and whichever the write-back
+         reached last would win, so killing one marked the other dead. An evil twin is a different
+         person: give them their own entry (the notebook row's ⧉ makes a copy to edit). */
+      const already = stateRef.current.combatants.find((x) => x.npcId === npc.id);
+      if (already) {
+        pushToasts([{ kind: "bad", text: `${already.name} is already on the board.` }]);
+        setRowFlash({ uid: already.uid, text: `${already.name} — already here`, id: Math.random() });
+        return;
+      }
       mutate((d, L, T) => {
-        /* Passing an explicit name skips autoName, so adding the same NPC twice gave two rows both
-           called "Duke Varro" sharing one npcId — and the notebook write-back then applied whichever
-           copy it reached last, so killing one marked the other dead. Number the second copy the way
-           monsters are numbered, and only the first keeps the notebook link. */
-        const dupes = d.combatants.filter((x) => x.npcId === npc.id).length;
-        const c = makeMonster(npcToSb(npc), d, { side, name: dupes ? `${npc.name} ${dupes + 1}` : npc.name });
+        const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
         c.npc = true; c.npcTag = npc.tag || ""; c.npcId = npc.id;
         if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
         if (npc.deceased) { c.dead = true; c.hp = 0; } // stays dead until the DM revives it here
@@ -13391,7 +13405,8 @@ export default function App() {
         <PartyInventoryModal party={activeRoster} onMove={api.partyInvMove} onRemove={api.partyInvRemove} onClose={() => setModal(null)} />
       )}
       {modal?.type === "notebook" && (
-        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)} editNpcId={modal.editNpcId} onClose={() => setModal(null)} />
+        <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)}
+          onBoardIds={state.combatants.filter((c) => c.npcId).map((c) => c.npcId)} editNpcId={modal.editNpcId} onClose={() => setModal(null)} />
       )}
       {modal?.type === "social-roll" && modalC && (
         <SocialRollModal c={modalC} players={state.combatants.filter((x) => x.type === "player")} partyLevel={party?.set ? party.level : null} onClose={() => setModal(null)} />
