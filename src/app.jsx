@@ -12479,6 +12479,9 @@ export default function App() {
             {state.mode !== "combat" && restable.length > 0 && (
               <button className="btn small ghost" data-tut="rest" onClick={() => setModal({ type: "rest" })} title="Set everyone's HP after a rest — heals play for anyone who gains HP">🌙 Rest</button>
             )}
+            {state.mode !== "combat" && activeRoster && (
+              <button className="btn small ghost" onClick={() => setModal({ type: "party-inventory" })} title="Browse the party's loot — open each member's bag and transfer items">🎒 Party loot</button>
+            )}
             {state.combatants.some((c) => c.dead && (c.loot || []).length > 0) && (
               <button className="btn small ghost" onClick={() => setModal({ type: "loot-fallen" })}>💰 Loot the fallen</button>
             )}
@@ -12965,7 +12968,7 @@ export default function App() {
             onClose={() => setDgnDelId(null)} />
         );
       })()}
-      {dungeons.some((d) => Object.keys(d.rooms || {}).length > 0) && state.mode === "setup" && !dungeonPlayId && !dungeonEditId && (
+      {dungeons.some((d) => Object.keys(d.rooms || {}).length > 0) && state.mode === "setup" && state.combatants.length > 0 && !dungeonPlayId && !dungeonEditId && (
         <button className="loaddgn-fab" title="Load a dungeon into the play panel" onClick={() => setModal({ type: "dungeons" })}>🗺 Load Dungeon</button>
       )}
       {modal?.type === "item-compendium" && (
