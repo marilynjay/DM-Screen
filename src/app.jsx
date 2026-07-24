@@ -3025,7 +3025,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   const bloody = isBloodied(c);
   // An NPC out of combat reads as a social contact: name + disposition + tag, no HP/AC/initiative.
   // Its full statblock stays a tap away (peek = the DM reveal); it becomes a normal combatant in a fight.
-  const socialNpc = c.npc && !inCombat;
+  const socialNpc = c.npc && !inCombat && !c.dead;
   const dispWord = c.side === "ally" ? "🙂 ally" : c.side === "enemy" ? "⚔ enemy" : "• neutral";
   const nextDisp = c.side === "neutral" ? "ally" : c.side === "ally" ? "enemy" : "neutral";
 
@@ -6330,7 +6330,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
           {rowTab === "npcs" && onAddToBoard && <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
@@ -9575,8 +9575,13 @@ export default function App() {
     let changed = false, npcs = nb.npcs;
     state.combatants.forEach((c) => {
       if (!c.npcId || !byId[c.npcId]) return;
+      const stored = byId[c.npcId];
+      const patch = {};
       const bag = c.loot || [];
-      if (JSON.stringify(byId[c.npcId].loot || []) !== JSON.stringify(bag)) { changed = true; npcs = npcs.map((n) => (n.id === c.npcId ? { ...n, loot: bag } : n)); }
+      if (JSON.stringify(stored.loot || []) !== JSON.stringify(bag)) patch.loot = bag;
+      // die in battle → mark deceased in the notebook; revive on the board → clear it
+      if (!!stored.deceased !== !!c.dead) patch.deceased = !!c.dead;
+      if (Object.keys(patch).length) { changed = true; npcs = npcs.map((n) => (n.id === c.npcId ? { ...n, ...patch } : n)); }
     });
     if (changed) saveNotebook({ ...nb, npcs });
   }, [state.combatants]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -10575,10 +10580,11 @@ export default function App() {
         const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
         c.npc = true; c.npcId = npc.id; c.npcTag = npc.tag || "";
         if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
+        if (npc.deceased) { c.dead = true; c.hp = 0; } // stays dead until the DM revives it here
         d.combatants.push(c);
-        const word = side === "ally" ? " as an ally" : side === "enemy" ? " as an enemy" : " (neutral)";
+        const word = npc.deceased ? " — still deceased (revive from its ⋮ menu if the story calls for it)" : side === "ally" ? " as an ally" : side === "enemy" ? " as an enemy" : " (neutral)";
         L.push(`Added NPC <b>${c.name}</b>${word}.`);
-        T.push({ kind: "good", text: `${c.name} added to the board.` });
+        T.push({ kind: npc.deceased ? "bad" : "good", text: `${c.name} added to the board${npc.deceased ? " (deceased)" : ""}.` });
       });
     },
     // Save a monster already on the board as a reusable notebook NPC (keeps its full statblock).
