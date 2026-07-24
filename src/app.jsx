@@ -6268,7 +6268,7 @@ function NoteReadModal({ item, onClose }) {
 // Species are grouped for the <optgroup> picker. Names describe game concepts (not copyrightable) — safe
 // to use in a personal tool. Non-humanoid types still render as a stylised humanoid bust.
 const LOOK_SPECIES_GROUPS = [
-  ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonkin", "Fiendkin"]],
+  ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonborn", "Tiefling"]],
   ["More races", ["Orc", "Goblin", "Hobgoblin", "Dark Elf", "Gray Dwarf", "Giantkin", "Celestialkin", "Elementkin", "Kobold", "Construct", "Lizardfolk"]],
   ["Monstrous / undead", ["Vampire", "Ghoul", "Lich", "Hag", "Werewolf", "Devil", "Demon", "Ghost"]],
   ["Other", ["Other"]],
@@ -6285,8 +6285,8 @@ const SPECIES_DEFAULTS = {
   Gnome: { skin: "#f4d9bd", eyes: "#2f7c8c", horns: "none" },
   "Half-Orc": { skin: "#8fbf6a", eyes: "#6b4a26", horns: "none" },
   Orc: { skin: "#6fa84e", eyes: "#6b4a26", horns: "none", beard: "none" },
-  Dragonkin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
-  Fiendkin: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
+  Dragonborn: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
+  Tiefling: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
   Goblin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none" },
   Hobgoblin: { skin: "#cf8a8a", eyes: "#c9a227", horns: "none" },
   "Dark Elf": { skin: "#b7a6d6", eyes: "#d94e42", hairColor: "#efeff3", horns: "none" },
