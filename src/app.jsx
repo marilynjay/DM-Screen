@@ -584,7 +584,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pip.full{background:var(--gold)}
 .menu-anchor{position:relative;flex-shrink:0;margin-left:auto}
 .menu{position:absolute;right:0;top:24px;background:var(--raised);border:1px solid var(--line2);
-  border-radius:8px;min-width:170px;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden}
+  border-radius:8px;min-width:170px;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.5);
+  max-height:min(70vh,calc(100vh - 92px));overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 .menu button{display:block;width:100%;text-align:left;padding:8px 12px;font-size:13px}
 .menu button:hover{background:var(--gold-soft)}
 .menu button.warn{color:var(--danger)}
@@ -675,7 +676,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   letter-spacing:.04em;padding:12px 0;cursor:pointer}
 .endturn-btn:active{background:rgba(200,60,55,.32)}
 /* Player Mode board */
-.pm-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:10px 14px calc(10px);
+.pm-bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;
   background:linear-gradient(180deg,#241b2e,#1b1722);border-bottom:1px solid var(--line)}
 .pm-logo{font-family:var(--disp);font-size:16px;color:var(--gold);letter-spacing:.03em;flex:1}
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
@@ -734,7 +735,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .hdr-narrow{display:none}
 @media (max-width:640px){
   .hdr-wide{display:none}
-  .hdr-narrow{display:block}
+  .hdr-narrow{display:flex;align-items:center;gap:6px}
   .hdr .title.incombat{display:none}
   .hdr{gap:6px;padding:8px 8px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
 }
@@ -11731,8 +11732,21 @@ export default function App() {
             )}
           </span>
         </span>
-        <span className="menu-anchor hdr-narrow">
-          <button className="btn small ghost" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setAddMenu(false); }}>⋯</button>
+        <span className="hdr-narrow">
+          <span className="menu-anchor">
+            <button className="btn small ghost" onClick={() => { setClearMenu(!clearMenu); setMoreMenu(false); setAddMenu(false); }}>Clear</button>
+            {clearMenu && (
+              <div className="menu" onClick={() => setClearMenu(false)}>
+                {state.combatants.some((c) => c.side === "ally") && (
+                  <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
+                )}
+                {state.startSnap && <button onClick={() => setModal({ type: "confirm-combatreset" })}>↺ Reset combat (rewind to start)</button>}
+                <button className="warn" onClick={() => setModal({ type: "confirm-clear" })}>Clear everything</button>
+              </div>
+            )}
+          </span>
+          <span className="menu-anchor">
+          <button className="btn small ghost" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setClearMenu(false); setAddMenu(false); }}>⋯</button>
           {moreMenu && (
             <div className="menu" onClick={() => setMoreMenu(false)}>
               <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
@@ -11746,9 +11760,6 @@ export default function App() {
               {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
                 <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
               )}
-              {state.combatants.some((c) => c.type !== "effect") && (
-                <button onClick={() => setModal({ type: "colors" })}>🎨 Colour combatants…</button>
-              )}
               <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
               <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
               <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
@@ -11760,14 +11771,10 @@ export default function App() {
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
               <button onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>
               <button onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>
-              {state.combatants.some((c) => c.side === "ally") && (
-                <button onClick={() => setModal({ type: "confirm-end" })}>End combat (keep party)</button>
-              )}
-              {state.startSnap && <button onClick={() => setModal({ type: "confirm-combatreset" })}>↺ Reset combat (rewind to start)</button>}
-              <button className="warn" onClick={() => setModal({ type: "confirm-clear" })}>Clear everything</button>
               <button onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>
             </div>
           )}
+          </span>
         </span>
       </div>
 
