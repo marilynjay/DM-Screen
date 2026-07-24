@@ -3209,6 +3209,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
             {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
             {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
             {c.type === "monster" && !c.npc && <button onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>}
+            {c.npc && <button onClick={() => api.openSocialRoll(c.uid)}>🎭 Social roll…</button>}
             {c.npc && <button onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>}
             {c.npc ? (<>
               {c.side !== "neutral" && <button onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>}
@@ -6303,6 +6304,94 @@ function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose }) {
       </div>
       <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".08em", textTransform: "uppercase", margin: "10px 0 2px" }}>Notes</div>
       <SectionsEditor value={npc.sections} onChange={setSections} />
+    </div>
+  );
+}
+
+// Social skills an NPC might roll, with the ability they key off.
+const SOCIAL_SKILLS = [["Deception", "cha"], ["Persuasion", "cha"], ["Intimidation", "cha"], ["Insight", "wis"]];
+const profByLevel = (lvl) => { const n = Number(lvl); return !n || isNaN(n) ? 3 : Math.min(6, 2 + Math.floor((n - 1) / 4)); };
+
+// Contested / passive social roll for an NPC against the party. The NPC auto-rolls its chosen
+// skill; the DM reads it against each player's passive Insight, or the players roll and the DM
+// enters their totals, or it's just a bare roll to interpret freely.
+function SocialRollModal({ c, players = [], partyLevel, onClose }) {
+  const [skill, setSkill] = useState("Deception");
+  const [prof, setProf] = useState(true);
+  const [mode, setMode] = useState("passive"); // passive | contested | solo
+  const [roll, setRoll] = useState(null);
+  const [entries, setEntries] = useState({}); // playerUid -> typed total (contested)
+  const ability = SOCIAL_SKILLS.find(([s]) => s === skill)[1];
+  const mod = c.mods?.[ability] ?? 0;
+  const pb = prof ? profByLevel(partyLevel) : 0;
+  const bonus = mod + pb;
+  const doRoll = () => { setRoll(d20(bonus)); setEntries({}); };
+  const alivePlayers = players.filter((p) => !p.dead);
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modalhd"><h3>🎭 Social roll — {c.name}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
+        <div className="tabs" style={{ marginBottom: 6 }}>
+          {SOCIAL_SKILLS.map(([s, ab]) => (
+            <button key={s} className="btn small" style={skill === s ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
+              onClick={() => { setSkill(s); setRoll(null); }}>{s} <span style={{ color: "var(--faint)", fontSize: 10 }}>{ab.toUpperCase()}</span></button>
+          ))}
+        </div>
+        <div className="frow" style={{ alignItems: "center", flexWrap: "wrap" }}>
+          <label style={{ minWidth: 0 }}><input type="checkbox" checked={prof} onChange={(e) => { setProf(e.target.checked); setRoll(null); }} /> Proficient (+{profByLevel(partyLevel)})</label>
+          <span style={{ color: "var(--faint)", fontSize: 12 }}>rolls d20 {fmtMod(bonus)}</span>
+        </div>
+        <div className="tabs" style={{ margin: "8px 0 4px" }}>
+          {[["passive", "vs passive Insight"], ["contested", "Contested (players roll)"], ["solo", "Just roll"]].map(([m, lbl]) => (
+            <button key={m} className="btn small" style={mode === m ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setMode(m)}>{lbl}</button>
+          ))}
+        </div>
+        <div className="frow" style={{ justifyContent: "center", marginTop: 4 }}>
+          <button className="btn primary" onClick={doRoll}>🎲 {roll ? "Re-roll" : "Roll"} {skill}</button>
+        </div>
+        {roll && (<>
+          <div style={{ textAlign: "center", margin: "8px 0", fontSize: 15 }}>
+            <b>{c.name}</b>'s {skill}: <b style={{ color: "var(--gold)", fontSize: 20 }}>{roll.total}</b>
+            <div style={{ color: "var(--faint)", fontSize: 12 }}>{roll.text}{roll.crit ? " — nat 20!" : roll.fumble ? " — nat 1!" : ""}</div>
+          </div>
+          {mode === "passive" && (
+            <div>
+              <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>vs each player's passive Insight (10 + WIS)</div>
+              {alivePlayers.length === 0 && <div className="trait">No players on the board to compare.</div>}
+              {alivePlayers.map((p) => {
+                const pi = passiveInsight(p); if (pi == null) return <div className="targetline" key={p.uid}><span style={{ flex: 1 }}>{p.name}</span><span className="ad">no Insight set</span></div>;
+                const beats = roll.total >= pi;
+                return (
+                  <div className="targetline" key={p.uid}>
+                    <span style={{ flex: 1 }}>{p.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>👁 {pi}</span></span>
+                    <span className={`savetag ${beats ? "" : "bad"}`}>{beats ? "🚫 doesn't notice" : "👁 sees through"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {mode === "contested" && (
+            <div>
+              <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>Enter each player's opposing roll (Insight)</div>
+              {alivePlayers.length === 0 && <div className="trait">No players on the board.</div>}
+              {alivePlayers.map((p) => {
+                const raw = entries[p.uid]; const v = raw != null && raw !== "" ? Number(raw) : null;
+                const res = v == null ? null : roll.total > v ? "npc" : v > roll.total ? "player" : "tie";
+                return (
+                  <div className="targetline" key={p.uid}>
+                    <span style={{ flex: 1 }}>{p.name}</span>
+                    <input type="number" inputMode="numeric" placeholder="roll" style={{ width: 64 }} value={raw ?? ""} onChange={(e) => setEntries({ ...entries, [p.uid]: e.target.value })} />
+                    {res && <span className={`savetag ${res === "npc" ? "" : res === "player" ? "bad" : ""}`}>{res === "npc" ? `${c.name} wins` : res === "player" ? `${p.name} wins` : "tie"}</span>}
+                  </div>
+                );
+              })}
+              <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>On a tie the contest fails — the situation stays as it was.</div>
+            </div>
+          )}
+          {mode === "solo" && <div className="trait" style={{ textAlign: "center", color: "var(--faint)" }}>Adjudicate against whatever DC or roll you like.</div>}
+        </>)}
+        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}><button className="btn" onClick={onClose}>Done</button></div>
+      </div>
     </div>
   );
 }
@@ -10646,6 +10735,7 @@ export default function App() {
     },
     // Toggle the docked notes/approval pane under the roster for a board NPC.
     toggleNpcDock: (npcId) => setDockedNpcId((cur) => (cur === npcId ? null : npcId)),
+    openSocialRoll: (uid) => setModal({ type: "social-roll", uid }),
     equipItem: (uid, idx) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const it = lootObj((c.loot || [])[idx]); if (!it) return;
@@ -12148,6 +12238,9 @@ export default function App() {
       )}
       {modal?.type === "notebook" && (
         <DMNotebookModal party={activeRoster} partyLevel={party?.set ? party.level : null} onSave={saveNotebook} onAddToBoard={(npc) => api.addNpcToBoard(npc)} editNpcId={modal.editNpcId} onClose={() => setModal(null)} />
+      )}
+      {modal?.type === "social-roll" && modalC && (
+        <SocialRollModal c={modalC} players={state.combatants.filter((x) => x.type === "player")} partyLevel={party?.set ? party.level : null} onClose={() => setModal(null)} />
       )}
       {modal?.type === "monster-items" && modalC && (
         <MonsterItemsModal c={modalC} api={api}
