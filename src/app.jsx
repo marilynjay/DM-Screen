@@ -3157,7 +3157,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
         )}
       </span>
 
-      {c.type !== "effect" && c.type !== "object" && !c.dead && !socialNpc && (
+      {c.type !== "effect" && c.type !== "object" && !c.dead && (
         <button className={`advchip ${(ownShown !== "none" || shown !== "none") ? "on" : ""}`}
           title={vsTitle} onClick={() => api.openAdv(c.uid)}>
           {ownShown === "none" && shown === "none" ? "A/D" : (<>
@@ -3180,7 +3180,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           ⏳ Readied
         </button>
       )}
-      {c.type !== "effect" && c.type !== "object" && !c.dead && (
+      {c.type !== "effect" && c.type !== "object" && !c.dead && inCombat && (
         <button className={`rtog ${c.reaction ? "on" : ""}`} title={`Reaction ${c.reaction ? "available" : "spent"} — tap to toggle`} onClick={() => api.toggleReaction(c.uid)}>
           React
         </button>
@@ -6339,7 +6339,8 @@ function SocialRollModal({ c, players = [], partyLevel, onClose }) {
   const mod = c.mods?.[ability] ?? 0;
   const pb = prof ? profByLevel(partyLevel) : 0;
   const bonus = mod + pb;
-  const doRoll = () => { setRoll(d20(bonus)); setEntries({}); };
+  const adv = c.advMode || "none"; // set from the roster A/D chip
+  const doRoll = () => { setRoll(d20(bonus, adv)); setEntries({}); };
   const alivePlayers = players.filter((p) => !p.dead);
   return (
     <div className="overlay" onClick={onClose}>
@@ -6354,6 +6355,7 @@ function SocialRollModal({ c, players = [], partyLevel, onClose }) {
         <div className="frow" style={{ alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ minWidth: 0 }}><input type="checkbox" checked={prof} onChange={(e) => { setProf(e.target.checked); setRoll(null); }} /> Proficient (+{profByLevel(partyLevel)})</label>
           <span style={{ color: "var(--faint)", fontSize: 12 }}>rolls d20 {fmtMod(bonus)}</span>
+          {adv !== "none" && <span className={`advtag ${adv}`} title="From this NPC's advantage/disadvantage chip">{adv === "adv" ? "ADV" : "DIS"}</span>}
         </div>
         <div className="tabs" style={{ margin: "8px 0 4px" }}>
           {[["passive", "vs passive Insight"], ["contested", "Contested (players roll)"], ["solo", "Just roll"]].map(([m, lbl]) => (
