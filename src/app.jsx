@@ -684,12 +684,16 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-logo{font-family:var(--disp);font-size:16px;color:var(--gold);letter-spacing:.03em;flex:1}
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
 .pm-swatch{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
-/* names read like the tidy static labels in the main roster; they only "box up" on focus */
-/* 16px so iOS doesn't zoom the page when the name input is focused for editing */
-.pm-name{flex:1;min-width:0;font-size:16px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;
-  padding:1px 4px;color:var(--text);-webkit-text-fill-color:var(--text)}
-.pm-name:hover{border-color:var(--line)}
-.pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
+/* the name is a plain static label like the main roster — tap it to rename (a modal), so it never
+   behaves like an always-on form field. Content-width + ellipsis so the icons sit right after it. */
+.pm-name{min-width:0;max-width:56%;font-size:16px;font-weight:600;color:var(--text);
+  padding:1px 4px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-name:hover{background:var(--panel)}
+.pm-spring{flex:1 1 auto;min-width:6px}
+.pm-colorpick{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.pm-colorswatch{width:26px;height:26px;flex:none;border-radius:7px;border:2px solid transparent;cursor:pointer}
+.pm-colorswatch.on{border-color:#fff;box-shadow:0 0 0 1px var(--gold)}
+.pm-renameinput{width:100%;font-size:16px;font-weight:600;padding:8px 10px;border-radius:8px;background:var(--panel);border:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text)}
 .pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:0 5px;font-size:12px;line-height:1.4;cursor:pointer;opacity:.45}
 .pm-me.on{border-color:var(--gold);background:var(--gold-soft);opacity:1}
 .pm-masknote{font-size:11px;color:var(--faint);font-style:italic;flex:none;white-space:nowrap}
@@ -9252,6 +9256,8 @@ function PlayerModeBoard({ onExit }) {
   const [iconFor, setIconFor] = useState(null); // enemy id whose icon picker is open
   const [colorFor, setColorFor] = useState(null);
   const [condFor, setCondFor] = useState(null); // "e:<id>" / "a:<id>" whose condition picker is open
+  const [condInfo, setCondInfo] = useState(null); // { id, kind, cond } — tapped chip's explainer + dismiss
+  const [renameFor, setRenameFor] = useState(null); // { id, kind, name } — rename modal (name is a plain label otherwise)
   const [search, setSearch] = useState(null); // null = closed; else query string
   const [cat, setCat] = useState("all");
   const [qty, setQty] = useState("3");
@@ -9291,7 +9297,7 @@ function PlayerModeBoard({ onExit }) {
   );
   // allies
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-  const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] });
+  const addAlly = () => { const id = newUid(); save({ ...board, allies: [...board.allies, { id, name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] }); setRenameFor({ id, kind: "a", name: "" }); };
   const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
   const confirmRemoveAlly = (a) => {
     const tracked = (a.hp !== "" && a.hp != null) || (a.conds || []).length > 0 || a.down;
@@ -9360,13 +9366,15 @@ function PlayerModeBoard({ onExit }) {
     setEntries((m) => { const n = { ...m }; delete n[id]; return n; });
   };
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
-  const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
+  const setterFor = (kind) => (kind === "e" ? setEnemy : setAlly);
+  const commitRename = () => { if (!renameFor) return; setterFor(renameFor.kind)(renameFor.id, { name: (renameFor.name || "").trim() }); setRenameFor(null); };
   const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
+  const dismissCond = () => { if (!condInfo) return; const list = condInfo.kind === "e" ? board.enemies : board.allies; const item = list.find((x) => x.id === condInfo.id); if (item) toggleCond(setterFor(condInfo.kind), item, condInfo.cond); setCondInfo(null); };
   // condition chips + status toggle, flowing INLINE in the r2 line (keeps rows two-line, like Old School)
   const condInline = (item, key, setter) => (
     <>
       {(item.conds || []).map((c) => (
-        <span key={c} className="pm-condchip" title={`${c} — tap to remove`} onClick={() => toggleCond(setter, item, c)}>{PM_COND_ICON[c] || ""} {c}</span>
+        <span key={c} className="pm-condchip" title={`${c} — tap for details`} onClick={() => setCondInfo({ id: item.id, kind: key.split(":")[0], cond: c })}>{PM_COND_ICON[c] || ""} {c}</span>
       ))}
       <button className="btn tiny ghost" title="Add / remove a condition" onClick={() => setCondFor(condFor === key ? null : key)}>{condFor === key ? "status ▲" : "＋ status"}</button>
     </>
@@ -9456,14 +9464,18 @@ function PlayerModeBoard({ onExit }) {
             <div key={e.id} className={`pm-row ${e.defeated ? "downrow" : ""}`}>
               <div className="rline r1">
                 {reorder && moveHandle(moveEnemy, e.id, ei === 0, ei === board.enemies.length - 1)}
-                <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
-                <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
+                <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => setColorFor(colorFor === e.id ? null : e.id)} />
+                <span className="pm-name" title="Tap to rename" onClick={() => setRenameFor({ id: e.id, kind: "e", name: e.name })}>{e.name || "Unnamed"}</span>
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
+                <span className="pm-spring" />
                 <button className={`btn tiny ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is about half HP" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
                 <button className={`btn tiny ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
                 <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
                 <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveEnemy(e)}>✕</button>
               </div>
+              {colorFor === e.id && (
+                <div className="pm-colorpick">{ROSTER_COLORS.map((col) => <button key={col} className={`pm-colorswatch ${e.color === col ? "on" : ""}`} style={{ background: col }} title="Pick this colour" onClick={() => { setEnemy(e.id, { color: col }); setColorFor(null); }} />)}</div>
+              )}
               {iconFor === e.id && (
                 <div className="pm-iconpick">{PM_ICONS.map((ic) => <button key={ic} className={`pm-iconopt ${(e.icons || []).includes(ic) ? "on" : ""}`} onClick={() => toggleIcon(e.id, ic)}>{ic}</button>)}</div>
               )}
@@ -9498,8 +9510,9 @@ function PlayerModeBoard({ onExit }) {
               <div className="rline r1">
                 {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
                 <button className={`pm-me ${a.me ? "on" : ""}`} title={a.me ? "This is your character" : "Mark this as your character"} onClick={() => setMe(a.id)}>👤</button>
-                <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
+                <span className="pm-name" title="Tap to rename" onClick={() => setRenameFor({ id: a.id, kind: "a", name: a.name })}>{a.name || (a.me ? "You" : "Party member")}</span>
                 {!hp && <span className="pm-masknote" title="HP hidden — this is a teammate and party tracking is off">HP hidden</span>}
+                <span className="pm-spring" />
                 {hp && <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>}
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
               </div>
@@ -9551,6 +9564,32 @@ function PlayerModeBoard({ onExit }) {
             ))}
             <div className="frow" style={{ justifyContent: "flex-end", marginTop: 4 }}>
               <button className="btn ghost" onClick={() => setAskMe(false)}>I’m not in this party</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {condInfo && (
+        <div className="overlay" onClick={() => setCondInfo(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 6 }}>{PM_COND_ICON[condInfo.cond] || ""} {condInfo.cond}</h3>
+            <div className="trait" style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.4 }}>{condText(condInfo.cond) || "No description available."}</div>
+            <div className="frow" style={{ justifyContent: "space-between", gap: 8 }}>
+              <button className="btn warn" onClick={dismissCond}>Dismiss condition</button>
+              <button className="btn ghost" onClick={() => setCondInfo(null)}>Keep</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {renameFor && (
+        <div className="overlay" onClick={() => setRenameFor(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginBottom: 8 }}>Rename</h3>
+            <input className="pm-renameinput" autoFocus value={renameFor.name} placeholder="Name…"
+              onChange={(ev) => setRenameFor({ ...renameFor, name: ev.target.value })}
+              onKeyDown={(ev) => { if (ev.key === "Enter") commitRename(); if (ev.key === "Escape") setRenameFor(null); }} />
+            <div className="frow" style={{ justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+              <button className="btn ghost" onClick={() => setRenameFor(null)}>Cancel</button>
+              <button className="btn primary" onClick={commitRename}>Save</button>
             </div>
           </div>
         </div>
