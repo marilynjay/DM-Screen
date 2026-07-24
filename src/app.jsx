@@ -9514,14 +9514,14 @@ const TUTORIAL_STEPS = [
   { key: "welcome", title: "Welcome — sit back and watch 🎓", body: "This is a quick guided show. I'll build a party, pull in monsters, and run a couple of turns of combat while you just tap Next to follow along — no fiddly taps required. Nothing here touches your real game: “Clear & finish” at the end puts the board back exactly how it was." },
   { key: "party", act: "party", title: "1 · Your party", target: "roster", body: "First, the heroes. I've dropped a demo party into the roster — Krusk the Fighter, Mika the Cleric, and Ellywick the Wizard. At your table you'd add your own with + Add ▸ Player / ally, or load a saved party from ⋯ ▸ 👥 Edit parties. Tap any card to expand its HP, AC, conditions and notes." },
   { key: "monsters", act: "monsters", title: "2 · Add monsters", target: "roster", body: "Now some foes. I've pulled two Goblin Warriors straight from the bestiary and dropped them in — that's + Add ▸ Monster from bestiary, where you can search 300+ SRD monsters or add your own. They slot into the roster, ready to fight." },
-  { key: "start", act: "start", title: "3 · Start combat", target: "roster", body: "Combat's on. I've set initiative so it plays the same every time — Krusk leads. A round counter shows up top and the active turn lights up gold. (At your table you'd just enter each hero's initiative as they call it; monsters roll their own.)" },
-  { key: "playerAttack", act: "playerAttack", title: "4 · A hero attacks", target: "roster", body: "It's Krusk's turn, so he swings at a goblin — watch its HP drop in the roster. Your players roll their own dice: you tap ⚔ Attack on the hero's card, mark HIT and enter the damage, and the app tracks the rest." },
-  { key: "monsterAttack", act: "monsterAttack", title: "5 · The monster strikes back", target: "roster", body: "Now it's a goblin's turn — and here's the good part: the app rolls the monster's attack and applies the damage for you. Watch it connect with Krusk. No flipping through statblocks mid-fight." },
+  { key: "start", act: "start", title: "3 · Start combat", target: ["active", "roster"], body: "Combat's on. I've set initiative so it plays the same every time — Krusk leads. A round counter shows up top and the active turn lights up gold. (At your table you'd just enter each hero's initiative as they call it; monsters roll their own.)" },
+  { key: "playerAttack", act: "playerAttack", title: "4 · A hero attacks", target: ["active", "roster"], body: "It's Krusk's turn, so he swings at a goblin — watch its HP drop in the roster. Your players roll their own dice: you tap ⚔ Attack on the hero's card, mark HIT and enter the damage, and the app tracks the rest." },
+  { key: "monsterAttack", act: "monsterAttack", title: "5 · The monster strikes back", target: ["active", "roster"], body: "Now it's a goblin's turn — and here's the good part: the app rolls the monster's attack and applies the damage for you. Watch it connect with Krusk. No flipping through statblocks mid-fight." },
   { key: "oldschool", title: "6 · Prefer your own dice? 🕯", target: "more", body: "Like rolling everything at the table? Open ⋯ ▸ 🕯 Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, with monster attacks shown as reference. Toggle it on or off any time." },
   { key: "clear", title: "7 · Wrap up & keep your party", target: "clear", body: "When a fight ends, tap Clear up top to reset the board for the next one. Your party isn't lost — save it under ⋯ ▸ 👥 Edit parties and drop it back in with one tap next session. (There's lots more to explore too: a dungeon builder, spell effects, and rests, all in the + Add and ⋯ menus.)" },
   { key: "done", title: "That's the tour! 🎉", body: "“Clear & finish” rolls the board back to exactly how it was before the tour — or keep it to poke around. You can reopen this any time from the ⋯ menu." },
 ];
-function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
+function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto, restoreOnly }) {
   const s = TUTORIAL_STEPS[step], n = TUTORIAL_STEPS.length, last = step === n - 1;
   return (
     <div className="tut-card">
@@ -9541,10 +9541,12 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, ga
       <div className="tut-actions">
         <button className="btn small ghost" disabled={step === 0} onClick={onBack}>◀ Back</button>
         <span style={{ flex: 1 }} />
-        {last ? (<>
+        {last ? (restoreOnly ? (
+          <button className="btn small primary" onClick={() => onFinish(true)}>Finish &amp; restore my roster</button>
+        ) : (<>
           <button className="btn small ghost" onClick={() => onFinish(false)}>Keep demo</button>
           <button className="btn small primary" onClick={() => onFinish(true)}>Clear &amp; finish</button>
-        </>) : (<>
+        </>)) : (<>
           <button className="btn small ghost" onClick={onSkip}>Skip</button>
           <button className="btn small primary" disabled={nextDisabled} onClick={onNext}>Next ▶</button>
         </>)}
@@ -9557,7 +9559,7 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, nextDisabled, ga
 // element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
 // so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
-function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto }) {
+function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, nextDisabled, gateHint, onAuto, restoreOnly }) {
   const s = TUTORIAL_STEPS[step];
   const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
   const [rects, setRects] = useState([]);
@@ -9583,7 +9585,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
-  if (suppressed) return <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} />;
+  if (suppressed) return <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} />;
   return (
     <>
       {vp.w > 0 && (
@@ -9599,7 +9601,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
         </svg>
       )}
       {arrow && <div className="tut-arrow" style={{ left: arrow.left, top: arrow.top }}>▲</div>}
-      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} />
+      <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} />
     </>
   );
 }
@@ -12213,6 +12215,7 @@ export default function App() {
   // Guided show: the tour drives the demo itself (loads a party, pulls in goblins, starts combat, runs an
   // attack). We snapshot the board on start so "Clear & finish" restores whatever was there before.
   const tutSnapRef = useRef(null);
+  const tutHadRosterRef = useRef(false); // did the board hold real combatants when the tour began?
   const tutPlayedRef = useRef(new Set()); // one-shot actions already fired (so Back/Next doesn't repeat them)
   const loadTutorialDemo = () => mutate((d, L) => {
     if (d.combatants.some((c) => c._demo)) return;
@@ -12247,7 +12250,15 @@ export default function App() {
     next(); // advance the turn so a goblin is active, then it strikes
     setTimeout(() => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }), 550);
   };
-  const startTutorial = () => { tutSnapRef.current = structuredClone(stateRef.current); tutPlayedRef.current = new Set(); setTutorial(0); };
+  const startTutorial = () => {
+    const snap = structuredClone(stateRef.current);
+    tutSnapRef.current = snap;
+    tutHadRosterRef.current = (snap.combatants || []).some((c) => c.type !== "effect");
+    tutPlayedRef.current = new Set();
+    // wipe the board so the guided show always runs on a clean slate; the snapshot restores it on exit/finish
+    setState((prev) => ({ ...prev, combatants: [], mode: "setup", round: 0, activeUid: null, startSnap: null, log: [] }));
+    setTutorial(0);
+  };
   const nextTutorialStep = () => setTutorial((t) => Math.min(TUTORIAL_STEPS.length - 1, (t ?? 0) + 1));
   const prevTutorialStep = () => setTutorial((t) => Math.max(0, (t ?? 0) - 1));
   // Fire each step's scripted action once, when the tour reaches it.
@@ -12265,8 +12276,16 @@ export default function App() {
   }, [tutorial]); // eslint-disable-line react-hooks/exhaustive-deps
   const endTutorial = (clear) => {
     setTutorial(null);
-    if (clear && tutSnapRef.current) setState(tutSnapRef.current); // roll the board back to before the tour
+    const snap = tutSnapRef.current;
+    if (clear || tutHadRosterRef.current) {
+      // restore the pre-tour board — their real roster, or the empty board they started from
+      if (snap) setState(snap);
+    } else {
+      // started empty and they chose "Keep demo": promote the demo combatants to ordinary ones
+      setState((prev) => ({ ...prev, combatants: prev.combatants.map((c) => { const { _demo, ...rest } = c; return rest; }) }));
+    }
     tutSnapRef.current = null;
+    tutHadRosterRef.current = false;
   };
   // Roster name-colour assignment (multi-assign modal). color=null clears it.
   const setCombatantColor = (uid, color) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.color = color || undefined; });
@@ -12466,7 +12485,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
               <button onClick={() => setModal({ type: "notebook" })}>📓 DM Notebook…</button>
               <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
-              <button onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
+              <button disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — the guided tour runs its own demo fight." : undefined} onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
@@ -12545,6 +12564,7 @@ export default function App() {
               nextDisabled={gateUnmet}
               gateHint={gateUnmet ? "Add a monster to continue" : null}
               onAuto={gateUnmet ? tutAddGoblins : null}
+              restoreOnly={tutHadRosterRef.current}
               onSkip={() => endTutorial(true)} onFinish={endTutorial} />
           );
         })()}
