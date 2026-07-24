@@ -730,8 +730,6 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-dstag{font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px}
 .pm-dstag.good{color:#8fe0a0;border:1px solid #3f9a4e;background:rgba(63,154,78,.18)}
 .pm-dstag.dead{color:#f0a9a2;border:1px solid var(--danger);background:rgba(200,60,55,.18)}
-.pm-notes{width:100%;min-height:90px;resize:vertical;font-size:15px;line-height:1.4;background:var(--panel);
-  border:1px solid var(--line);border-radius:8px;padding:9px 11px;color:var(--text);-webkit-text-fill-color:var(--text);font-family:inherit}
 .frow input[type=text]{flex:1;min-width:120px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pick{display:flex;flex-wrap:wrap;gap:6px}
@@ -9214,7 +9212,7 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
 const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
 const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
 const PM_COND_ICON = Object.fromEntries(PM_CONDS);
-const PM_BLANK = () => ({ trackParty: true, notes: "", allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
+const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
 // Turn a DM party member into a Player Mode ally row. Their party HP total seeds both
 // current and max, so the sheet lands ready-to-play at full health; srcId lets a later
 // re-import skip anyone already on the board.
@@ -9495,12 +9493,6 @@ function PlayerModeBoard({ onExit }) {
             <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = only your character)</span></span>
           </label>
           </>)}
-        </div>
-
-        {/* NOTES */}
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="pm-sect-hd">Notes <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>— quests, NPCs, clues</span></div>
-          <textarea className="pm-notes" placeholder="Jot down anything — quest hooks, names, what that door said…" value={board.notes || ""} onChange={(e) => save({ ...board, notes: e.target.value })} />
         </div>
 
         <div className="frow" style={{ justifyContent: "space-between", marginTop: 12 }}>
