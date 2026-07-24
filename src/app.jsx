@@ -683,20 +683,26 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
 .pm-swatch{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
 /* names read like the tidy static labels in the main roster; they only "box up" on focus */
-.pm-name{flex:1;min-width:0;font-size:16px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:7px;
-  padding:2px 5px;color:var(--text);-webkit-text-fill-color:var(--text)}
+.pm-name{flex:1;min-width:0;font-size:14px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;
+  padding:1px 4px;color:var(--text);-webkit-text-fill-color:var(--text)}
 .pm-name:hover{border-color:var(--line)}
 .pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
-.pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:2px 6px;font-size:13px;line-height:1.2;cursor:pointer;opacity:.45}
+.pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:0 5px;font-size:12px;line-height:1.4;cursor:pointer;opacity:.45}
 .pm-me.on{border-color:var(--gold);background:var(--gold-soft);opacity:1}
 /* compact flat rows in the Old School roster style: r1 = name, r2 = dmg | HP | heal + controls */
-.pm-row{border-bottom:1px solid var(--line);padding:4px 2px 6px}
+.pm-row{border-bottom:1px solid var(--line);padding:2px 4px 3px}
 .pm-row:last-child{border-bottom:none}
 .pm-row.downrow{opacity:.5}
 .pm-row.downrow .pm-name{text-decoration:line-through}
-.pm-counter{font-family:var(--mono);font-size:13px;font-weight:700;min-width:44px;text-align:center;color:var(--faint);cursor:pointer}
+.pm-row .rline{gap:6px}
+.pm-row .rline.r2{padding-left:32px;gap:3px 6px;margin-top:0}
+/* keep the row controls tight — plain .btn (no global .btn.tiny rule exists) would be chunky */
+.pm-row .btn{padding:1px 6px;font-size:12px;border-radius:6px;line-height:1.5}
+.pm-row .osfield{width:34px}
+.pm-row .pm-icon{font-size:15px}
+.pm-counter{font-family:var(--mono);font-size:13px;font-weight:700;min-width:40px;text-align:center;color:var(--faint);cursor:pointer}
 .pm-counter.hurt{color:#e0645a;cursor:pointer}
-.pm-hpin{width:40px;text-align:center;font-size:16px;padding:2px 2px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);-webkit-appearance:none;appearance:none}
+.pm-hpin{width:36px;text-align:center;font-size:16px;padding:1px 2px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);-webkit-appearance:none;appearance:none}
 .pm-applybar{bottom:calc(10px + env(safe-area-inset-bottom,0px))}
 .pm-icon{font-size:17px;cursor:pointer;line-height:1}
 .pm-iconpick{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
@@ -9318,31 +9324,30 @@ function PlayerModeBoard({ onExit }) {
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
   const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
   const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
-  // shared condition UI (chips + expandable picker) for an enemy or ally
-  const condUI = (item, key, setter) => (
-    <div style={{ marginTop: 4 }}>
-      {(item.conds || []).length > 0 && (
-        <div className="pm-conds">{item.conds.map((c) => (
-          <span key={c} className="pm-condchip" title={`${c} — tap to remove`} onClick={() => toggleCond(setter, item, c)}>{PM_COND_ICON[c] || ""} {c}</span>
-        ))}</div>
-      )}
-      <button className="btn tiny ghost" onClick={() => setCondFor(condFor === key ? null : key)}>{condFor === key ? "Close ▲" : "＋ status"}</button>
-      {condFor === key && (
-        <div className="pm-condpick">{PM_CONDS.map(([c, ic]) => (
-          <button key={c} className={`pm-condopt ${(item.conds || []).includes(c) ? "on" : ""}`} onClick={() => toggleCond(setter, item, c)}>{ic} {c}</button>
-        ))}</div>
-      )}
-    </div>
+  // condition chips + status toggle, flowing INLINE in the r2 line (keeps rows two-line, like Old School)
+  const condInline = (item, key, setter) => (
+    <>
+      {(item.conds || []).map((c) => (
+        <span key={c} className="pm-condchip" title={`${c} — tap to remove`} onClick={() => toggleCond(setter, item, c)}>{PM_COND_ICON[c] || ""} {c}</span>
+      ))}
+      <button className="btn tiny ghost" title="Add / remove a condition" onClick={() => setCondFor(condFor === key ? null : key)}>{condFor === key ? "status ▲" : "＋ status"}</button>
+    </>
   );
+  // the full condition picker — drops below the row only while open, so it never bloats the resting height
+  const condPicker = (item, key, setter) => (condFor === key ? (
+    <div className="pm-condpick">{PM_CONDS.map(([c, ic]) => (
+      <button key={c} className={`pm-condopt ${(item.conds || []).includes(c) ? "on" : ""}`} onClick={() => toggleCond(setter, item, c)}>{ic} {c}</button>
+    ))}</div>
+  ) : null);
   const setDs = (id, patch) => { const a = board.allies.find((x) => x.id === id); if (!a) return; setAlly(id, { ds: { ...(a.ds || { s: 0, f: 0 }), ...patch } }); };
   // the red damage + green heal fields shared by enemy and ally rows (Old School layout)
   const hpEntryFields = (id, center) => (
     <>
-      <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="dmg" value={entries[id]?.dmg ?? ""}
-        title="Damage — applied when you tap Apply" onChange={(ev) => setEnt(id, "dmg", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+      <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="–" value={entries[id]?.dmg ?? ""}
+        title="Damage (red) — applied when you tap Apply" onChange={(ev) => setEnt(id, "dmg", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
       {center}
-      <input className="osfield osheal" type="number" inputMode="numeric" placeholder="heal" value={entries[id]?.heal ?? ""}
-        title="Healing — applied when you tap Apply" onChange={(ev) => setEnt(id, "heal", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+      <input className="osfield osheal" type="number" inputMode="numeric" placeholder="–" value={entries[id]?.heal ?? ""}
+        title="Healing (green) — applied when you tap Apply" onChange={(ev) => setEnt(id, "heal", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
     </>
   );
   // death-save tracker — shown when an ally is at 0 HP
@@ -9377,7 +9382,7 @@ function PlayerModeBoard({ onExit }) {
       {pmToasts.length > 0 && (
         <div className="toastwrap">{pmToasts.map((t) => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}</div>
       )}
-      <div className="main" style={anyPending ? { paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" } : undefined}>
+      <div className="main" style={{ paddingBottom: "calc(80px + env(safe-area-inset-bottom, 0px))" }}>
         {/* ENEMIES */}
         <div className="card">
           <div className="pm-sect-hd frow" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -9414,7 +9419,8 @@ function PlayerModeBoard({ onExit }) {
                 <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
                 <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
-                {e.bloodied && <span className="pm-bloodied">🩸</span>}
+                <button className={`btn tiny ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is about half HP" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
+                <button className={`btn tiny ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
                 <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
                 <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveEnemy(e)}>✕</button>
               </div>
@@ -9425,10 +9431,9 @@ function PlayerModeBoard({ onExit }) {
                 {hpEntryFields(e.id, (
                   <span className={`pm-counter ${e.dmg > 0 ? "hurt" : ""}`} title={e.dmg > 0 ? "Total damage dealt (real HP unknown) — tap to reset" : "No damage logged yet"} onClick={() => e.dmg > 0 && setEnemy(e.id, { dmg: 0 })}>{e.dmg > 0 ? `−${e.dmg}` : "?"}</span>
                 ))}
-                <button className={`btn tiny ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is about half HP" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
-                <button className={`btn tiny ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
-                {condUI(e, "e:" + e.id, setEnemy)}
+                {condInline(e, "e:" + e.id, setEnemy)}
               </div>
+              {condPicker(e, "e:" + e.id, setEnemy)}
             </div>
           ))}
         </div>
@@ -9445,6 +9450,7 @@ function PlayerModeBoard({ onExit }) {
                 {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
                 <button className={`pm-me ${a.me ? "on" : ""}`} title={a.me ? "This is your character" : "Mark this as your character"} onClick={() => setMe(a.id)}>👤</button>
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
+                <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
               </div>
               <div className="rline r2">
@@ -9455,9 +9461,9 @@ function PlayerModeBoard({ onExit }) {
                     <input type="number" inputMode="numeric" className="pm-hpin" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
                   </span>
                 ))}
-                <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>
-                {condUI(a, "a:" + a.id, setAlly)}
+                {condInline(a, "a:" + a.id, setAlly)}
               </div>
+              {condPicker(a, "a:" + a.id, setAlly)}
               {(a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
             </div>
           ))}
@@ -9484,11 +9490,9 @@ function PlayerModeBoard({ onExit }) {
           <button className="btn" onClick={onExit}>← Back to full app</button>
         </div>
       </div>
-      {anyPending && (
-        <div className="osapplybar pm-applybar">
-          <button className="btn primary" onClick={applyAll}>🩸 Apply HP changes</button>
-        </div>
-      )}
+      <div className="osapplybar pm-applybar">
+        <button className="btn primary" disabled={!anyPending} onClick={applyAll} title={anyPending ? "Apply all pending damage and healing" : "Type damage (red) or healing (green) on any row, then tap here"}>🩸 Apply HP changes</button>
+      </div>
     </div>
   );
 }
