@@ -6268,8 +6268,8 @@ function NoteReadModal({ item, onClose }) {
 // Species are grouped for the <optgroup> picker. Names describe game concepts (not copyrightable) — safe
 // to use in a personal tool. Non-humanoid types still render as a stylised humanoid bust.
 const LOOK_SPECIES_GROUPS = [
-  ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonborn", "Tiefling"]],
-  ["More races", ["Orc", "Goblin", "Hobgoblin", "Drow", "Duergar", "Goliath", "Aasimar", "Genasi", "Kobold", "Construct", "Lizardfolk"]],
+  ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonkin", "Fiendkin"]],
+  ["More races", ["Orc", "Goblin", "Hobgoblin", "Dark Elf", "Gray Dwarf", "Giantkin", "Celestialkin", "Elementkin", "Kobold", "Construct", "Lizardfolk"]],
   ["Monstrous / undead", ["Vampire", "Ghoul", "Lich", "Hag", "Werewolf", "Devil", "Demon", "Ghost"]],
   ["Other", ["Other"]],
 ];
@@ -6285,15 +6285,15 @@ const SPECIES_DEFAULTS = {
   Gnome: { skin: "#f4d9bd", eyes: "#2f7c8c", horns: "none" },
   "Half-Orc": { skin: "#8fbf6a", eyes: "#6b4a26", horns: "none" },
   Orc: { skin: "#6fa84e", eyes: "#6b4a26", horns: "none", beard: "none" },
-  Dragonborn: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
-  Tiefling: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
+  Dragonkin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
+  Fiendkin: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
   Goblin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none" },
   Hobgoblin: { skin: "#cf8a8a", eyes: "#c9a227", horns: "none" },
-  Drow: { skin: "#b7a6d6", eyes: "#d94e42", hairColor: "#efeff3", horns: "none" },
-  Duergar: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none", beard: "full" },
-  Goliath: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none" },
-  Aasimar: { skin: "#f4d9bd", eyes: "#c9a227", horns: "none" },
-  Genasi: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
+  "Dark Elf": { skin: "#b7a6d6", eyes: "#d94e42", hairColor: "#efeff3", horns: "none" },
+  "Gray Dwarf": { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none", beard: "full" },
+  Giantkin: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none" },
+  Celestialkin: { skin: "#f4d9bd", eyes: "#c9a227", horns: "none" },
+  Elementkin: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
   Kobold: { skin: "#cf8a8a", eyes: "#d94e42", horns: "small", face: "angular" },
   Construct: { skin: "#a9b0ba", eyes: "#2f7bc4", horns: "none", hair: "bald", beard: "none" },
   Lizardfolk: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", hair: "bald", beard: "none" },
@@ -6326,7 +6326,7 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const line = "rgba(0,0,0,.28)";
   const sk = { fill: skin, stroke: line, strokeWidth: 1.4 };
   const sp = L.species;
-  const pointy = ["Elf", "Half-Elf", "Drow"].includes(sp);
+  const pointy = ["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp); // Drow kept as a back-compat alias
   const bigEar = ["Goblin", "Kobold", "Hobgoblin"].includes(sp);
   const tusks = ["Orc", "Half-Orc"].includes(sp);
   const fangs = ["Vampire", "Werewolf", "Demon"].includes(sp);
