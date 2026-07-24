@@ -685,7 +685,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
 .pm-swatch{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
 /* names read like the tidy static labels in the main roster; they only "box up" on focus */
-.pm-name{flex:1;min-width:0;font-size:14px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;
+/* 16px so iOS doesn't zoom the page when the name input is focused for editing */
+.pm-name{flex:1;min-width:0;font-size:16px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:6px;
   padding:1px 4px;color:var(--text);-webkit-text-fill-color:var(--text)}
 .pm-name:hover{border-color:var(--line)}
 .pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
@@ -9277,11 +9278,17 @@ function PlayerModeBoard({ onExit }) {
   // Mark exactly one ally as "you" — with whole-party tracking off, only that row shows.
   const setMe = (id) => save({ ...board, allies: board.allies.map((a) => ({ ...a, me: a.id === id })) });
   // Pull in party members the DM has saved but that aren't on the board yet (matched by source id or name).
+  // Importing the party means you want to see it, so switch whole-party tracking on — otherwise the new
+  // rows would be filtered out (with tracking off only "you" shows) and it would look like nothing happened.
   const importParty = () => {
     if (!srcParty || !(srcParty.members || []).length) { flash("No saved party to import.", "bad"); return; }
     const add = srcParty.members.filter((m) => !board.allies.some((a) => (a.srcId && a.srcId === m.id) || (a.name || "").trim().toLowerCase() === (m.name || "").trim().toLowerCase()));
-    if (!add.length) { flash("Party already on the board."); return; }
-    save({ ...board, allies: [...board.allies, ...add.map(pmAllyFromMember)] });
+    if (!add.length) {
+      if (!board.trackParty) { save({ ...board, trackParty: true }); flash("Showing the whole party."); }
+      else flash("Party already on the board.");
+      return;
+    }
+    save({ ...board, trackParty: true, allies: [...board.allies, ...add.map(pmAllyFromMember)] });
     flash(`Added ${add.length} party member${add.length === 1 ? "" : "s"}.`);
   };
   const toggleAdd = () => save({ ...board, addCollapsed: !board.addCollapsed });
