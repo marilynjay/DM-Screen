@@ -542,7 +542,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .look-species{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .look-species label{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.03em}
 .look-species select{flex:1;font-size:15px;padding:8px 10px;border-color:var(--gold-soft)}
-.look-preview{display:flex;justify-content:center;margin-bottom:8px}
+.look-preview{display:flex;justify-content:center;margin-bottom:4px}
+.look-racecap{text-align:center;font-size:12px;color:var(--gold);font-weight:600;margin-bottom:8px}
 .look-row{display:flex;align-items:center;gap:8px;margin:6px 0}
 .look-row>span{font-size:12px;color:var(--faint);min-width:78px}
 .look-row.col{flex-direction:column;align-items:stretch;gap:3px}
@@ -6271,7 +6272,7 @@ const LOOK_SPECIES_GROUPS = [
   ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonborn", "Tiefling"]],
   ["More races", ["Orc", "Goblin", "Hobgoblin", "Dark Elf", "Gray Dwarf", "Giantkin", "Celestialkin", "Elementkin", "Kobold", "Construct", "Lizardfolk"]],
   ["Monstrous / undead", ["Vampire", "Ghoul", "Lich", "Hag", "Werewolf", "Devil", "Demon", "Ghost"]],
-  ["Other", ["Other"]],
+  ["Custom", ["Other"]],
 ];
 const LOOK_SPECIES = LOOK_SPECIES_GROUPS.flatMap(([, list]) => list);
 // A species-appropriate starting point applied when the race is chosen: skin/eyes always, plus horns,
@@ -6314,7 +6315,13 @@ const LOOK_BEARD = [["none", "None"], ["stubble", "Stubble"], ["moustache", "Mou
 const SKIN_TONES = ["#f4d9bd", "#e8c19c", "#d8a878", "#c68a5e", "#a86b43", "#7c4a2d", "#553320", "#8fbf6a", "#6fa84e", "#7db0cf", "#b7a6d6", "#cf8a8a", "#a9b0ba", "#d9cdbf"];
 const HAIR_COLORS = ["#1c140f", "#3a2418", "#5a3b22", "#8a5a2b", "#c98f3a", "#e6c766", "#d9d2c5", "#adb0b8", "#efeff3", "#b03b2b", "#7048a8", "#2f7bc4", "#3f9a4e"];
 const EYE_COLORS = ["#4a2c14", "#6b4a26", "#3f6a3a", "#2f7c8c", "#2f5aa8", "#6a6a72", "#8a3030", "#7048a8", "#c9a227", "#d94e42"];
-const blankLook = () => ({ on: false, notes: "", species: "Human", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
+const LOOK_EARS = [["round", "Round"], ["pointed", "Pointed"], ["large", "Large"]];
+const LOOK_TEETH = [["none", "None"], ["tusks", "Tusks"], ["fangs", "Fangs"]];
+// Ears/teeth used to be hard-wired to species; now they're editable fields. When unset (older data or a
+// homebrew race), fall back to the species-appropriate default so nothing regresses.
+const deriveEars = (sp) => (["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp) ? "pointed" : ["Goblin", "Kobold", "Hobgoblin"].includes(sp) ? "large" : "round");
+const deriveTeeth = (sp) => (["Orc", "Half-Orc"].includes(sp) ? "tusks" : ["Vampire", "Werewolf", "Demon"].includes(sp) ? "fangs" : "none");
+const blankLook = () => ({ on: false, notes: "", species: "Human", customRace: "", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
 const hasLook = (l) => !!(l && l.on);
 
 // A chibi face composited from SVG primitives, driven entirely by a `look` object. viewBox 0..100.
@@ -6326,10 +6333,10 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const line = "rgba(0,0,0,.28)";
   const sk = { fill: skin, stroke: line, strokeWidth: 1.4 };
   const sp = L.species;
-  const pointy = ["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp); // Drow kept as a back-compat alias
-  const bigEar = ["Goblin", "Kobold", "Hobgoblin"].includes(sp);
-  const tusks = ["Orc", "Half-Orc"].includes(sp);
-  const fangs = ["Vampire", "Werewolf", "Demon"].includes(sp);
+  const earStyle = L.ears || deriveEars(sp);
+  const teeth = L.teeth || deriveTeeth(sp);
+  const tusks = teeth === "tusks";
+  const fangs = teeth === "fangs";
   const plate = sp === "Construct" || sp === "Warforged"; // Warforged kept as a back-compat alias for any saved NPC
   const face = (() => {
     switch (L.face) {
@@ -6341,9 +6348,9 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       default: return <circle cx="50" cy="53" r="29" {...sk} />;
     }
   })();
-  const ear = (cx, s) => bigEar
+  const ear = (cx, s) => earStyle === "large"
     ? <path d={`M${cx} 48 L${cx + s * 12} 42 L${cx + s * 9} 60 Z`} {...sk} />
-    : pointy
+    : earStyle === "pointed"
       ? <path d={`M${cx} 47 L${cx + s * 8} 44 L${cx + s * 3} 62 Z`} {...sk} />
       : <ellipse cx={cx + s * 2} cy="55" rx="4.5" ry="6.5" {...sk} />;
   const eye = (cx) => (
@@ -6448,18 +6455,24 @@ function NpcAppearance({ value, onChange }) {
           <div className="look-species">
             <label>Species</label>
             <select className="sbook-search" value={look.species} onChange={(e) => set({ species: e.target.value, ...(SPECIES_DEFAULTS[e.target.value] || {}) })}>
-              {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>)}
+              {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s === "Other" ? "Homebrew / custom…" : s}</option>)}</optgroup>)}
             </select>
           </div>
+          {look.species === "Other" && (
+            <input className="sbook-search" placeholder="Homebrew race name (e.g. Aetherborn)…" value={look.customRace || ""} onChange={(e) => set({ customRace: e.target.value })} style={{ width: "100%", marginBottom: 8 }} />
+          )}
           <div className="look-preview"><NpcPortrait look={look} size={132} /></div>
+          <div className="look-racecap">{look.species === "Other" ? (look.customRace || "Homebrew race") : look.species}</div>
           <div className="look-controls">
             <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
+            <div className="look-row col"><span>Ears</span><LookChips options={LOOK_EARS} value={look.ears || deriveEars(look.species)} onPick={(v) => set({ ears: v })} /></div>
             <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
             <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
             <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
             <div className="look-row col"><span>Eyes</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
             <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
             <div className="look-row col"><span>Horns</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
+            <div className="look-row col"><span>Teeth</span><LookChips options={LOOK_TEETH} value={look.teeth || deriveTeeth(look.species)} onPick={(v) => set({ teeth: v })} /></div>
           </div>
           <button className="btn tiny ghost warn" style={{ marginTop: 4 }} onClick={() => set({ on: false })}>Remove portrait</button>
         </div>
