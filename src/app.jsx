@@ -9512,6 +9512,13 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
 // which they drive themselves (the card is a non-blocking bottom sheet, so the app stays interactive).
 // A guided *show*: each step's `act` fires an action automatically when you reach it (load the party,
 // add goblins, start combat, run an attack), so the tour drives the demo and the DM just taps Next.
+// The demo encounter, shared by the guided tour and the playable "demo fight" so the two never drift.
+const TUT_HEROES = [
+  { name: "Krusk · Fighter", ac: 17, hp: 28, dex: 1 },
+  { name: "Mika · Cleric", ac: 18, hp: 24, dex: 0, spellDC: 13 },
+  { name: "Ellywick · Wizard", ac: 12, hp: 18, dex: 3, spellDC: 13 },
+];
+const TUT_MONSTER = "Goblin Warrior", TUT_MONSTER_N = 2;
 const TUTORIAL_STEPS = [
   { key: "welcome", title: "Welcome — sit back and watch 🎓", body: "This is a quick guided show. I'll build a party, pull in monsters, and run a couple of turns of combat while you just tap Next to follow along — no fiddly taps required. Nothing here touches your real game: “Clear & finish” at the end puts the board back exactly how it was." },
   { key: "party", act: "party", title: "1 · Your party", target: "roster", body: "First, the heroes. I've dropped a demo party into the roster — Krusk the Fighter, Mika the Cleric, and Ellywick the Wizard. At your table you'd add your own with + Add ▸ Player / ally, or load a saved party from ⋯ ▸ 👥 Edit parties. Tap any card to expand its HP, AC, conditions and notes." },
@@ -12222,20 +12229,31 @@ export default function App() {
   const tutPlayedRef = useRef(new Set()); // one-shot actions already fired (so Back/Next doesn't repeat them)
   const loadTutorialDemo = () => mutate((d, L) => {
     if (d.combatants.some((c) => c._demo)) return;
-    [
-      makePlayer({ name: "Krusk · Fighter", ac: 17, hp: 28, dex: 1 }),
-      makePlayer({ name: "Mika · Cleric", ac: 18, hp: 24, dex: 0, spellDC: 13 }),
-      makePlayer({ name: "Ellywick · Wizard", ac: 12, hp: 18, dex: 3, spellDC: 13 }),
-    ].forEach((p) => d.combatants.push({ ...p, _demo: true }));
+    TUT_HEROES.forEach((h) => d.combatants.push({ ...makePlayer(h), _demo: true }));
     L.push("🎓 Tutorial demo party loaded — three adventurers ready to fight.");
   });
   const tutAddGoblins = () => mutate((d, L) => {
     if (d.combatants.some((c) => c._demo && c.type === "monster")) return;
-    const gsb = fullBestiary().find((b) => b.name === "Goblin Warrior");
+    const gsb = fullBestiary().find((b) => b.name === TUT_MONSTER);
     if (!gsb) return;
-    for (let i = 0; i < 2; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
-    L.push("🎓 Pulled two Goblin Warriors from the bestiary.");
+    for (let i = 0; i < TUT_MONSTER_N; i++) d.combatants.push({ ...makeMonster(gsb, d, { side: "enemy" }), _demo: true });
+    L.push(`🎓 Pulled ${TUT_MONSTER_N === 2 ? "two" : TUT_MONSTER_N} ${TUT_MONSTER}s from the bestiary.`);
   });
+  /* "Load demo fight" — the same encounter the tour uses, dropped on the board as ordinary
+     combatants for the DM to run themselves. Nothing is flagged _demo (no rigged rolls, no
+     tour scripting) and no party is saved: these players carry no memberId, so the saved
+     parties list is untouched. Replaces the board, so the caller confirms first when it's busy. */
+  const loadTutorialSandbox = () => {
+    setModal(null);
+    mutate((d, L) => {
+      d.combatants = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null; d.log = [];
+      TUT_HEROES.forEach((h) => d.combatants.push(makePlayer(h)));
+      const gsb = fullBestiary().find((b) => b.name === TUT_MONSTER);
+      if (gsb) for (let i = 0; i < TUT_MONSTER_N; i++) d.combatants.push(makeMonster(gsb, d, { side: "enemy" }));
+      L.push("🎓 Demo fight loaded — three heroes vs two goblins. Tap Start combat when you're ready.");
+    });
+    pushToasts([{ kind: "good", text: "Demo fight loaded — tap Start combat to run it." }]);
+  };
   // Demo attacks: the hero swing is recorded like a real player attack; the goblin's is auto-rolled (rigged to land).
   const doTutPlayerAttack = () => {
     const cs = stateRef.current.combatants;
@@ -12254,6 +12272,7 @@ export default function App() {
     setTimeout(() => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }), 550);
   };
   const startTutorial = () => {
+    setModal(null);
     const snap = structuredClone(stateRef.current);
     tutSnapRef.current = snap;
     tutHadRosterRef.current = (snap.combatants || []).some((c) => c.type !== "effect");
@@ -12488,7 +12507,7 @@ export default function App() {
               <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
               <button onClick={() => setModal({ type: "notebook" })}>📓 DM Notebook…</button>
               <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
-              <button disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — the guided tour runs its own demo fight." : undefined} onClick={startTutorial}>🎓 Tutorial / guided tour…</button>
+              <button disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>
               <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
               <button onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
@@ -13472,6 +13491,33 @@ export default function App() {
           </div>
         </div>
       )}
+      {modal?.type === "tutorial-pick" && (() => {
+        const busy = state.combatants.filter((c) => c.type !== "effect").length;
+        return (
+          <div className="overlay" onClick={() => setModal(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="frow" style={{ alignItems: "center" }}>
+                <h3 style={{ flex: 1, margin: 0 }}>🎓 Learn Combatkeeper</h3>
+                <button className="modal-x" title="Close" onClick={() => setModal(null)}>✕</button>
+              </div>
+              <div className="trait" style={{ margin: "6px 0 10px" }}>Two ways to get a feel for it — the same little fight either way: three heroes against two goblins.</div>
+              <button className="btn" style={{ width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 8, whiteSpace: "normal" }} onClick={startTutorial}>
+                <div style={{ fontWeight: 700, color: "var(--gold)" }}>▶ Watch the guided tour</div>
+                <div className="trait" style={{ marginTop: 3 }}>Hands off — I build the party, pull in the goblins, and run a couple of turns while you just tap Next. Your board is put back exactly as it was afterwards.</div>
+              </button>
+              <button className="btn" style={{ width: "100%", textAlign: "left", padding: "10px 12px", whiteSpace: "normal" }} onClick={loadTutorialSandbox}>
+                <div style={{ fontWeight: 700, color: "var(--gold)" }}>⚔ Load the demo fight</div>
+                <div className="trait" style={{ marginTop: 3 }}>Drops the same heroes and goblins onto your board so you can run it yourself and poke at everything. They're ordinary combatants — nothing is added to your saved parties, so just Clear when you're done.</div>
+              </button>
+              {busy > 0 && (
+                <div className="trait" style={{ marginTop: 9, color: "var(--gold)" }}>
+                  ⚠ You have {busy} combatant{busy === 1 ? "" : "s"} on the board. The guided tour puts them back when it ends; the demo fight replaces them.
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
       {modal?.type === "confirm-clear" && (
         <ConfirmModal text="This removes every combatant, the log, and the round counter. Saved encounters are untouched." confirmLabel="Clear everything"
           onYes={() => doReset(false)} onClose={() => setModal(null)} />
