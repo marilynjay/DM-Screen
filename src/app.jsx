@@ -259,7 +259,8 @@ input[type=number]{width:64px}
 .dgn-sec{border:1px solid var(--line2);border-radius:8px;padding:6px 8px;margin-bottom:6px;background:rgba(255,255,255,.02)}
 .dgn-sec-hd{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .dgn-sec-title{flex:1;min-width:0;background:transparent;border:none;border-bottom:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;font-weight:600;padding:2px 0}
-.dgn-fold{background:none;border:none;color:var(--gold);font-size:15px;cursor:pointer;padding:0 2px;line-height:1}
+.dgn-fold{background:none;border:none;color:var(--gold);font-size:15px;cursor:pointer;line-height:1;
+  min-width:32px;min-height:32px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center}
 .dgn-flabel{display:block;font-family:var(--disp);font-size:15px;font-weight:700;color:var(--gold);letter-spacing:.02em;margin:12px 0 4px}
 .dgn-name{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);font-family:var(--disp);font-size:18px;padding:8px 10px;margin:4px 0 2px}
 .dgn-ehead{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -407,6 +408,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .sbook-lvls{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
 .lvlchip{cursor:pointer;font-size:11px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--dim);padding:2px 8px}
 .lvlchip.on{color:var(--gold);border-color:var(--gold)}
+/* the builder's shape/edge/passage pickers are the controls a DM hits most while placing rooms;
+   at the shared 11px/2px size they measured 51x22 against a 44px minimum. Scoped so the level
+   chips used elsewhere keep their compact size. */
+.dgn-overlay .lvlchip{font-size:13px;padding:9px 11px;border-radius:9px}
 .azbar{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:8px}
 .azkey{font-family:var(--mono);font-size:12px;min-width:22px;flex:1 0 auto;padding:3px 0;text-align:center;background:var(--panel);border:1px solid var(--line2);border-radius:5px;color:var(--dim);cursor:pointer}
 .azkey.on{color:var(--gold);border-color:var(--gold);background:var(--gold-soft)}
@@ -750,8 +755,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-row .rline{gap:6px}
 .pm-row .rline.r2{padding-left:32px;gap:3px 6px;margin-top:0}
 /* keep the row controls tight — plain .btn (no global .btn.tiny rule exists) would be chunky */
-.pm-row .btn{padding:1px 6px;font-size:12px;border-radius:6px;line-height:1.5}
-.pm-row .osfield{width:34px}
+.pm-row .btn{padding:6px 10px;font-size:12px;border-radius:6px;line-height:1.5;min-height:34px}
+.pm-row .osfield{width:48px}
 .pm-row .pm-icon{font-size:15px}
 .pm-counter{font-family:var(--mono);font-size:13px;font-weight:700;min-width:40px;text-align:center;color:var(--faint);cursor:pointer}
 .pm-counter.hurt{color:#e0645a;cursor:pointer}
@@ -8335,10 +8340,14 @@ function OneTextureDef({ id, suffix = "" }) {
   return TEX_PATTERNS[id] ? TEX_PATTERNS[id](suffix) : null;
 }
 
-function RoomShape({ room, cx, cy, hexKey }) {
+/* texSuffix picks which <defs> block this shape's texture pattern comes from. Every <svg> that draws
+   rooms must emit its OWN TextureDefs with a matching suffix: WebKit refuses to resolve url(#id)
+   across separate <svg> elements, so two svgs sharing bare `tex-*` ids leaves whichever one didn't
+   define them (in practice the room-editor preview) painting flat colour on iOS. */
+function RoomShape({ room, cx, cy, hexKey, texSuffix = "" }) {
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
-  const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}` : null;
+  const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}${texSuffix}` : null;
   // Clip corridor shapes to their hex cell; all corridor rotations are 60° multiples (hex is invariant).
   const clipId = `dgnclip-${String(hexKey).replace(/[^\w-]/g, "_")}`;
   // Edge treatments (cave/rubble) + glow are composed into one per-room inline filter (unique id, so
@@ -8894,18 +8903,20 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors · edges · glow</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
-              <defs><TextureDefs /></defs>
+              {/* own suffix: this preview is a separate <svg> from the map, and WebKit won't resolve
+                  a pattern id across svgs — sharing bare `tex-*` ids left the preview flat on iOS */}
+              <defs><TextureDefs suffix="-pv" /></defs>
               {/* filled edge-neighbours, faded and clipped to their own cells, so you can see how this
                   room's shape meets the ones around it */}
               {neighbors.map((n, i) => (
                 <g key={i}>
                   <clipPath id={`dgnnb-${i}`}><polygon points={hexCorners(n.dx, n.dy, HEX_SIZE)} /></clipPath>
-                  <g clipPath={`url(#dgnnb-${i})`} opacity="0.5"><RoomShape room={n.room} cx={n.dx} cy={n.dy} hexKey={`nb${i}`} /></g>
+                  <g clipPath={`url(#dgnnb-${i})`} opacity="0.5"><RoomShape room={n.room} cx={n.dx} cy={n.dy} hexKey={`nb${i}`} texSuffix="-pv" /></g>
                 </g>
               ))}
               {/* the cell outline, so you can see how the shape sits within its hex */}
               <polygon points={hexCorners(0, 0, HEX_SIZE)} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" strokeDasharray="3 3" />
-              <RoomShape room={room} cx={0} cy={0} hexKey="preview" />
+              <RoomShape room={room} cx={0} cy={0} hexKey="preview" texSuffix="-pv" />
               <RoomFeature room={room} cx={0} cy={0} />
               <RoomDoors room={room} cx={0} cy={0} />
             </svg>
@@ -9285,7 +9296,27 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
     setGhost(null);
     setTimeout(() => { drag.current = null; }, 0);
   };
-  const zoom = (f) => setView((v) => ({ ...v, z: Math.max(0.5, Math.min(2.4, v.z * f)) }));
+  // The canvas transform scales about world (0,0), so changing z alone slides everything you were
+  // looking at off the edge. Scale the pan with it to keep the viewport centre fixed.
+  const zoom = (f) => setView((v) => {
+    const z = Math.max(0.5, Math.min(2.4, v.z * f));
+    return { z, x: v.x * (z / v.z), y: v.y * (z / v.z) };
+  });
+  // Rooms live wherever the DM was panned when they placed them, so a saved map can sit far off
+  // origin — opening at (0,0) shows an empty grid with no clue which way the dungeon is.
+  const fitToRooms = () => {
+    const keys = Object.keys(dg.rooms || {});
+    if (!keys.length) { setView({ x: 0, y: 0, z: 1 }); return; }
+    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return hexToPix(q, r); });
+    const cx = (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2;
+    const cy = (Math.min(...pts.map((p) => p.y)) + Math.max(...pts.map((p) => p.y))) / 2;
+    const spanX = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x)) + HEX_SIZE * 3;
+    const spanY = Math.max(...pts.map((p) => p.y)) - Math.min(...pts.map((p) => p.y)) + HEX_SIZE * 3;
+    const z = Math.max(0.5, Math.min(1.4, Math.min((size.w || 360) / spanX, (size.h || 520) / spanY)));
+    setView({ z, x: -cx * z, y: -cy * z });
+  };
+  const fittedRef = useRef(false);
+  useEffect(() => { if (!fittedRef.current && size.w > 0) { fittedRef.current = true; fitToRooms(); } }, [size.w]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="dgn-overlay">
       <div className="dgn-top">
@@ -9334,6 +9365,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
           </g>
         </svg>
         <div className="dgn-zoom">
+          <button title="Centre the map on your rooms" onClick={fitToRooms}>⌖</button>
           <button onClick={() => zoom(1.25)}>＋</button>
           <button onClick={() => zoom(1 / 1.25)}>－</button>
         </div>
@@ -9388,7 +9420,21 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
       </div>
     );
   });
-  useEffect(() => { setSel(null); setView({ x: 0, y: 0, z: 0.9 }); }, [dungeon.id]); // reset when a level link swaps the dungeon
+  // Centre on wherever the rooms actually are — a map built after panning lives far off origin, and
+  // opening at (0,0) shows bare grid. Runs on open and whenever a level link swaps the dungeon.
+  const fitToRooms = (rms) => {
+    const keys = Object.keys(rms || {});
+    if (!keys.length) { setView({ x: 0, y: 0, z: 0.9 }); return; }
+    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return hexToPix(q, r); });
+    const cx = (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2;
+    const cy = (Math.min(...pts.map((p) => p.y)) + Math.max(...pts.map((p) => p.y))) / 2;
+    const z = 0.9;
+    setView({ z, x: -cx * z, y: -cy * z });
+  };
+  useEffect(() => { setSel(null); fitToRooms(dungeon.rooms || {}); }, [dungeon.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A fight needs the screen for the turn card — the map folds to its header strip when combat starts
+  // and unfolds when it ends. "▼ Show map" still overrides either way.
+  useEffect(() => { setCollapsed(mode === "combat"); }, [mode]);
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
   const drag = useRef(null);
@@ -9433,7 +9479,11 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
   const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
-  const zoom = (f) => setView((v) => ({ ...v, z: Math.max(0.5, Math.min(2.4, v.z * f)) }));
+  // keep the viewport centre fixed while zooming (the transform scales about world 0,0)
+  const zoom = (f) => setView((v) => {
+    const z = Math.max(0.5, Math.min(2.4, v.z * f));
+    return { z, x: v.x * (z / v.z), y: v.y * (z / v.z) };
+  });
   const room = sel ? rooms[sel] : null;
   const bg = dgnBg(dungeon.bg);
   const inCombat = mode === "combat";
@@ -10327,6 +10377,14 @@ export default function App() {
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
   const [dungeonPlayId, setDungeonPlayId] = useState(null); // dungeon loaded into the docked play panel, or null
   const [dungeonNav, setDungeonNav] = useState([]); // stack of dungeon ids we descended FROM, for going back up a level
+  // Remember which dungeon is in play across reloads, alongside the combat autosave — otherwise a
+  // backgrounded PWA comes back with the fight restored but the map gone.
+  const dgnPlayBootRef = useRef(false);
+  useEffect(() => {
+    if (!dgnPlayBootRef.current) { dgnPlayBootRef.current = true; return; } // don't clobber before the restore runs
+    if (dungeonPlayId) stSet("dm5e:dungeonPlay", { id: dungeonPlayId, nav: dungeonNav });
+    else stDel("dm5e:dungeonPlay");
+  }, [dungeonPlayId, dungeonNav]);
   const [tutorial, setTutorial] = useState(null); // guided-tour step index, or null
   const tutorialRef = useRef(tutorial); tutorialRef.current = tutorial; // read the live value inside combat closures
   // add the ready-made starter dungeons, with fresh ids (level-exit links remapped to match)
@@ -10660,6 +10718,13 @@ export default function App() {
       if (ap) setActivePartyIdState(ap);
       const dg = await stGet("dm5e:dungeons");
       if (Array.isArray(dg)) setDungeonsState(dg.filter((x) => x && x.id));
+      // Reopen the dungeon that was being played. Combat already survives a reload via dm5e:auto;
+      // without this the dock vanished with it, which on a phone happens whenever the PWA is evicted.
+      const play = await stGet("dm5e:dungeonPlay");
+      if (play && play.id && Array.isArray(dg) && dg.some((x) => x && x.id === play.id)) {
+        setDungeonPlayId(play.id);
+        if (Array.isArray(play.nav)) setDungeonNav(play.nav);
+      }
       setPartyBoot(true);
       // backup-reminder stamps; first-seen anchors the grace period for new installs
       let first = await stGet("dm5e:firstSeen");
