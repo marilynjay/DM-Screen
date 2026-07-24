@@ -7839,8 +7839,8 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
 }).join(" ");
 
 // Room background textures — all procedural SVG (no image assets). Each is a <pattern> filled as a
-// semi-transparent detail layer over the room's colour, so colour + texture compose. Turbulence-based
-// ones (stone/marble/dirt/mud/mist) put a filtered rect inside the pattern.
+// semi-transparent detail layer over the room's colour, so colour + texture compose. Pure geometry
+// only (paths/circles) — no filters, so they paint reliably in every browser including Safari/WebKit.
 const DGN_TEXTURES = [
   ["none", "None"], ["brick", "Brick"], ["cobble", "Cobblestone"], ["wood", "Wood planks"], ["tile", "Tile"],
   ["stone", "Stone"], ["marble", "Marble"], ["dirt", "Dirt / cave"], ["gravel", "Gravel"], ["mud", "Mud / bog"],
@@ -7856,20 +7856,19 @@ const DGN_FEATURES = [
 // Each texture builder takes a `suffix` so its element ids stay unique per <svg> instance. That lets a
 // single texture be emitted self-contained inside a swatch's own <svg> — WebKit/Safari will NOT resolve
 // url(#id) paint references across separate <svg> roots, which is why the shared-defs picker came up blank.
-const TEX_FILTERS = {
-  stone: (s) => <filter key="stone" id={`f-stone${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="4" seed="3" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .78 0 0 0 -.3" /></filter>,
-  marble: (s) => <filter key="marble" id={`f-marble${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency=".012 .04" numOctaves="5" seed="9" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  4.2 0 0 0 -2.2" /></filter>,
-  dirt: (s) => <filter key="dirt" id={`f-dirt${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>,
-  mud: (s) => <filter key="mud" id={`f-mud${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>,
-  mist: (s) => <filter key="mist" id={`f-mist${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>,
-};
-const TEX_FILTER_OF = { stone: "stone", marble: "marble", dirt: "dirt", mud: "mud", mist: "mist" };
+// NOTE: these five were once feTurbulence filters inside a <pattern> — Safari/WebKit often refuses to
+// paint a filter tiled through a pattern (renders blank), so they're now pure geometry like the rest.
 const TEX_PATTERNS = {
-  stone: (s) => <pattern key="stone" id={`tex-stone${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-stone${s})`} /></pattern>,
-  marble: (s) => <pattern key="marble" id={`tex-marble${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-marble${s})`} /></pattern>,
-  dirt: (s) => <pattern key="dirt" id={`tex-dirt${s}`} width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter={`url(#f-dirt${s})`} /></pattern>,
-  mud: (s) => <pattern key="mud" id={`tex-mud${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-mud${s})`} /></pattern>,
-  mist: (s) => <pattern key="mist" id={`tex-mist${s}`} width="160" height="160" patternUnits="userSpaceOnUse"><rect width="160" height="160" filter={`url(#f-mist${s})`} /></pattern>,
+  // irregular cracked flagstones
+  stone: (s) => <pattern key="stone" id={`tex-stone${s}`} width="58" height="58" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.32)" strokeWidth="1.5" fill="none"><path d="M0 21L24 25L32 7M24 25L22 58M32 7L58 13M0 43L28 39L58 45M28 39L32 58" /></g><g stroke="rgba(255,255,255,.06)" strokeWidth="1" fill="none"><path d="M0 22.5L24 26.5M32 8.5L58 14.5M0 44.5L28 40.5" /></g></pattern>,
+  // soft diagonal marble veins
+  marble: (s) => <pattern key="marble" id={`tex-marble${s}`} width="100" height="100" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.13)" strokeWidth="1.2" fill="none"><path d="M-6 26q30 12 52-6t54 8" /><path d="M-6 63q26-10 50 6t56-4" /></g><g stroke="rgba(0,0,0,.1)" strokeWidth="1" fill="none"><path d="M-6 28q30 12 52-6t54 8" /></g></pattern>,
+  // fine dirt / cave speckle
+  dirt: (s) => <pattern key="dirt" id={`tex-dirt${s}`} width="34" height="34" patternUnits="userSpaceOnUse"><g fill="rgba(0,0,0,.26)"><circle cx="4" cy="6" r="1.4" /><circle cx="13" cy="3" r="1" /><circle cx="22" cy="8" r="1.5" /><circle cx="30" cy="4" r="1" /><circle cx="8" cy="15" r="1.2" /><circle cx="18" cy="18" r="1.5" /><circle cx="27" cy="15" r="1" /><circle cx="3" cy="24" r="1.3" /><circle cx="14" cy="27" r="1" /><circle cx="24" cy="25" r="1.5" /><circle cx="31" cy="29" r="1.1" /><circle cx="9" cy="31" r="1" /></g><g fill="rgba(255,255,255,.05)"><circle cx="6" cy="5" r="1" /><circle cx="23" cy="7" r="1" /><circle cx="15" cy="26" r="1" /></g></pattern>,
+  // muddy dark blotches
+  mud: (s) => <pattern key="mud" id={`tex-mud${s}`} width="52" height="52" patternUnits="userSpaceOnUse"><g fill="rgba(0,0,0,.2)"><circle cx="11" cy="13" r="6" /><circle cx="16" cy="16" r="4" /><circle cx="35" cy="21" r="6.5" /><circle cx="40" cy="25" r="3.5" /><circle cx="19" cy="38" r="6" /><circle cx="13" cy="41" r="3.5" /><circle cx="44" cy="42" r="4.5" /></g><g fill="rgba(255,255,255,.05)"><circle cx="9" cy="11" r="2" /><circle cx="33" cy="19" r="2" /></g></pattern>,
+  // faint drifting fog bands
+  mist: (s) => <pattern key="mist" id={`tex-mist${s}`} width="96" height="48" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(255,255,255,.11)" strokeWidth="7" strokeLinecap="round"><path d="M-12 15q24-9 48 0t60 0" /><path d="M-12 36q26 9 48 0t60 0" /></g></pattern>,
   brick: (s) => <pattern key="brick" id={`tex-brick${s}`} width="34" height="20" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.42)" strokeWidth="1.6" fill="none"><path d="M0 10H34M0 20H34M17 0V10M0 10V20M34 10V20" /></g><g stroke="rgba(255,255,255,.08)" strokeWidth="1" fill="none"><path d="M0 8.5H34M0 18.5H34" /></g></pattern>,
   // Round cobbles (circles, not <ellipse> — WebKit renders a stroked-ellipse pattern as solid black).
   cobble: (s) => <pattern key="cobble" id={`tex-cobble${s}`} width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><circle cx="9" cy="9" r="8" /><circle cx="27" cy="12" r="8.2" /><circle cx="16" cy="27" r="8" /><circle cx="33" cy="30" r="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><circle cx="9" cy="8" r="7" /><circle cx="16" cy="26" r="7" /></g></pattern>,
@@ -7890,24 +7889,13 @@ const TEX_PATTERNS = {
   stars: (s) => <pattern key="stars" id={`tex-stars${s}`} width="50" height="50" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.72)"><circle cx="8" cy="10" r="1" /><circle cx="30" cy="6" r="1.5" /><circle cx="44" cy="18" r="1" /><circle cx="18" cy="26" r="1.2" /><circle cx="38" cy="34" r="1" /><circle cx="6" cy="40" r="1.4" /><circle cx="26" cy="44" r="1" /></g><g fill="rgba(180,200,255,.5)"><circle cx="14" cy="16" r=".7" /><circle cx="46" cy="42" r=".8" /></g></pattern>,
   fungus: (s) => <pattern key="fungus" id={`tex-fungus${s}`} width="42" height="42" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.2" fill="none"><path d="M9 30v-7M26 34v-8M34 18v-6" /></g><g fill="rgba(220,160,180,.4)" stroke="rgba(0,0,0,.2)" strokeWidth="1"><path d="M4 23a5 3.5 0 0 1 10 0z" /><path d="M20 26a6 4 0 0 1 12 0z" /><path d="M29 12a4 3 0 0 1 9 0z" /></g></pattern>,
 };
-// All defs for one <svg> (map + preview). Optional suffix keeps ids unique when several coexist.
+// All pattern defs for one <svg> (map + preview). Optional suffix keeps ids unique when several coexist.
 function TextureDefs({ suffix = "" }) {
-  return (
-    <>
-      {Object.values(TEX_FILTERS).map((f) => f(suffix))}
-      {Object.values(TEX_PATTERNS).map((p) => p(suffix))}
-    </>
-  );
+  return <>{Object.values(TEX_PATTERNS).map((p) => p(suffix))}</>;
 }
-// Just one texture's defs, self-contained (its filter, if any, + its pattern) — for a swatch's own <svg>.
+// Just one texture's pattern, self-contained — for a swatch's own <svg> (no cross-<svg> id references).
 function OneTextureDef({ id, suffix = "" }) {
-  const filt = TEX_FILTER_OF[id];
-  return (
-    <>
-      {filt && TEX_FILTERS[filt](suffix)}
-      {TEX_PATTERNS[id] ? TEX_PATTERNS[id](suffix) : null}
-    </>
-  );
+  return TEX_PATTERNS[id] ? TEX_PATTERNS[id](suffix) : null;
 }
 
 function RoomShape({ room, cx, cy, hexKey }) {
