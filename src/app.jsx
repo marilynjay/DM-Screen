@@ -692,6 +692,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
 .pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:0 5px;font-size:12px;line-height:1.4;cursor:pointer;opacity:.45}
 .pm-me.on{border-color:var(--gold);background:var(--gold-soft);opacity:1}
+.pm-masknote{font-size:11px;color:var(--faint);font-style:italic;flex:none;white-space:nowrap}
 /* compact flat rows in the Old School roster style: r1 = name, r2 = dmg | HP | heal + controls */
 .pm-row{border-bottom:1px solid var(--line);padding:2px 4px 3px}
 .pm-row:last-child{border-bottom:none}
@@ -9214,7 +9215,7 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
 const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
 const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
 const PM_COND_ICON = Object.fromEntries(PM_CONDS);
-const PM_BLANK = () => ({ trackParty: false, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
+const PM_BLANK = () => ({ trackParty: false, allies: [], enemies: [] });
 // Turn a DM party member into a Player Mode ally row. Their party HP total seeds both
 // current and max, so the sheet lands ready-to-play at full health; srcId lets a later
 // re-import skip anyone already on the board.
@@ -9238,6 +9239,7 @@ function PlayerModeBoard({ onExit }) {
   const [reorder, setReorder] = useState(false); // show up/down arrows to approximate initiative
   const [pmToasts, setPmToasts] = useState([]);
   const [srcParty, setSrcParty] = useState(null); // the DM's active party, for the ＋ Import party button
+  const [askMe, setAskMe] = useState(false); // "which character are you?" picker, shown after an import
   const flash = (text, kind = "good") => { const id = Math.random(); setPmToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setPmToasts((t) => t.filter((x) => x.id !== id)), 2600); };
   useEffect(() => { let live = true; (async () => {
     const [b, parties, apId] = await Promise.all([stGet("dm5e:pmBoard"), stGet("dm5e:parties"), stGet("dm5e:activeParty")]);
@@ -9252,6 +9254,7 @@ function PlayerModeBoard({ onExit }) {
       const seeded = { ...PM_BLANK(), allies };
       setBoard(seeded); stSet("dm5e:pmBoard", seeded);
       flash(`Imported ${allies.length} party member${allies.length === 1 ? "" : "s"}.`);
+      setAskMe(true); // no "me" yet — ask which character the player is
     } else setBoard(PM_BLANK());
   })(); return () => { live = false; }; }, []);
   if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
@@ -9275,21 +9278,19 @@ function PlayerModeBoard({ onExit }) {
     const tracked = (a.hp !== "" && a.hp != null) || (a.conds || []).length > 0 || a.down;
     if (!tracked || window.confirm(`Remove ${a.name || "this party member"}? Their tracked HP will be lost.`)) removeAlly(a.id);
   };
-  // Mark exactly one ally as "you" — with whole-party tracking off, only that row shows.
+  // Mark exactly one ally as "you". Your character always shows its HP; teammates stay name-only
+  // until whole-party tracking is turned on.
   const setMe = (id) => save({ ...board, allies: board.allies.map((a) => ({ ...a, me: a.id === id })) });
-  // Pull in party members the DM has saved but that aren't on the board yet (matched by source id or name).
-  // Importing the party means you want to see it, so switch whole-party tracking on — otherwise the new
-  // rows would be filtered out (with tracking off only "you" shows) and it would look like nothing happened.
+  // Pull in every saved party member (names + HP) that isn't on the board yet. HP always imports;
+  // whether a teammate's HP is *shown* is governed by "you" + the track-party toggle, not the import.
   const importParty = () => {
     if (!srcParty || !(srcParty.members || []).length) { flash("No saved party to import.", "bad"); return; }
     const add = srcParty.members.filter((m) => !board.allies.some((a) => (a.srcId && a.srcId === m.id) || (a.name || "").trim().toLowerCase() === (m.name || "").trim().toLowerCase()));
-    if (!add.length) {
-      if (!board.trackParty) { save({ ...board, trackParty: true }); flash("Showing the whole party."); }
-      else flash("Party already on the board.");
-      return;
-    }
-    save({ ...board, trackParty: true, allies: [...board.allies, ...add.map(pmAllyFromMember)] });
-    flash(`Added ${add.length} party member${add.length === 1 ? "" : "s"}.`);
+    if (!add.length) { flash("Party already on the board."); return; }
+    const allies = [...board.allies, ...add.map(pmAllyFromMember)];
+    save({ ...board, allies });
+    flash(`Imported ${add.length} party member${add.length === 1 ? "" : "s"}.`);
+    if (!allies.some((a) => a.me)) setAskMe(true); // nobody's "you" yet — ask
   };
   const toggleAdd = () => save({ ...board, addCollapsed: !board.addCollapsed });
   const togglePartyCollapse = () => save({ ...board, partyCollapsed: !board.partyCollapsed });
@@ -9386,9 +9387,10 @@ function PlayerModeBoard({ onExit }) {
   const searchResults = search != null ? fullBestiary().filter((m) => (cat === "all" || m.cat === cat) && m.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 60) : [];
 
   const someMe = board.allies.some((a) => a.me);
-  // With whole-party tracking off, show only "you" — but if nobody's picked yet, show
-  // everyone (with a hint) so the player can tap 👤 to choose their character.
-  const allyRows = board.trackParty ? board.allies : someMe ? board.allies.filter((a) => a.me) : board.allies;
+  // Everyone on the board is always listed. HP is *masked* per-row instead of hiding the row:
+  // your own character always shows HP; teammates show HP only when whole-party tracking is on.
+  const allyRows = board.allies;
+  const showHp = (a) => !!a.me || board.trackParty;
   const addOpen = !board.addCollapsed;
   return (
     <div className="dm-app pm-app">
@@ -9464,18 +9466,25 @@ function PlayerModeBoard({ onExit }) {
             <button className="btn tiny ghost" onClick={togglePartyCollapse} title={board.partyCollapsed ? "Show the party" : "Hide the party — track only the monsters"}>{board.partyCollapsed ? "Show ▾" : "Hide ▲"}</button>
           </div>
           {!board.partyCollapsed && (<>
-          {!board.trackParty && !someMe && (
-            <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>Tap 👤 on your character to show just your HP.</div>
+          {board.allies.length === 0 && (
+            <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>No party yet — import your saved party or add members below.</div>
           )}
-          {allyRows.map((a, ai) => (
+          {board.allies.length > 0 && !someMe && (
+            <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>Tap 👤 to mark which character is you — yours shows HP; teammates stay name-only until you turn on party tracking.</div>
+          )}
+          {allyRows.map((a, ai) => {
+            const hp = showHp(a);
+            return (
             <div key={a.id} className="pm-row">
               <div className="rline r1">
                 {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
                 <button className={`pm-me ${a.me ? "on" : ""}`} title={a.me ? "This is your character" : "Mark this as your character"} onClick={() => setMe(a.id)}>👤</button>
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
-                <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>
+                {!hp && <span className="pm-masknote" title="HP hidden — this is a teammate and party tracking is off">HP hidden</span>}
+                {hp && <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>}
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
               </div>
+              {hp && (
               <div className="rline r2">
                 {hpEntryFields(a.id, (
                   <span className="hpbox" title="Current / max HP — edit directly, or use the red/green fields and Apply">
@@ -9486,19 +9495,21 @@ function PlayerModeBoard({ onExit }) {
                 ))}
                 {condInline(a, "a:" + a.id, setAlly)}
               </div>
-              {condPicker(a, "a:" + a.id, setAlly)}
-              {(a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
+              )}
+              {hp && condPicker(a, "a:" + a.id, setAlly)}
+              {hp && (a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
             </div>
-          ))}
+            );
+          })}
           <div className="frow" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
-            {board.trackParty && <button className="btn small ghost" onClick={addAlly}>＋ Add party member</button>}
+            <button className="btn small ghost" onClick={addAlly}>＋ Add party member</button>
             {srcParty && (srcParty.members || []).length > 0 && (
               <button className="btn small ghost" onClick={importParty} title={`Pull in ${srcParty.name || "your saved party"} from the DM's roster`}>⬇ Import party</button>
             )}
           </div>
           <label className="frow" style={{ gap: 8, marginTop: 8, alignItems: "center", cursor: "pointer" }}>
             <input type="checkbox" checked={board.trackParty} onChange={(e) => save({ ...board, trackParty: e.target.checked })} />
-            <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = only your character)</span></span>
+            <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = only your HP; teammates show as names)</span></span>
           </label>
           </>)}
         </div>
@@ -9511,6 +9522,20 @@ function PlayerModeBoard({ onExit }) {
       <div className="osapplybar pm-applybar">
         <button className="btn primary" disabled={!anyPending} onClick={applyAll} title={anyPending ? "Apply all pending damage and healing" : "Type damage (red) or healing (green) on any row, then tap here"}>🩸 Apply HP changes</button>
       </div>
+      {askMe && board.allies.length > 0 && (
+        <div className="overlay" onClick={() => setAskMe(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>Which character are you?</h3>
+            <div className="trait" style={{ fontSize: 12, marginBottom: 10, color: "var(--faint)" }}>Your character always shows its HP. Your teammates stay name-only until you turn on “Track the whole party’s HP”.</div>
+            {board.allies.map((a) => (
+              <button key={a.id} className={`btn ${a.me ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", marginBottom: 6 }} onClick={() => { setMe(a.id); setAskMe(false); }}>{a.name || "Unnamed"}</button>
+            ))}
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 4 }}>
+              <button className="btn ghost" onClick={() => setAskMe(false)}>I’m not in this party</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
