@@ -681,15 +681,20 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   background:linear-gradient(180deg,#241b2e,#1b1722);border-bottom:1px solid var(--line)}
 .pm-logo{font-family:var(--disp);font-size:16px;color:var(--gold);letter-spacing:.03em;flex:1}
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
-.pm-enemy{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:var(--raised)}
-.pm-swatch{width:26px;height:26px;flex:none;border-radius:7px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
-.pm-name{flex:1;min-width:0;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:7px 9px;color:var(--text);-webkit-text-fill-color:var(--text)}
+.pm-enemy{border:1px solid var(--line);border-radius:10px;padding:6px 9px;margin-bottom:6px;background:var(--raised)}
+.pm-swatch{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
+/* names read like the tidy static labels in the main roster; they only "box up" on focus */
+.pm-name{flex:1;min-width:0;font-size:16px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:7px;
+  padding:2px 5px;color:var(--text);-webkit-text-fill-color:var(--text)}
+.pm-name:hover{border-color:var(--line)}
+.pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
+.pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:2px 6px;font-size:13px;line-height:1.2;cursor:pointer;opacity:.45}
+.pm-me.on{border-color:var(--gold);background:var(--gold-soft);opacity:1}
 .pm-icon{font-size:17px;cursor:pointer;line-height:1}
 .pm-iconpick{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .pm-iconopt{font-size:18px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:4px 6px;cursor:pointer}
 .pm-iconopt.on{border-color:var(--gold);background:var(--gold-soft)}
-.pm-hp{font-family:var(--disp);font-size:20px;font-weight:700;color:var(--text);min-width:70px}
+.pm-hp{font-family:var(--disp);font-size:18px;font-weight:700;color:var(--text);min-width:56px}
 .pm-hp.hurt{color:#e0645a}
 .pm-amt{width:64px;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
   padding:7px 8px;color:var(--text);-webkit-text-fill-color:var(--text)}
@@ -9201,6 +9206,17 @@ const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "
 const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
 const PM_COND_ICON = Object.fromEntries(PM_CONDS);
 const PM_BLANK = () => ({ trackParty: true, notes: "", allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
+// Turn a DM party member into a Player Mode ally row. Their party HP total seeds both
+// current and max, so the sheet lands ready-to-play at full health; srcId lets a later
+// re-import skip anyone already on the board.
+const pmAllyFromMember = (m) => {
+  const mh = m && m.hp !== "" && m.hp != null && !isNaN(Number(m.hp)) ? String(m.hp) : "";
+  return { id: newUid(), name: (m && m.name) || "", hp: mh, maxHp: mh, conds: [], ds: { s: 0, f: 0 }, srcId: m && m.id };
+};
+const pmResolveParty = (parties, apId) => {
+  if (!Array.isArray(parties) || !parties.length) return null;
+  return parties.find((p) => p.id === apId) || parties[0];
+};
 function PlayerModeBoard({ onExit }) {
   const [board, setBoard] = useState(null);
   const [amts, setAmts] = useState({});      // per-enemy damage-entry field
@@ -9212,8 +9228,23 @@ function PlayerModeBoard({ onExit }) {
   const [qty, setQty] = useState("3");
   const [reorder, setReorder] = useState(false); // show up/down arrows to approximate initiative
   const [pmToasts, setPmToasts] = useState([]);
+  const [srcParty, setSrcParty] = useState(null); // the DM's active party, for the ＋ Import party button
   const flash = (text, kind = "good") => { const id = Math.random(); setPmToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setPmToasts((t) => t.filter((x) => x.id !== id)), 2600); };
-  useEffect(() => { let live = true; (async () => { const b = await stGet("dm5e:pmBoard"); if (live) setBoard(b && b.allies ? { ...PM_BLANK(), ...b } : PM_BLANK()); })(); return () => { live = false; }; }, []);
+  useEffect(() => { let live = true; (async () => {
+    const [b, parties, apId] = await Promise.all([stGet("dm5e:pmBoard"), stGet("dm5e:parties"), stGet("dm5e:activeParty")]);
+    if (!live) return;
+    const p = pmResolveParty(parties, apId);
+    setSrcParty(p);
+    if (b && b.allies) { setBoard({ ...PM_BLANK(), ...b }); return; }
+    // First time in Player Mode: seed the roster from the DM's active party if there is one.
+    // Persist the seed so it doesn't re-import (or double up) on the next visit.
+    if (p && (p.members || []).length) {
+      const allies = p.members.map(pmAllyFromMember);
+      const seeded = { ...PM_BLANK(), allies };
+      setBoard(seeded); stSet("dm5e:pmBoard", seeded);
+      flash(`Imported ${allies.length} party member${allies.length === 1 ? "" : "s"}.`);
+    } else setBoard(PM_BLANK());
+  })(); return () => { live = false; }; }, []);
   if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
   const save = (b) => { setBoard(b); stSet("dm5e:pmBoard", b); };
   const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
@@ -9235,6 +9266,17 @@ function PlayerModeBoard({ onExit }) {
     const tracked = (a.hp !== "" && a.hp != null) || (a.conds || []).length > 0 || a.down;
     if (!tracked || window.confirm(`Remove ${a.name || "this party member"}? Their tracked HP will be lost.`)) removeAlly(a.id);
   };
+  // Mark exactly one ally as "you" — with whole-party tracking off, only that row shows.
+  const setMe = (id) => save({ ...board, allies: board.allies.map((a) => ({ ...a, me: a.id === id })) });
+  // Pull in party members the DM has saved but that aren't on the board yet (matched by source id or name).
+  const importParty = () => {
+    if (!srcParty || !(srcParty.members || []).length) { flash("No saved party to import.", "bad"); return; }
+    const add = srcParty.members.filter((m) => !board.allies.some((a) => (a.srcId && a.srcId === m.id) || (a.name || "").trim().toLowerCase() === (m.name || "").trim().toLowerCase()));
+    if (!add.length) { flash("Party already on the board."); return; }
+    save({ ...board, allies: [...board.allies, ...add.map(pmAllyFromMember)] });
+    flash(`Added ${add.length} party member${add.length === 1 ? "" : "s"}.`);
+  };
+  const toggleAdd = () => save({ ...board, addCollapsed: !board.addCollapsed });
   // enemies
   const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); flash(`Added ${n} monster${n === 1 ? "" : "s"}.`); };
   const addNamedEnemy = (name) => { save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] }); flash(`Added ${name} to enemies.`); };
@@ -9297,7 +9339,11 @@ function PlayerModeBoard({ onExit }) {
   };
   const searchResults = search != null ? fullBestiary().filter((m) => (cat === "all" || m.cat === cat) && m.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0, 60) : [];
 
-  const allyRows = board.allies.filter((a) => a.me || board.trackParty);
+  const someMe = board.allies.some((a) => a.me);
+  // With whole-party tracking off, show only "you" — but if nobody's picked yet, show
+  // everyone (with a hint) so the player can tap 👤 to choose their character.
+  const allyRows = board.trackParty ? board.allies : someMe ? board.allies.filter((a) => a.me) : board.allies;
+  const addOpen = !board.addCollapsed;
   return (
     <div className="dm-app pm-app">
       <style>{CSS}</style>
@@ -9312,13 +9358,18 @@ function PlayerModeBoard({ onExit }) {
       <div className="main">
         {/* ENEMIES */}
         <div className="card">
-          <div className="pm-sect-hd">Enemies <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>— log damage; HP counts past 0</span></div>
+          <div className="pm-sect-hd frow" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span>Enemies <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>— log damage; HP counts past 0</span></span>
+            <button className="btn tiny ghost" onClick={toggleAdd} title={addOpen ? "Hide the add-enemy controls" : "Show the add-enemy controls"}>{addOpen ? "Hide add ▲" : "＋ Add ▾"}</button>
+          </div>
+          {addOpen && (
           <div className="frow" style={{ gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
             <input type="number" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 56 }} min={1} />
             <button className="btn small" onClick={() => { const n = Math.max(1, Math.min(30, parseInt(qty, 10) || 1)); addEnemies(n); }}>＋ Add unnamed</button>
             <button className="btn small" onClick={() => setSearch(search == null ? "" : null)}>{search != null ? "Close search ▲" : "🔍 From bestiary"}</button>
           </div>
-          {search != null && (
+          )}
+          {addOpen && search != null && (
             <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginBottom: 8 }}>
               <input className="sbook-search" placeholder="Search by name…" autoFocus value={search} onChange={(e) => setSearch(e.target.value)} />
               <div className="tabs" style={{ margin: "6px 0" }}>
@@ -9365,10 +9416,14 @@ function PlayerModeBoard({ onExit }) {
         {/* PARTY */}
         <div className="card" style={{ marginTop: 12 }}>
           <div className="pm-sect-hd">Party HP</div>
+          {!board.trackParty && !someMe && (
+            <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>Tap 👤 on your character to show just your HP.</div>
+          )}
           {allyRows.map((a, ai) => (
             <div key={a.id} style={{ marginBottom: 8 }}>
               <div className="frow" style={{ gap: 6, alignItems: "center" }}>
                 {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
+                <button className={`pm-me ${a.me ? "on" : ""}`} title={a.me ? "This is your character" : "Mark this as your character"} onClick={() => setMe(a.id)}>👤</button>
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
                 <span style={{ color: "var(--faint)" }}>/</span>
@@ -9385,10 +9440,15 @@ function PlayerModeBoard({ onExit }) {
               {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
-          {board.trackParty && <button className="btn small ghost" style={{ marginTop: 4 }} onClick={addAlly}>＋ Add party member</button>}
+          <div className="frow" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+            {board.trackParty && <button className="btn small ghost" onClick={addAlly}>＋ Add party member</button>}
+            {srcParty && (srcParty.members || []).length > 0 && (
+              <button className="btn small ghost" onClick={importParty} title={`Pull in ${srcParty.name || "your saved party"} from the DM's roster`}>⬇ Import party</button>
+            )}
+          </div>
           <label className="frow" style={{ gap: 8, marginTop: 8, alignItems: "center", cursor: "pointer" }}>
             <input type="checkbox" checked={board.trackParty} onChange={(e) => save({ ...board, trackParty: e.target.checked })} />
-            <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = just you)</span></span>
+            <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = only your character)</span></span>
           </label>
         </div>
 
