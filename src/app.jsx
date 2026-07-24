@@ -8001,9 +8001,13 @@ function RoomShape({ room, cx, cy, hexKey }) {
       )}
       <g filter={fxOn ? `url(#${fxId})` : undefined}>
         {draw(col, stroke)}
-        {/* `… none` fallback: if a pattern ever fails to resolve, the overlay paints nothing (shows the
-            base colour) instead of blacking out the room. */}
-        {texId && draw(`url(#${texId}) none`, "none")}
+        {/* Plain `url(#id)` with NO ` none` paint fallback. WebKit/Safari mishandles the SVG2 fallback
+            syntax `fill="url(#id) none"` — it applies the `none` even when the pattern resolves, so the
+            texture overlay paints transparent and the room shows only its base colour (this is exactly why
+            textures rendered on desktop Chrome but never on iOS). The swatch previews use the same
+            no-fallback form and paint correctly in Safari, so the room fill now matches them. The pattern
+            is always defined in this same <svg> (TextureDefs), so it resolves. */}
+        {texId && draw(`url(#${texId})`, "none")}
       </g>
     </>
   );
