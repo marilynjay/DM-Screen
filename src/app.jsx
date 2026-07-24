@@ -449,10 +449,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rail.collapsed{display:none}
 .railbar{display:flex;align-items:center;gap:8px;padding:4px 14px;background:var(--panel);
   border-bottom:1px solid var(--line);position:sticky;top:49px;z-index:31;font-size:12px;color:var(--dim)}
-.row{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:3px 10px 4px;border-bottom:1px solid var(--line);
-  min-height:38px}
-.rline{display:flex;align-items:center;gap:8px;min-width:0}
-.rline.r2{padding-left:45px;gap:6px 8px;flex-wrap:wrap;margin-top:1px}
+.row{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:2px 10px 3px;border-bottom:1px solid var(--line);
+  min-height:0}
+.rline{display:flex;align-items:center;gap:6px;min-width:0}
+.rline.r2{padding-left:36px;gap:4px 6px;flex-wrap:wrap;margin-top:0}
 .row:last-child{border-bottom:none}
 .row.active{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
 .row.dead > *:not(.lootico){opacity:.42}
@@ -9285,6 +9285,7 @@ function PlayerModeBoard({ onExit }) {
     flash(`Added ${add.length} party member${add.length === 1 ? "" : "s"}.`);
   };
   const toggleAdd = () => save({ ...board, addCollapsed: !board.addCollapsed });
+  const togglePartyCollapse = () => save({ ...board, partyCollapsed: !board.partyCollapsed });
   // enemies
   const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); flash(`Added ${n} monster${n === 1 ? "" : "s"}.`); };
   const addNamedEnemy = (name) => { save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] }); flash(`Added ${name} to enemies.`); };
@@ -9321,6 +9322,16 @@ function PlayerModeBoard({ onExit }) {
     setEntries({});
     flash(`Applied HP to ${n} creature${n === 1 ? "" : "s"}.`);
   };
+  // Commit just this one row's pending damage/heal (the per-row ✓ button).
+  const applyRow = (id) => {
+    if (!hasEntry(id)) return;
+    if (board.enemies.some((e) => e.id === id)) {
+      save({ ...board, enemies: board.enemies.map((e) => (e.id === id ? { ...e, dmg: Math.max(0, (e.dmg || 0) - entNet(id)) } : e)) });
+    } else {
+      save({ ...board, allies: board.allies.map((a) => (a.id === id ? allyAfterDelta(a, entNet(id)) : a)) });
+    }
+    setEntries((m) => { const n = { ...m }; delete n[id]; return n; });
+  };
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
   const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
   const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
@@ -9344,10 +9355,11 @@ function PlayerModeBoard({ onExit }) {
   const hpEntryFields = (id, center) => (
     <>
       <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="–" value={entries[id]?.dmg ?? ""}
-        title="Damage (red) — applied when you tap Apply" onChange={(ev) => setEnt(id, "dmg", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+        title="Damage (red) — applied when you tap Apply" onChange={(ev) => setEnt(id, "dmg", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyRow(id)} />
       {center}
       <input className="osfield osheal" type="number" inputMode="numeric" placeholder="–" value={entries[id]?.heal ?? ""}
-        title="Healing (green) — applied when you tap Apply" onChange={(ev) => setEnt(id, "heal", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+        title="Healing (green) — applied when you tap Apply" onChange={(ev) => setEnt(id, "heal", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyRow(id)} />
+      {hasEntry(id) && <button className="btn primary pm-apply1" title="Apply to this row" onClick={() => applyRow(id)}>✓ Apply</button>}
     </>
   );
   // death-save tracker — shown when an ally is at 0 HP
@@ -9440,7 +9452,11 @@ function PlayerModeBoard({ onExit }) {
 
         {/* PARTY */}
         <div className="card" style={{ marginTop: 12 }}>
-          <div className="pm-sect-hd">Party HP</div>
+          <div className="pm-sect-hd frow" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span>Party HP{board.partyCollapsed ? <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}> — hidden ({board.allies.length})</span> : null}</span>
+            <button className="btn tiny ghost" onClick={togglePartyCollapse} title={board.partyCollapsed ? "Show the party" : "Hide the party — track only the monsters"}>{board.partyCollapsed ? "Show ▾" : "Hide ▲"}</button>
+          </div>
+          {!board.partyCollapsed && (<>
           {!board.trackParty && !someMe && (
             <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>Tap 👤 on your character to show just your HP.</div>
           )}
@@ -9477,6 +9493,7 @@ function PlayerModeBoard({ onExit }) {
             <input type="checkbox" checked={board.trackParty} onChange={(e) => save({ ...board, trackParty: e.target.checked })} />
             <span style={{ fontSize: 13 }}>Track the whole party's HP <span style={{ color: "var(--faint)", fontSize: 11 }}>(off = only your character)</span></span>
           </label>
+          </>)}
         </div>
 
         {/* NOTES */}
