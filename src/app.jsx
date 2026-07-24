@@ -9211,6 +9211,8 @@ function PlayerModeBoard({ onExit }) {
   const [cat, setCat] = useState("all");
   const [qty, setQty] = useState("3");
   const [reorder, setReorder] = useState(false); // show up/down arrows to approximate initiative
+  const [pmToasts, setPmToasts] = useState([]);
+  const flash = (text, kind = "good") => { const id = Math.random(); setPmToasts((t) => [...t, { id, text, kind }]); setTimeout(() => setPmToasts((t) => t.filter((x) => x.id !== id)), 2600); };
   useEffect(() => { let live = true; (async () => { const b = await stGet("dm5e:pmBoard"); if (live) setBoard(b && b.allies ? { ...PM_BLANK(), ...b } : PM_BLANK()); })(); return () => { live = false; }; }, []);
   if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
   const save = (b) => { setBoard(b); stSet("dm5e:pmBoard", b); };
@@ -9229,11 +9231,20 @@ function PlayerModeBoard({ onExit }) {
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
   const addAlly = () => save({ ...board, allies: [...board.allies, { id: newUid(), name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] });
   const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
+  const confirmRemoveAlly = (a) => {
+    const tracked = (a.hp !== "" && a.hp != null) || (a.conds || []).length > 0 || a.down;
+    if (!tracked || window.confirm(`Remove ${a.name || "this party member"}? Their tracked HP will be lost.`)) removeAlly(a.id);
+  };
   // enemies
-  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); };
-  const addNamedEnemy = (name) => save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] });
+  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); flash(`Added ${n} monster${n === 1 ? "" : "s"}.`); };
+  const addNamedEnemy = (name) => { save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] }); flash(`Added ${name} to enemies.`); };
   const setEnemy = (id, patch) => save({ ...board, enemies: board.enemies.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   const removeEnemy = (id) => save({ ...board, enemies: board.enemies.filter((e) => e.id !== id) });
+  // Confirm before deleting an enemy that's had damage / status tracked — an easy mis-tap to lose.
+  const confirmRemoveEnemy = (e) => {
+    const tracked = (e.dmg || 0) > 0 || (e.conds || []).length > 0 || e.bloodied || e.defeated;
+    if (!tracked || window.confirm(`Remove ${e.name || "this enemy"}? Its logged damage and status will be lost.`)) removeEnemy(e.id);
+  };
   const deal = (id, sign) => { const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return; const e = board.enemies.find((x) => x.id === id); if (!e) return; setEnemy(id, { dmg: Math.max(0, (e.dmg || 0) + sign * amt) }); setAmts({ ...amts, [id]: "" }); };
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
   const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
@@ -9295,6 +9306,9 @@ function PlayerModeBoard({ onExit }) {
         <button className={`btn small ${reorder ? "" : "ghost"}`} onClick={() => setReorder(!reorder)} title="Show up/down arrows to reorder creatures and party — approximate initiative as you figure it out">⇅ Reorder{reorder ? " ✓" : ""}</button>
         <button className="btn small ghost" onClick={onExit} title="Back to the full app">← Exit</button>
       </div>
+      {pmToasts.length > 0 && (
+        <div className="toastwrap">{pmToasts.map((t) => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}</div>
+      )}
       <div className="main">
         {/* ENEMIES */}
         <div className="card">
@@ -9329,16 +9343,16 @@ function PlayerModeBoard({ onExit }) {
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
                 {e.bloodied && <span className="pm-bloodied">🩸 Bloodied</span>}
                 <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
-                <button className="btn tiny ghost warn" title="Remove" onClick={() => removeEnemy(e.id)}>✕</button>
+                <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveEnemy(e)}>✕</button>
               </div>
               {iconFor === e.id && (
                 <div className="pm-iconpick">{PM_ICONS.map((ic) => <button key={ic} className={`pm-iconopt ${(e.icons || []).includes(ic) ? "on" : ""}`} onClick={() => toggleIcon(e.id, ic)}>{ic}</button>)}</div>
               )}
-              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
+              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                 <span className={`pm-hp ${e.dmg > 0 ? "hurt" : ""}`}>{e.dmg > 0 ? `−${e.dmg}` : "?"} <span style={{ fontSize: 11, color: "var(--faint)" }}>HP</span></span>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="dmg" value={amts[e.id] || ""} onChange={(ev) => setAmts({ ...amts, [e.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && deal(e.id, +1)} />
-                <button className="btn small" onClick={() => deal(e.id, +1)}>− HP</button>
-                <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋</button>
+                <button className="btn small" title="Apply this as damage" onClick={() => deal(e.id, +1)}>− Damage</button>
+                <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋ Heal</button>
                 {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to unknown" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
                 <button className={`btn small ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is bloodied (about half HP)" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
                 <button className={`btn small ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
@@ -9359,9 +9373,9 @@ function PlayerModeBoard({ onExit }) {
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
                 <span style={{ color: "var(--faint)" }}>/</span>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
-                {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => removeAlly(a.id)}>✕</button>}
+                {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
               </div>
-              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4 }}>
+              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
                 <input type="number" inputMode="numeric" className="pm-amt" placeholder="amt" value={amts[a.id] || ""} onChange={(ev) => setAmts({ ...amts, [a.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && applyToAlly(a.id, -1)} />
                 <button className="btn small" title="Subtract this much HP" onClick={() => applyToAlly(a.id, -1)}>− Damage</button>
                 <button className="btn small ghost" title="Add this much HP (up to max)" onClick={() => applyToAlly(a.id, +1)}>＋ Heal</button>
