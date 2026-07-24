@@ -536,6 +536,20 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .npchint{font-size:10px;color:var(--faint);opacity:.55;margin-left:auto;flex-shrink:0}
 .npcdock{border:1px solid var(--line2);border-top:2px solid var(--gold-soft);border-radius:0 0 10px 10px;background:var(--panel);padding:8px 12px 12px;margin:-2px 4px 8px}
 .npcdock-hd{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--gold);font-size:13px}
+/* NPC appearance / portrait builder */
+.look-sec{margin-top:6px}
+.look-build{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px}
+.look-preview{display:flex;justify-content:center;margin-bottom:8px}
+.look-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.look-row>span{font-size:12px;color:var(--faint);min-width:78px}
+.look-row.col{flex-direction:column;align-items:stretch;gap:3px}
+.look-row.col>span{min-width:0}
+.look-swatches{display:flex;flex-wrap:wrap;gap:5px}
+.look-sw{width:24px;height:24px;flex:none;border-radius:6px;border:2px solid transparent;cursor:pointer;padding:0}
+.look-sw.on{border-color:#fff;box-shadow:0 0 0 1px var(--gold)}
+.look-chips{display:flex;flex-wrap:wrap;gap:4px}
+.look-chip{font-size:12px;border:1px solid var(--line2);border-radius:999px;background:var(--panel);color:var(--text);padding:3px 9px;cursor:pointer}
+.look-chip.on{border-color:var(--gold);background:var(--gold-soft)}
 .apprbox{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:4px}
 .apprscore{font-family:var(--mono);font-size:13px;min-width:34px;text-align:center;font-weight:700}
 .badges{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1 1 auto}
@@ -6247,6 +6261,159 @@ function NoteReadModal({ item, onClose }) {
 
 // Per-party DM Notebook — light campaign notetaking (NPCs, locations, plot, misc).
 // Entries are { id, name, tag, sections:[{id,title,body}] }; NPCs add loc (a location id),
+/* ===== NPC appearance + chibi portrait builder ===== */
+const LOOK_SPECIES = ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Orc", "Tiefling", "Dragonborn", "Goblin", "Other"];
+const LOOK_FACES = [["round", "Round"], ["oval", "Oval"], ["square", "Square"], ["long", "Long"], ["heart", "Heart"], ["angular", "Angular"]];
+const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["swept", "Swept"], ["long", "Long"], ["ponytail", "Ponytail"], ["bun", "Bun"], ["curly", "Curly"], ["mohawk", "Mohawk"], ["braids", "Braids"], ["hood", "Hooded"]];
+const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"]];
+const LOOK_BEARD = [["none", "None"], ["stubble", "Stubble"], ["moustache", "Moustache"], ["goatee", "Goatee"], ["full", "Full"]];
+const SKIN_TONES = ["#f4d9bd", "#e8c19c", "#d8a878", "#c68a5e", "#a86b43", "#7c4a2d", "#553320", "#8fbf6a", "#6fa84e", "#7db0cf", "#b7a6d6", "#cf8a8a", "#a9b0ba", "#d9cdbf"];
+const HAIR_COLORS = ["#1c140f", "#3a2418", "#5a3b22", "#8a5a2b", "#c98f3a", "#e6c766", "#d9d2c5", "#adb0b8", "#efeff3", "#b03b2b", "#7048a8", "#2f7bc4", "#3f9a4e"];
+const EYE_COLORS = ["#4a2c14", "#6b4a26", "#3f6a3a", "#2f7c8c", "#2f5aa8", "#6a6a72", "#8a3030", "#7048a8", "#c9a227", "#d94e42"];
+const blankLook = () => ({ on: false, notes: "", species: "Human", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
+const hasLook = (l) => !!(l && l.on);
+
+// A chibi face composited from SVG primitives, driven entirely by a `look` object. viewBox 0..100.
+function NpcPortrait({ look, size = 64, frame = true }) {
+  const L = look || {};
+  const skin = L.skin || SKIN_TONES[1];
+  const hairC = L.hairColor || HAIR_COLORS[2];
+  const eyeC = L.eyes || EYE_COLORS[0];
+  const line = "rgba(0,0,0,.28)";
+  const sk = { fill: skin, stroke: line, strokeWidth: 1.4 };
+  const pointy = ["Elf", "Half-Elf"].includes(L.species);
+  const bigEar = L.species === "Goblin";
+  const face = (() => {
+    switch (L.face) {
+      case "oval": return <ellipse cx="50" cy="53" rx="25" ry="31" {...sk} />;
+      case "long": return <ellipse cx="50" cy="55" rx="22" ry="34" {...sk} />;
+      case "square": return <path d="M25 42 Q25 25 41 24 L59 24 Q75 25 75 42 L75 60 Q75 77 60 82 Q50 85 40 82 Q25 77 25 60 Z" {...sk} />;
+      case "heart": return <path d="M23 41 Q24 25 40 25 Q50 23 60 25 Q76 25 77 41 Q77 59 61 73 Q50 84 39 73 Q23 59 23 41 Z" {...sk} />;
+      case "angular": return <path d="M50 23 L72 34 L77 55 L62 79 L50 84 L38 79 L23 55 L28 34 Z" {...sk} />;
+      default: return <circle cx="50" cy="53" r="29" {...sk} />;
+    }
+  })();
+  const ear = (cx, s) => bigEar
+    ? <path d={`M${cx} 48 L${cx + s * 12} 42 L${cx + s * 9} 60 Z`} {...sk} />
+    : pointy
+      ? <path d={`M${cx} 47 L${cx + s * 8} 44 L${cx + s * 3} 62 Z`} {...sk} />
+      : <ellipse cx={cx + s * 2} cy="55" rx="4.5" ry="6.5" {...sk} />;
+  const eye = (cx) => (
+    <g>
+      <ellipse cx={cx} cy="55" rx="7" ry="8" fill="#fff" stroke="rgba(0,0,0,.22)" strokeWidth="1" />
+      <circle cx={cx} cy="56" r="4.5" fill={eyeC} />
+      <circle cx={cx} cy="56" r="2.1" fill="#161018" />
+      <circle cx={cx - 1.5} cy="53.6" r="1.5" fill="#fff" />
+    </g>
+  );
+  const brow = (x1, x2, up) => <path d={`M${x1} ${45 - up} Q${(x1 + x2) / 2} ${41 - up} ${x2} ${45 - up}`} stroke={hairC} strokeWidth="2.4" fill="none" strokeLinecap="round" />;
+  const beard = (() => {
+    switch (L.beard) {
+      case "stubble": return <path d="M28 60 Q30 80 50 84 Q70 80 72 60 Q66 74 50 76 Q34 74 28 60 Z" fill={hairC} opacity="0.28" />;
+      case "moustache": return <path d="M40 68 Q50 64 60 68 Q54 72 50 71 Q46 72 40 68 Z" fill={hairC} />;
+      case "goatee": return <g fill={hairC}><path d="M41 68 Q50 65 59 68 Q54 71 50 71 Q46 71 41 68 Z" /><path d="M44 74 Q50 73 56 74 Q56 82 50 84 Q44 82 44 74 Z" /></g>;
+      case "full": return <path d="M27 56 Q28 82 50 86 Q72 82 73 56 Q73 70 62 71 Q60 66 50 66 Q40 66 38 71 Q27 70 27 56 Z" fill={hairC} />;
+      default: return null;
+    }
+  })();
+  // hair — back layer sits behind the head, front layer over the forehead
+  const hairBack = (() => {
+    switch (L.hair) {
+      case "long": return <path d="M19 42 Q17 82 28 90 L72 90 Q83 82 81 42 Q81 18 50 16 Q19 18 19 42 Z" fill={hairC} />;
+      case "ponytail": return <g fill={hairC}><path d="M70 34 Q92 40 88 62 Q86 76 76 78 Q86 62 79 44 Z" /></g>;
+      case "braids": return <g fill={hairC}><circle cx="24" cy="52" r="6" /><circle cx="23" cy="62" r="5.5" /><circle cx="23" cy="71" r="5" /><circle cx="76" cy="52" r="6" /><circle cx="77" cy="62" r="5.5" /><circle cx="77" cy="71" r="5" /></g>;
+      default: return null;
+    }
+  })();
+  const hairFront = (() => {
+    switch (L.hair) {
+      case "bald": return null;
+      case "buzz": return <path d="M25 44 Q25 22 50 21 Q75 22 75 44 Q75 33 50 32 Q25 33 25 44 Z" fill={hairC} opacity="0.85" />;
+      case "swept": return <path d="M24 46 Q22 20 50 20 Q80 20 78 44 Q73 30 42 31 Q31 33 27 47 Z" fill={hairC} />;
+      case "mohawk": return <g fill={hairC}><path d="M44 28 Q45 8 50 7 Q55 8 56 28 L56 33 L44 33 Z" /></g>;
+      case "curly": return <g fill={hairC}><circle cx="30" cy="34" r="9" /><circle cx="42" cy="26" r="10" /><circle cx="55" cy="25" r="10" /><circle cx="68" cy="32" r="9" /><circle cx="26" cy="44" r="7" /><circle cx="74" cy="44" r="7" /></g>;
+      case "bun": return <g fill={hairC}><circle cx="50" cy="16" r="8.5" /><path d="M26 44 Q26 24 50 23 Q74 24 74 44 Q74 32 50 31 Q26 32 26 44 Z" /></g>;
+      case "hood": return <path d="M15 54 Q13 20 50 15 Q87 20 85 54 Q85 40 73 34 L74 42 Q72 29 50 27 Q28 29 26 42 L27 34 Q15 40 15 54 Z" fill="#4b4553" stroke="rgba(0,0,0,.3)" strokeWidth="1" />;
+      case "long":
+      case "ponytail":
+      case "braids":
+      case "short":
+      default: return <path d="M24 46 Q22 20 50 19 Q78 20 76 46 Q76 33 64 30 Q57 34 50 33 Q43 34 36 30 Q24 33 24 46 Z" fill={hairC} />;
+    }
+  })();
+  const horns = (() => {
+    const hc = "#e4d8bd", hs = "rgba(0,0,0,.3)";
+    switch (L.horns) {
+      case "small": return <g fill={hc} stroke={hs} strokeWidth="1"><path d="M34 26 L30 12 L40 24 Z" /><path d="M66 26 L70 12 L60 24 Z" /></g>;
+      case "straight": return <g fill={hc} stroke={hs} strokeWidth="1"><path d="M35 27 L27 6 L41 25 Z" /><path d="M65 27 L73 6 L59 25 Z" /></g>;
+      case "curved": return <g fill="none" stroke={hc} strokeWidth="5" strokeLinecap="round"><path d="M35 26 Q20 16 22 4" /><path d="M65 26 Q80 16 78 4" /></g>;
+      case "ram": return <g fill="none" stroke={hc} strokeWidth="5" strokeLinecap="round"><path d="M34 28 Q16 26 18 40 Q19 48 27 46" /><path d="M66 28 Q84 26 82 40 Q81 48 73 46" /></g>;
+      default: return null;
+    }
+  })();
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={frame ? { borderRadius: 10, background: "radial-gradient(circle at 50% 35%,#2a2632,#15121b)", display: "block" } : { display: "block" }}>
+      {/* shoulders + neck give it a bust silhouette */}
+      <path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" fill="#3b3444" />
+      <rect x="43" y="72" width="14" height="14" rx="4" fill={skin} stroke={line} strokeWidth="1" />
+      {ear(22, -1)}{ear(78, 1)}
+      {hairBack}
+      {face}
+      {brow(31, 45, 0)}{brow(55, 69, 0)}
+      {eye(38)}{eye(62)}
+      <path d="M50 58 L48 65 Q50 67 52 65" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+      <path d="M43 71 Q50 76 57 71" stroke="#7a3f3f" strokeWidth="2" fill="none" strokeLinecap="round" />
+      {beard}
+      {hairFront}
+      {horns}
+    </svg>
+  );
+}
+
+// swatch + chip helpers for the appearance builder
+function LookSwatches({ colors, value, onPick }) {
+  return <div className="look-swatches">{colors.map((c) => (
+    <button key={c} type="button" className={`look-sw ${value === c ? "on" : ""}`} style={{ background: c }} onClick={() => onPick(c)} />
+  ))}</div>;
+}
+function LookChips({ options, value, onPick }) {
+  return <div className="look-chips">{options.map(([v, lbl]) => (
+    <button key={v} type="button" className={`look-chip ${value === v ? "on" : ""}`} onClick={() => onPick(v)}>{lbl}</button>
+  ))}</div>;
+}
+
+// The appearance section shown in the NPC editor: free-text notes + an opt-in chibi portrait builder.
+function NpcAppearance({ value, onChange }) {
+  const look = value || blankLook();
+  const set = (patch) => onChange({ ...look, ...patch });
+  return (
+    <div className="look-sec">
+      <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "8px 0 4px" }}>Appearance</div>
+      <textarea className="sbook-search" rows={2} placeholder="How do they look? (build, clothing, scars, voice…)" value={look.notes || ""} onChange={(e) => set({ notes: e.target.value })} style={{ width: "100%", resize: "vertical" }} />
+      {!look.on ? (
+        <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => set({ on: true })}>🎨 Build a portrait</button>
+      ) : (
+        <div className="look-build">
+          <div className="look-preview"><NpcPortrait look={look} size={132} /></div>
+          <div className="look-controls">
+            <label className="look-row"><span>Species</span>
+              <select className="sbook-search" value={look.species} onChange={(e) => set({ species: e.target.value })}>{LOOK_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            </label>
+            <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
+            <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
+            <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
+            <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
+            <div className="look-row col"><span>Eyes</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
+            <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
+            <div className="look-row col"><span>Horns</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
+          </div>
+          <button className="btn tiny ghost warn" style={{ marginTop: 4 }} onClick={() => set({ on: false })}>Remove portrait</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // locations add parent (a location id) for a two-level city › building tree. Saved on the party.
 // Reuses the dungeon note SectionsEditor / asSections (both hoisted below).
 // Optional combat-stats sub-form for an NPC. Light on purpose — most NPCs never fight.
@@ -6322,7 +6489,7 @@ function npcApprovalAgg(npc) {
 
 // Docked pane under the roster: an NPC's approval tally + editable notes during a social scene.
 // Everything writes straight to the notebook (sections stored raw; empties filtered only in read views).
-function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose }) {
+function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose, onEdit }) {
   const [showPlayers, setShowPlayers] = useState(false);
   const npc = ((notebook && notebook.npcs) || []).find((n) => n.id === npcId);
   if (!npc) return null;
@@ -6350,7 +6517,9 @@ function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose }) {
   return (
     <div className="npcdock">
       <div className="npcdock-hd">
+        {hasLook(npc.look) && <span style={{ flex: "none", marginRight: 8, lineHeight: 0 }}><NpcPortrait look={npc.look} size={44} /></span>}
         <span style={{ flex: 1, minWidth: 0 }}>👤 <b>{npc.name}</b>{npc.deceased && <span title="Deceased" style={{ marginLeft: 6 }}>☠️</span>}{npc.tag ? <span style={{ color: "var(--faint)", fontSize: 12 }}> · {npc.tag}</span> : ""}</span>
+        {onEdit && <button className="btn small ghost" title="Edit this NPC in the Notebook (portrait, notes, stats)" onClick={onEdit}>✎</button>}
         <button className="btn small ghost" onClick={onClose}>Close ▲</button>
       </div>
       <div className="apprbox">
@@ -6482,8 +6651,8 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
   const cleanSecs = (secs) => (secs || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body);
 
   const commitTab = (k, entries) => onSave({ ...nb, [k]: entries });
-  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [] }); };
-  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "" }); };
+  const startNew = (forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], look: blankLook() }); };
+  const startEdit = (e, forTab = tab) => { setNewLoc(null); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "", look: e.look ? { ...blankLook(), ...e.look } : blankLook() }); };
   // Opened from a board NPC's "Edit in Notebook" — jump straight to that NPC's editor.
   useEffect(() => { if (editNpcId) { const n = (nb.npcs || []).find((x) => x.id === editNpcId); if (n) { setTab("npcs"); startEdit(n, "npcs"); } } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saveDraft = () => {
@@ -6493,6 +6662,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
     if (t === "npcs" && draft.stats && !draft.sb) clean.stats = draft.stats;
     if (t === "npcs" && draft.sb) clean.sb = draft.sb;
     if (t === "npcs" && draft.lastSide) clean.lastSide = draft.lastSide;
+    if (t === "npcs" && draft.look && (draft.look.on || (draft.look.notes || "").trim())) clean.look = { ...draft.look, notes: (draft.look.notes || "").trim() };
     if (t === "npcs" && Array.isArray(draft.loot) && draft.loot.length) clean.loot = draft.loot;
     if (t === "locations" && draft.parent) clean.parent = draft.parent;
     const arr = get(t);
@@ -6528,6 +6698,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
+          {rowTab === "npcs" && hasLook(e.look) && <span style={{ flex: "none", marginRight: 4, lineHeight: 0 }}><NpcPortrait look={e.look} size={26} /></span>}
           <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
           {rowTab === "npcs" && onAddToBoard && <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
@@ -6638,6 +6809,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
                 </div>
               ) : <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>This place has buildings under it, so it stays a top-level location.</div>)}
               <SectionsEditor value={draft.sections} onChange={(secs) => setDraft({ ...draft, sections: secs })} />
+              {draft.tab === "npcs" && <NpcAppearance value={draft.look} onChange={(l) => setDraft({ ...draft, look: l })} />}
               {draft.tab === "npcs" && (draft.sb
                 ? (<div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
                     <div className="frow" style={{ alignItems: "center" }}>
@@ -12169,7 +12341,7 @@ export default function App() {
             ))}
           </div>
           {dockedNpcId && activeRoster?.notebook && (
-            <NpcNotesDock npcId={dockedNpcId} notebook={activeRoster.notebook} members={activeRoster.members || []} onSave={saveNotebook} onClose={() => setDockedNpcId(null)} />
+            <NpcNotesDock npcId={dockedNpcId} notebook={activeRoster.notebook} members={activeRoster.members || []} onSave={saveNotebook} onClose={() => setDockedNpcId(null)} onEdit={() => setModal({ type: "notebook", editNpcId: dockedNpcId })} />
           )}
         </>
       )}
