@@ -239,6 +239,11 @@ input[type=number]{width:64px}
 .dgn-zoom{position:absolute;right:10px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px}
 .dgn-zoom button{width:42px;height:42px;font-size:20px;border-radius:10px;background:var(--panel);border:1px solid var(--line2);color:var(--text)}
 .dgn-hint{position:absolute;left:10px;top:10px;font-size:11px;color:var(--faint);background:rgba(0,0,0,.45);padding:4px 8px;border-radius:6px;pointer-events:none}
+/* compass pinned top-left; the builder hint shifts right of it so they don't overlap */
+.dgn-compass{position:absolute;left:8px;top:8px;z-index:6;pointer-events:none;filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.dgn-compass-n{fill:#e8837b;font-size:9px;font-weight:800;text-anchor:middle}
+.dgn-compass-c{fill:rgba(255,255,255,.7);font-size:8px;font-weight:700;text-anchor:middle}
+.dgn-hint-compass{left:62px}
 .dgn-swatch{width:30px;height:30px;border-radius:6px;border:2px solid var(--line2);cursor:pointer;padding:0}
 .dgn-swatch.on{border-color:var(--gold)}
 .dgn-ta{width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--text);-webkit-text-fill-color:var(--text);font-size:16px;padding:6px 8px;resize:vertical;margin-bottom:6px}
@@ -1547,8 +1552,22 @@ const exhaustPen = (c) => (EDITION.v === "2014" ? 0 : 2 * exhaustLevel(c));
 const exhaustDesc = () => EDITION.v === "2014"
   ? "2014: L1 disadvantage on ability checks · L2 speed halved · L3 disadvantage on attacks & saves · L4 HP max halved · L5 speed 0 · L6 death. Apply the level's effect by hand."
   : "−2 per level to every d20 Test (attacks, checks, saves); 6 levels = death.";
-// Edition-aware condition reference text (only Exhaustion actually differs between editions).
-const condText = (n) => (n === "Exhaustion" ? exhaustDesc() : (CONDITIONS[n] || ""));
+// 2014 (SRD 5.1) wording for the conditions whose *effect* actually changed in 2024. Everything not
+// listed here is rules-identical across editions, so it shares the single CONDITIONS entry. Exhaustion
+// is handled separately (exhaustDesc) because it's a whole different track, not just a rephrase.
+const CONDITIONS_2014 = {
+  // 2024 added "disadvantage on attacks vs anyone but the grappler"; 2014 Grappled has no attack penalty.
+  Grappled: "Speed 0 (and can't benefit from any bonus to speed). Ends if the grappler is incapacitated or you're moved out of its reach.",
+  // 2024 also blocks bonus actions, concentration, and speech; 2014 only blocks actions and reactions.
+  Incapacitated: "Can't take actions or reactions.",
+};
+// Edition-aware condition reference text: Exhaustion has its own track, a couple of conditions differ by
+// edition (CONDITIONS_2014), and the rest are identical in both.
+const condText = (n) => {
+  if (n === "Exhaustion") return exhaustDesc();
+  if (EDITION.v === "2014" && CONDITIONS_2014[n]) return CONDITIONS_2014[n];
+  return CONDITIONS[n] || "";
+};
 // Slow: a Slowed creature has a −2 penalty to Dexterity saving throws (the condition also notes −2 AC etc.)
 const isSlowed = (c) => (c.conditions || []).some((cd) => cd.name === "Slowed");
 const slowSavePen = (c, ability) => (ability === "dex" && isSlowed(c) ? 2 : 0);
@@ -8017,6 +8036,25 @@ function RoomShape({ room, cx, cy, hexKey }) {
   );
 }
 
+// A fixed compass rose pinned to a map corner (north is up — the hex grid never rotates). Purely a
+// reference for the DM narrating room features ("a door to the northeast"); never eats pointer events.
+function DgnCompass() {
+  return (
+    <div className="dgn-compass" title="North is up" aria-hidden="true">
+      <svg viewBox="0 0 44 44" width="44" height="44">
+        <circle cx="22" cy="22" r="20" fill="rgba(10,11,15,.72)" stroke="rgba(255,255,255,.28)" strokeWidth="1" />
+        <polygon points="22,7 18.5,22 22,19 25.5,22" fill="#c0392b" />
+        <polygon points="22,37 18.5,22 22,25 25.5,22" fill="rgba(255,255,255,.4)" />
+        <circle cx="22" cy="22" r="1.5" fill="rgba(255,255,255,.8)" />
+        <text className="dgn-compass-n" x="22" y="12.5">N</text>
+        <text className="dgn-compass-c" x="22" y="41.5">S</text>
+        <text className="dgn-compass-c" x="4.5" y="25.5">W</text>
+        <text className="dgn-compass-c" x="39.5" y="25.5">E</text>
+      </svg>
+    </div>
+  );
+}
+
 // The at-a-glance overlay drawn on a hex: its icons (a row) and its short display name. Rendered
 // only when zoomed in enough to be legible (the builder gates this on zoom). Never eats clicks.
 function RoomLabel({ room, cx, cy }) {
@@ -8837,7 +8875,8 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
         <input className="nm" value={dg.name || ""} placeholder="Dungeon name…" onChange={(e) => commit((prev) => ({ ...prev, name: e.target.value }))} />
       </div>
       <div className="dgn-canvas" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
-        <div className="dgn-hint">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
+        <DgnCompass />
+        <div className="dgn-hint dgn-hint-compass">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
         <svg width={size.w} height={size.h}>
           <defs><TextureDefs /></defs>
           <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>
@@ -8974,6 +9013,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
       {!collapsed && (
         <>
           <div className="dgn-dock-map" ref={wrapRef} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+            <DgnCompass />
             <svg width={size.w} height={size.h}>
               <defs><TextureDefs /></defs>
               <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}{linkConnectors(rooms)}</g>
