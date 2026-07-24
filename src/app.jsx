@@ -4679,7 +4679,9 @@ function npcToSb(npc) {
   return {
     name: npc.name || "NPC", npc: true, cr: null,
     ac: Number(s.ac) || 10, hp: Math.max(1, Number(s.hp) || 1), spd: s.spd || "30 ft",
-    mods: { ...(s.mods || {}) }, saves: {},
+    // coerce: mods typed into the stats panel used to persist as strings, and a string modifier is
+    // concatenated rather than added by every d20 roll that reads it
+    mods: Object.fromEntries(Object.entries(s.mods || {}).map(([k, v]) => [k, Number(v) || 0])), saves: {},
     actions: atks, multi: atkN > 1 ? `The ${(npc.name || "NPC").toLowerCase()} makes ${atkN} attacks.` : null,
   };
 }
@@ -6596,7 +6598,9 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
   const [presetKey, setPresetKey] = useState("");
   const [showAbil, setShowAbil] = useState(false);
   const set = (k, v) => onChange({ ...stats, [k]: v });
-  const setMod = (k, v) => onChange({ ...stats, mods: { ...stats.mods, [k]: v } });
+  // keep the raw text while typing ("-", "") but store a number as soon as one can be read — an
+  // ability mod that stays a string gets concatenated into every d20 roll (initiative "7"+"3" = 73)
+  const setMod = (k, v) => onChange({ ...stats, mods: { ...stats.mods, [k]: v === "" || v === "-" ? v : (Number(v) || 0) } });
   const setAtk = (i, k, v) => onChange({ ...stats, attacks: stats.attacks.map((a, j) => (j === i ? { ...a, [k]: v } : a)) });
   // Re-scale to the chosen tier whenever either the preset OR the tier changes.
   const applyPreset = (key, t) => { const p = NPC_PRESETS.find((x) => x.key === key); if (p) onChange({ ...presetToStats(p, Number(t)), atkN: stats.atkN || 1 }); };
@@ -6840,7 +6844,18 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
     if (t === "npcs" && Array.isArray(draft.loot) && draft.loot.length) clean.loot = draft.loot;
     if (t === "locations" && draft.parent) clean.parent = draft.parent;
     const arr = get(t);
-    commitTab(t, arr.some((e) => e.id === clean.id) ? arr.map((e) => (e.id === clean.id ? clean : e)) : [...arr, clean]);
+    const prev = arr.find((e) => e.id === clean.id);
+    // Carry over anything this editor doesn't manage — the approval tally, the deceased flag, and
+    // whatever gets added later. Managed keys are stripped from the old entry first, so clearing a
+    // field in the editor (removing stats, unfiling a location) still clears it.
+    const MANAGED = ["id", "name", "tag", "sections", "loc", "stats", "sb", "lastSide", "look", "loot", "parent"];
+    let merged = clean;
+    if (prev) {
+      const carry = { ...prev };
+      MANAGED.forEach((k) => delete carry[k]);
+      merged = { ...carry, ...clean };
+    }
+    commitTab(t, prev ? arr.map((e) => (e.id === clean.id ? merged : e)) : [...arr, clean]);
     setDraft(null); setNewLoc(null);
   };
   // Deleting a location promotes its buildings to top-level and unfiles any NPCs placed there.
@@ -8453,7 +8468,9 @@ function DgnCompass() {
 function RoomLabel({ room, cx, cy }) {
   const s = HEX_SIZE;
   const icons = Array.isArray(room.icons) ? room.icons : [];
-  const dname = (room.dname || "").trim();
+  // "Display name" is the short map caption, but most DMs only ever fill "Room name" — fall back to
+  // it (truncated) rather than drawing an anonymous coloured shape.
+  const dname = ((room.dname || "").trim() || (room.title || "").trim()).slice(0, DNAME_MAX);
   const mons = (room.enc && Array.isArray(room.enc.mons)) ? room.enc.mons : [];
   const enemyN = mons.filter((m) => (m.side || "enemy") !== "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
   const allyN = mons.filter((m) => m.side === "ally").reduce((a, m) => a + (Number(m.c) || 0), 0);
@@ -9345,7 +9362,9 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
   const [collapsed, setCollapsed] = useState(false);
-  const [ran, setRan] = useState(null);      // room whose encounter was added during THIS selection (guards double-adds)
+  // rooms whose encounter has been added this session. Keyed by room, not by the current selection —
+  // tapping away and back used to re-arm the button and silently double the monsters.
+  const [ranKeys, setRanKeys] = useState(() => new Set());
   const [openF, setOpenF] = useState({});    // which note fields are expanded in the room panel
   const [openS, setOpenS] = useState({});    // which titled sub-sections (within a field) are expanded
   // A titled sub-section starts from the DM's editor collapse choice, then follows any in-play toggle.
@@ -9363,7 +9382,6 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
       </div>
     );
   });
-  useEffect(() => { setRan(null); }, [sel]); // each time a room is (re)selected, allow one add again
   useEffect(() => { setSel(null); setView({ x: 0, y: 0, z: 0.9 }); }, [dungeon.id]); // reset when a level link swaps the dungeon
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 360, h: 300 });
@@ -9482,11 +9500,16 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
                       {encGroup && <span className="dgn-enc-mon">📦 {encGroup}</span>}
                     </div>
                     <div className="frow" style={{ marginBottom: 0 }}>
-                      <button className="btn small primary" disabled={inCombat || ran === sel} onClick={() => { onRun(room); setRan(sel); }}>
-                        {ran === sel ? "✓ Added to roster" : "＋ Add to roster"}
+                      <button className="btn small primary" disabled={inCombat}
+                        onClick={() => {
+                          // a second add is a real thing to want (another wave) — allow it, but never by accident
+                          if (ranKeys.has(sel) && !window.confirm("These are already on the roster. Add another set?")) return;
+                          onRun(room); setRanKeys((s) => new Set(s).add(sel));
+                        }}>
+                        {ranKeys.has(sel) ? "＋ Add again" : "＋ Add to roster"}
                       </button>
                       {inCombat ? <span className="ad" style={{ fontSize: 11 }}>finish the current fight first</span>
-                        : ran === sel ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)" }}>on the roster — re-tap the room to add again</span>
+                        : ranKeys.has(sel) ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)" }}>✓ already added to the roster</span>
                         : <span className="ad" style={{ fontSize: 11, color: "var(--faint)" }}>drops these into the roster; you press Start</span>}
                     </div>
                   </>
@@ -9509,7 +9532,11 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
                   const gotOf = (it) => (it.got === undefined ? !!room.looted : it.got); // migrate legacy whole-room flag
                   const allGot = lootArr.length > 0 && lootArr.every(gotOf);
                   const toggleItem = (i) => onUpdateRoom && onUpdateRoom(sel, { looted: false, loot: lootArr.map((it, j) => ({ ...it, got: j === i ? !gotOf(it) : gotOf(it) })) });
-                  const setAll = (v) => onUpdateRoom && onUpdateRoom(sel, { looted: v, loot: lootArr.map((it) => ({ ...it, got: v })) });
+                  const setAll = (v) => onUpdateRoom && onUpdateRoom(sel, { looted: v, loot: lootArr.map((it) => ({ ...it, got: v, ...(v ? {} : { to: undefined }) })) });
+                  // remember who an item went to, so it can't be handed out twice; `to: null` releases it
+                  const assignTo = (i, uid, label) => onUpdateRoom && onUpdateRoom(sel, { looted: false, loot: lootArr.map((it, j) => (j === i
+                    ? { ...it, got: label ? true : gotOf(it), to: label || undefined, toUid: uid || undefined }
+                    : { ...it, got: gotOf(it) })) });
                   return (
                     <div style={{ marginTop: 8, borderTop: "1px solid var(--line)", paddingTop: 8 }}>
                       <div style={{ fontSize: 11, color: "var(--gold)", fontWeight: 700, marginBottom: 4 }}>💰 Loot{allGot ? " · collected" : ""}</div>
@@ -9522,13 +9549,22 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
                                 <span className="dgn-loot-check">{got ? "☑" : "☐"}</span>
                                 <span style={{ flex: 1, textDecoration: got ? "line-through" : "none", opacity: got ? 0.55 : 1 }}>{lootName(it)}</span>
                               </button>
-                              {(players.length > 0 || hasParty) && onAssignLoot && (
-                                <select value="" title="Give this to a player or the shared party fund (also marks it collected)" onChange={(e) => { if (e.target.value) { onAssignLoot(it, e.target.value); if (!got) toggleItem(i); } }} style={{ fontSize: 12, maxWidth: 108 }}>
+                              {(players.length > 0 || hasParty) && onAssignLoot && (it.to ? (
+                                // Already handed out. Handing it out again would mint a second real copy, so
+                                // show where it went instead; tapping frees it up if the DM picked wrong.
+                                <button className="btn tiny ghost" style={{ maxWidth: 108, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                  title={`Given to ${it.to}. Tap to hand it to someone else — the copy already in their bag stays.`}
+                                  onClick={() => { if (window.confirm(`"${lootName(it)}" already went to ${it.to}. Hand it to someone else?\n\nThe copy in ${it.to}'s bag stays — remove it there if you don't want a duplicate.`)) assignTo(i, null, null); }}>
+                                  → {it.to}
+                                </button>
+                              ) : (
+                                <select value="" title="Give this to a player or the shared party fund (also marks it collected)"
+                                  onChange={(e) => { const v = e.target.value; if (!v) return; onAssignLoot(it, v); assignTo(i, v, v === PARTY_STASH ? "🎒 Party" : (players.find((p) => p.uid === v) || {}).name || "player"); }} style={{ fontSize: 12, maxWidth: 108 }}>
                                   <option value="">→ to…</option>
                                   <option value={PARTY_STASH}>🎒 Party</option>
                                   {players.map((p) => <option key={p.uid} value={p.uid}>{p.name}</option>)}
                                 </select>
-                              )}
+                              ))}
                             </div>
                           );
                         })}
@@ -9761,7 +9797,15 @@ function PlayerModeBoard({ onExit }) {
   );
   // allies
   const setAlly = (id, patch) => save({ ...board, allies: board.allies.map((a) => (a.id === id ? { ...a, ...patch } : a)) });
-  const addAlly = () => { const id = newUid(); save({ ...board, allies: [...board.allies, { id, name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 } }] }); setRenameFor({ id, kind: "a", name: "" }); };
+  // The first person you add is you, unless someone already claims that. Without this the very first
+  // member of a fresh board has no HP fields at all (they're masked unless `me` or trackParty), which
+  // dead-ends the main use case: a player setting this up on their own phone.
+  const addAlly = () => {
+    const id = newUid();
+    const mine = !board.allies.some((a) => a.me);
+    save({ ...board, allies: [...board.allies, { id, name: "", hp: "", maxHp: "", conds: [], ds: { s: 0, f: 0 }, ...(mine ? { me: true } : {}) }] });
+    setRenameFor({ id, kind: "a", name: "" });
+  };
   const removeAlly = (id) => save({ ...board, allies: board.allies.filter((a) => a.id !== id) });
   const confirmRemoveAlly = (a) => {
     const tracked = (a.hp !== "" && a.hp != null) || (a.conds || []).length > 0 || a.down;
@@ -9804,7 +9848,9 @@ function PlayerModeBoard({ onExit }) {
     const max = a.maxHp !== "" && !isNaN(Number(a.maxHp)) ? Number(a.maxHp) : null;
     const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : (max != null ? max : 0);
     let nhp = base + delta;
-    if (max != null) nhp = Math.max(0, Math.min(max, nhp));
+    // clamp the floor even with no max recorded — otherwise a member whose max HP is blank (the
+    // default for a hand-added one) just runs negative and never reads as down
+    nhp = max != null ? Math.max(0, Math.min(max, nhp)) : Math.max(0, nhp);
     const patch = { ...a, hp: String(nhp) };
     if (nhp > 0) { patch.ds = { s: 0, f: 0 }; patch.down = false; }
     return patch;
@@ -9945,7 +9991,9 @@ function PlayerModeBoard({ onExit }) {
               )}
               <div className="rline r2">
                 {hpEntryFields(e.id, (
-                  <span className={`pm-counter ${e.dmg > 0 ? "hurt" : ""}`} title={e.dmg > 0 ? "Total damage dealt (real HP unknown) — tap to reset" : "No damage logged yet"} onClick={() => e.dmg > 0 && setEnemy(e.id, { dmg: 0 })}>{e.dmg > 0 ? `−${e.dmg}` : "?"}</span>
+                  // sits between the two number fields, so a fat-thumb miss must not silently wipe the running total
+                  <span className={`pm-counter ${e.dmg > 0 ? "hurt" : ""}`} title={e.dmg > 0 ? "Total damage dealt (real HP unknown) — tap to reset" : "No damage logged yet"}
+                    onClick={() => { if (e.dmg > 0 && window.confirm(`Reset the ${e.dmg} damage logged on ${e.name || "this monster"}? This can't be undone.`)) setEnemy(e.id, { dmg: 0 }); }}>{e.dmg > 0 ? `−${e.dmg}` : "?"}</span>
                 ))}
                 {condInline(e, "e:" + e.id, setEnemy)}
               </div>
@@ -9993,7 +10041,7 @@ function PlayerModeBoard({ onExit }) {
               </div>
               )}
               {hp && condPicker(a, "a:" + a.id, setAlly)}
-              {hp && (a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
+              {hp && (a.down || (a.hp !== "" && Number(a.hp) === 0)) && dsUI(a)}
             </div>
             );
           })}
@@ -11894,7 +11942,10 @@ export default function App() {
   const doEndCombat = () => {
     setModal(null); setResults({});
     mutate((d, L) => {
-      const kept = d.combatants.filter((c) => c.side === "ally" && c.type !== "effect");
+      // keep allies AND neutrals — neutral is the default for NPCs, so filtering on "ally" alone
+      // deleted every social NPC on the board the moment a fight ended. Enemies, effects and
+      // scenery objects still clear out with the encounter.
+      const kept = d.combatants.filter((c) => (c.side === "ally" || c.side === "neutral") && c.type !== "effect" && c.type !== "object");
       kept.forEach((c) => {
         c.init = null; c.initText = null; c.tb = 0; c.conditions = []; c.concentration = null;
         c.reaction = true; c.surprised = false; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
@@ -12458,20 +12509,31 @@ export default function App() {
   const runRoomEncounter = (room) => {
     const enc = room && room.enc; if (!enc) return;
     const list = Array.isArray(enc.mons) ? enc.mons : [];
-    if (list.length) {
-      const src = fullBestiary().concat(myBestiary);
+    // Resolve names up front, not inside mutate — mutate's updater runs later, so counting in there
+    // and reading it out here would race. A name can go missing when a custom monster is renamed or
+    // when a dungeon built on one rules edition is played on the other.
+    const src = fullBestiary().concat(myBestiary);
+    const found = [], missing = [];
+    list.forEach((m) => { const sb = src.find((b) => b.name === m.n); if (sb) found.push({ sb, m }); else if (m.n) missing.push(m.n); });
+    const added = found.reduce((n, f) => n + (Number(f.m.c) || 0), 0);
+    if (found.length) {
       mutate((d, L) => {
-        let added = 0;
-        for (const m of list) {
-          const sb = src.find((b) => b.name === m.n); if (!sb) continue;
+        found.forEach(({ sb, m }) => {
           const side = m.side === "ally" ? "ally" : "enemy";
-          for (let i = 0; i < (Number(m.c) || 0); i++) { d.combatants.push(makeMonster(sb, d, { side })); added++; }
-        }
+          for (let i = 0; i < (Number(m.c) || 0); i++) d.combatants.push(makeMonster(sb, d, { side }));
+        });
         if (added) L.push(`Loaded room encounter — <b>${added}</b> creature${added === 1 ? "" : "s"} added.`);
+        if (missing.length) L.push(`⚠ Skipped — not in the current bestiary: <b>${missing.join(", ")}</b>.`);
       });
+    } else if (missing.length) {
+      mutate((d, L) => L.push(`⚠ Room encounter added nothing — not in the current bestiary: <b>${missing.join(", ")}</b>.`));
     }
     if (enc.group) addGroup(enc.group); // async; also drops the saved group's monsters in
+    else if (missing.length) pushToasts([{ kind: "bad", text: added
+      ? `Added ${added}, skipped ${missing.length}: ${missing.join(", ")} not in the current bestiary.`
+      : `Nothing added — ${missing.join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} in the current bestiary.` }]);
     else pushToasts([{ kind: "good", text: "Encounter loaded — press Start combat when ready." }]);
+    return added;
   };
   // the one thing editable from the read-only play panel: mark a room's loot collected (whole room
   // or item-by-item). The panel sends the patch (loot array and/or looted flag); we merge + save.
