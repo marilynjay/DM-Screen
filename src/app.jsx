@@ -681,7 +681,6 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   background:linear-gradient(180deg,#241b2e,#1b1722);border-bottom:1px solid var(--line)}
 .pm-logo{font-family:var(--disp);font-size:16px;color:var(--gold);letter-spacing:.03em;flex:1}
 .pm-sect-hd{font-family:var(--disp);font-size:14px;color:var(--gold);margin-bottom:8px}
-.pm-enemy{border:1px solid var(--line);border-radius:10px;padding:6px 9px;margin-bottom:6px;background:var(--raised)}
 .pm-swatch{width:22px;height:22px;flex:none;border-radius:6px;border:1px solid rgba(255,255,255,.25);cursor:pointer}
 /* names read like the tidy static labels in the main roster; they only "box up" on focus */
 .pm-name{flex:1;min-width:0;font-size:16px;font-weight:600;background:transparent;border:1px solid transparent;border-radius:7px;
@@ -690,14 +689,19 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-name:focus{background:var(--panel);border-color:var(--line);outline:none}
 .pm-me{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:7px;padding:2px 6px;font-size:13px;line-height:1.2;cursor:pointer;opacity:.45}
 .pm-me.on{border-color:var(--gold);background:var(--gold-soft);opacity:1}
+/* compact flat rows in the Old School roster style: r1 = name, r2 = dmg | HP | heal + controls */
+.pm-row{border-bottom:1px solid var(--line);padding:4px 2px 6px}
+.pm-row:last-child{border-bottom:none}
+.pm-row.downrow{opacity:.5}
+.pm-row.downrow .pm-name{text-decoration:line-through}
+.pm-counter{font-family:var(--mono);font-size:13px;font-weight:700;min-width:44px;text-align:center;color:var(--faint);cursor:pointer}
+.pm-counter.hurt{color:#e0645a;cursor:pointer}
+.pm-hpin{width:40px;text-align:center;font-size:16px;padding:2px 2px;border-radius:6px;background:var(--panel);border:1px solid var(--line2);color:var(--text);-webkit-text-fill-color:var(--text);-webkit-appearance:none;appearance:none}
+.pm-applybar{bottom:calc(10px + env(safe-area-inset-bottom,0px))}
 .pm-icon{font-size:17px;cursor:pointer;line-height:1}
 .pm-iconpick{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
 .pm-iconopt{font-size:18px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:4px 6px;cursor:pointer}
 .pm-iconopt.on{border-color:var(--gold);background:var(--gold-soft)}
-.pm-hp{font-family:var(--disp);font-size:18px;font-weight:700;color:var(--text);min-width:56px}
-.pm-hp.hurt{color:#e0645a}
-.pm-amt{width:64px;font-size:16px;background:var(--panel);border:1px solid var(--line);border-radius:8px;
-  padding:7px 8px;color:var(--text);-webkit-text-fill-color:var(--text)}
 .pm-conds{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
 .pm-condchip{display:inline-flex;align-items:center;gap:3px;font-size:12px;border:1px solid var(--gold);
   background:var(--gold-soft);color:var(--text);border-radius:999px;padding:2px 8px;cursor:pointer}
@@ -710,8 +714,6 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pm-bloodbtn{border-color:var(--danger);color:#f0a9a2;background:rgba(200,60,55,.16)}
 .pm-move{display:inline-flex;flex-direction:column;gap:1px;flex:none}
 .pm-move button{padding:0 5px;line-height:1.1;font-size:11px;min-height:0}
-.pm-enemy.down{opacity:.5}
-.pm-enemy.down .pm-name{text-decoration:line-through}
 .pm-ds{display:flex;align-items:center;gap:4px;margin-top:5px;flex-wrap:wrap}
 .pm-pip{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:var(--panel);
   font-size:13px;line-height:1;cursor:pointer;color:var(--faint);padding:0}
@@ -9219,7 +9221,7 @@ const pmResolveParty = (parties, apId) => {
 };
 function PlayerModeBoard({ onExit }) {
   const [board, setBoard] = useState(null);
-  const [amts, setAmts] = useState({});      // per-enemy damage-entry field
+  const [entries, setEntries] = useState({});   // Old-School-style pending { id: { dmg, heal } }, committed together by the Apply bar
   const [iconFor, setIconFor] = useState(null); // enemy id whose icon picker is open
   const [colorFor, setColorFor] = useState(null);
   const [condFor, setCondFor] = useState(null); // "e:<id>" / "a:<id>" whose condition picker is open
@@ -9287,7 +9289,32 @@ function PlayerModeBoard({ onExit }) {
     const tracked = (e.dmg || 0) > 0 || (e.conds || []).length > 0 || e.bloodied || e.defeated;
     if (!tracked || window.confirm(`Remove ${e.name || "this enemy"}? Its logged damage and status will be lost.`)) removeEnemy(e.id);
   };
-  const deal = (id, sign) => { const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return; const e = board.enemies.find((x) => x.id === id); if (!e) return; setEnemy(id, { dmg: Math.max(0, (e.dmg || 0) + sign * amt) }); setAmts({ ...amts, [id]: "" }); };
+  // Old-School-style quick entry: type damage (red) and/or healing (green) per row, then Apply.
+  const setEnt = (id, field, val) => setEntries((m) => ({ ...m, [id]: { dmg: "", heal: "", ...(m[id] || {}), [field]: val } }));
+  const numEnt = (v) => (v !== "" && v != null && !isNaN(Number(v)) ? Math.max(0, Math.round(Number(v))) : 0);
+  const entNet = (id) => { const e = entries[id]; return numEnt(e?.heal) - numEnt(e?.dmg); }; // + heals, − damages
+  const hasEntry = (id) => { const e = entries[id]; return numEnt(e?.dmg) !== 0 || numEnt(e?.heal) !== 0; };
+  const anyPending = board.enemies.some((e) => hasEntry(e.id)) || board.allies.some((a) => hasEntry(a.id));
+  // net HP change for an ally (matches the single-apply rules: clamp to a known max; heal above 0 revives)
+  const allyAfterDelta = (a, delta) => {
+    const max = a.maxHp !== "" && !isNaN(Number(a.maxHp)) ? Number(a.maxHp) : null;
+    const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : (max != null ? max : 0);
+    let nhp = base + delta;
+    if (max != null) nhp = Math.max(0, Math.min(max, nhp));
+    const patch = { ...a, hp: String(nhp) };
+    if (nhp > 0) { patch.ds = { s: 0, f: 0 }; patch.down = false; }
+    return patch;
+  };
+  // Commit every row's pending damage/heal at once, the way Old School Mode's Apply bar does.
+  const applyAll = () => {
+    let n = 0;
+    const enemies = board.enemies.map((e) => { if (!hasEntry(e.id)) return e; n++; return { ...e, dmg: Math.max(0, (e.dmg || 0) - entNet(e.id)) }; }); // damage raises the counter
+    const allies = board.allies.map((a) => { if (!hasEntry(a.id)) return a; n++; return allyAfterDelta(a, entNet(a.id)); });
+    if (!n) return;
+    save({ ...board, enemies, allies });
+    setEntries({});
+    flash(`Applied HP to ${n} creature${n === 1 ? "" : "s"}.`);
+  };
   const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
   const cycleColor = (id) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const i = ROSTER_COLORS.indexOf(e.color); setEnemy(id, { color: ROSTER_COLORS[(i + 1) % ROSTER_COLORS.length] }); };
   const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
@@ -9308,21 +9335,16 @@ function PlayerModeBoard({ onExit }) {
     </div>
   );
   const setDs = (id, patch) => { const a = board.allies.find((x) => x.id === id); if (!a) return; setAlly(id, { ds: { ...(a.ds || { s: 0, f: 0 }), ...patch } }); };
-  // apply damage (sign −1) or healing (sign +1) to an ally's current HP, the way you hear it at the table
-  const applyToAlly = (id, sign) => {
-    const a = board.allies.find((x) => x.id === id); if (!a) return;
-    const amt = parseInt(amts[id], 10); if (isNaN(amt) || amt === 0) return;
-    const max = a.maxHp !== "" && !isNaN(Number(a.maxHp)) ? Number(a.maxHp) : null;
-    const base = a.hp !== "" && !isNaN(Number(a.hp)) ? Number(a.hp) : (max != null ? max : 0);
-    let nhp = base + sign * amt;
-    // Only clamp / floor at 0 when the max is known. Without a max we're just logging damage,
-    // so HP is allowed to run negative — "0" doesn't mean "down", so no death saves.
-    if (max != null) nhp = Math.max(0, Math.min(max, nhp));
-    const patch = { hp: String(nhp) };
-    if (nhp > 0) { patch.ds = { s: 0, f: 0 }; patch.down = false; } // healed above 0 → revived (works once "down" has zeroed an unknown-max ally)
-    setAlly(id, patch);
-    setAmts({ ...amts, [id]: "" });
-  };
+  // the red damage + green heal fields shared by enemy and ally rows (Old School layout)
+  const hpEntryFields = (id, center) => (
+    <>
+      <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="dmg" value={entries[id]?.dmg ?? ""}
+        title="Damage — applied when you tap Apply" onChange={(ev) => setEnt(id, "dmg", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+      {center}
+      <input className="osfield osheal" type="number" inputMode="numeric" placeholder="heal" value={entries[id]?.heal ?? ""}
+        title="Healing — applied when you tap Apply" onChange={(ev) => setEnt(id, "heal", ev.target.value)} onKeyDown={(ev) => ev.key === "Enter" && applyAll()} />
+    </>
+  );
   // death-save tracker — shown when an ally is at 0 HP
   const dsUI = (a) => {
     const ds = a.ds || { s: 0, f: 0 };
@@ -9355,7 +9377,7 @@ function PlayerModeBoard({ onExit }) {
       {pmToasts.length > 0 && (
         <div className="toastwrap">{pmToasts.map((t) => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}</div>
       )}
-      <div className="main">
+      <div className="main" style={anyPending ? { paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" } : undefined}>
         {/* ENEMIES */}
         <div className="card">
           <div className="pm-sect-hd frow" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -9386,29 +9408,27 @@ function PlayerModeBoard({ onExit }) {
           )}
           {board.enemies.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No enemies yet — add a few above.</div>}
           {board.enemies.map((e, ei) => (
-            <div key={e.id} className={`pm-enemy ${e.defeated ? "down" : ""}`}>
-              <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+            <div key={e.id} className={`pm-row ${e.defeated ? "downrow" : ""}`}>
+              <div className="rline r1">
                 {reorder && moveHandle(moveEnemy, e.id, ei === 0, ei === board.enemies.length - 1)}
                 <button className="pm-swatch" style={{ background: e.color }} title="Tap to change colour" onClick={() => cycleColor(e.id)} />
                 <input className="pm-name" value={e.name} onChange={(ev) => setEnemy(e.id, { name: ev.target.value })} />
                 {(e.icons || []).map((ic) => <span key={ic} className="pm-icon" onClick={() => toggleIcon(e.id, ic)} title="Tap to remove">{ic}</span>)}
-                {e.bloodied && <span className="pm-bloodied">🩸 Bloodied</span>}
+                {e.bloodied && <span className="pm-bloodied">🩸</span>}
                 <button className="btn tiny ghost" title="Add an icon" onClick={() => setIconFor(iconFor === e.id ? null : e.id)}>🏷️</button>
                 <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveEnemy(e)}>✕</button>
               </div>
               {iconFor === e.id && (
                 <div className="pm-iconpick">{PM_ICONS.map((ic) => <button key={ic} className={`pm-iconopt ${(e.icons || []).includes(ic) ? "on" : ""}`} onClick={() => toggleIcon(e.id, ic)}>{ic}</button>)}</div>
               )}
-              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
-                <span className={`pm-hp ${e.dmg > 0 ? "hurt" : ""}`}>{e.dmg > 0 ? `−${e.dmg}` : "?"} <span style={{ fontSize: 11, color: "var(--faint)" }}>HP</span></span>
-                <input type="number" inputMode="numeric" className="pm-amt" placeholder="dmg" value={amts[e.id] || ""} onChange={(ev) => setAmts({ ...amts, [e.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && deal(e.id, +1)} />
-                <button className="btn small" title="Apply this as damage" onClick={() => deal(e.id, +1)}>− Damage</button>
-                <button className="btn small ghost" title="Heal (undo damage)" onClick={() => deal(e.id, -1)}>＋ Heal</button>
-                {e.dmg > 0 && <button className="btn tiny ghost" title="Reset to unknown" onClick={() => setEnemy(e.id, { dmg: 0 })}>↺</button>}
-                <button className={`btn small ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is bloodied (about half HP)" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
-                <button className={`btn small ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
+              <div className="rline r2">
+                {hpEntryFields(e.id, (
+                  <span className={`pm-counter ${e.dmg > 0 ? "hurt" : ""}`} title={e.dmg > 0 ? "Total damage dealt (real HP unknown) — tap to reset" : "No damage logged yet"} onClick={() => e.dmg > 0 && setEnemy(e.id, { dmg: 0 })}>{e.dmg > 0 ? `−${e.dmg}` : "?"}</span>
+                ))}
+                <button className={`btn tiny ${e.bloodied ? "pm-bloodbtn" : "ghost"}`} title="Mark bloodied — when the DM announces the target is about half HP" onClick={() => setEnemy(e.id, { bloodied: !e.bloodied })}>🩸</button>
+                <button className={`btn tiny ${e.defeated ? "" : "ghost"}`} title="Mark defeated / down" onClick={() => setEnemy(e.id, { defeated: !e.defeated })}>☠️</button>
+                {condUI(e, "e:" + e.id, setEnemy)}
               </div>
-              {condUI(e, "e:" + e.id, setEnemy)}
             </div>
           ))}
         </div>
@@ -9420,24 +9440,25 @@ function PlayerModeBoard({ onExit }) {
             <div className="trait" style={{ fontSize: 12, marginBottom: 8, color: "var(--faint)" }}>Tap 👤 on your character to show just your HP.</div>
           )}
           {allyRows.map((a, ai) => (
-            <div key={a.id} style={{ marginBottom: 8 }}>
-              <div className="frow" style={{ gap: 6, alignItems: "center" }}>
+            <div key={a.id} className="pm-row">
+              <div className="rline r1">
                 {reorder && moveHandle(moveAlly, a.id, ai === 0, ai === allyRows.length - 1)}
                 <button className={`pm-me ${a.me ? "on" : ""}`} title={a.me ? "This is your character" : "Mark this as your character"} onClick={() => setMe(a.id)}>👤</button>
                 <input className="pm-name" style={{ flex: 1 }} value={a.name} placeholder={a.me ? "You" : "Party member"} onChange={(ev) => setAlly(a.id, { name: ev.target.value })} />
-                <input type="number" inputMode="numeric" className="pm-amt" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
-                <span style={{ color: "var(--faint)" }}>/</span>
-                <input type="number" inputMode="numeric" className="pm-amt" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
                 {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
               </div>
-              <div className="frow" style={{ gap: 6, alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
-                <input type="number" inputMode="numeric" className="pm-amt" placeholder="amt" value={amts[a.id] || ""} onChange={(ev) => setAmts({ ...amts, [a.id]: ev.target.value })} onKeyDown={(ev) => ev.key === "Enter" && applyToAlly(a.id, -1)} />
-                <button className="btn small" title="Subtract this much HP" onClick={() => applyToAlly(a.id, -1)}>− Damage</button>
-                <button className="btn small ghost" title="Add this much HP (up to max)" onClick={() => applyToAlly(a.id, +1)}>＋ Heal</button>
-                <button className={`btn small ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the damage counter, so healing them afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>
+              <div className="rline r2">
+                {hpEntryFields(a.id, (
+                  <span className="hpbox" title="Current / max HP — edit directly, or use the red/green fields and Apply">
+                    <input type="number" inputMode="numeric" className="pm-hpin" placeholder="HP" value={a.hp} onChange={(ev) => { const v = ev.target.value; setAlly(a.id, { hp: v, ...(v !== "0" && v !== "" ? { ds: { s: 0, f: 0 } } : {}) }); }} />
+                    <span className="max">/</span>
+                    <input type="number" inputMode="numeric" className="pm-hpin" placeholder="max" value={a.maxHp} onChange={(ev) => setAlly(a.id, { maxHp: ev.target.value })} />
+                  </span>
+                ))}
+                <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>
+                {condUI(a, "a:" + a.id, setAlly)}
               </div>
               {(a.down || (a.maxHp !== "" && !isNaN(Number(a.maxHp)) && Number(a.hp) === 0 && a.hp !== "")) && dsUI(a)}
-              {condUI(a, "a:" + a.id, setAlly)}
             </div>
           ))}
           <div className="frow" style={{ gap: 6, flexWrap: "wrap", marginTop: 4 }}>
@@ -9463,6 +9484,11 @@ function PlayerModeBoard({ onExit }) {
           <button className="btn" onClick={onExit}>← Back to full app</button>
         </div>
       </div>
+      {anyPending && (
+        <div className="osapplybar pm-applybar">
+          <button className="btn primary" onClick={applyAll}>🩸 Apply HP changes</button>
+        </div>
+      )}
     </div>
   );
 }
