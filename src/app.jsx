@@ -539,6 +539,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 /* NPC appearance / portrait builder */
 .look-sec{margin-top:6px}
 .look-build{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px}
+.look-species{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.look-species label{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.03em}
+.look-species select{flex:1;font-size:15px;padding:8px 10px;border-color:var(--gold-soft)}
 .look-preview{display:flex;justify-content:center;margin-bottom:8px}
 .look-row{display:flex;align-items:center;gap:8px;margin:6px 0}
 .look-row>span{font-size:12px;color:var(--faint);min-width:78px}
@@ -6262,7 +6265,48 @@ function NoteReadModal({ item, onClose }) {
 // Per-party DM Notebook — light campaign notetaking (NPCs, locations, plot, misc).
 // Entries are { id, name, tag, sections:[{id,title,body}] }; NPCs add loc (a location id),
 /* ===== NPC appearance + chibi portrait builder ===== */
-const LOOK_SPECIES = ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Orc", "Tiefling", "Dragonborn", "Goblin", "Other"];
+// Species are grouped for the <optgroup> picker. Names describe game concepts (not copyrightable) — safe
+// to use in a personal tool. Non-humanoid types still render as a stylised humanoid bust.
+const LOOK_SPECIES_GROUPS = [
+  ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonborn", "Tiefling"]],
+  ["More races", ["Orc", "Goblin", "Hobgoblin", "Drow", "Duergar", "Goliath", "Aasimar", "Genasi", "Kobold", "Warforged", "Lizardfolk"]],
+  ["Monstrous / undead", ["Vampire", "Ghoul", "Lich", "Hag", "Werewolf", "Devil", "Demon", "Ghost"]],
+  ["Other", ["Other"]],
+];
+const LOOK_SPECIES = LOOK_SPECIES_GROUPS.flatMap(([, list]) => list);
+// A species-appropriate starting point applied when the race is chosen: skin/eyes always, plus horns,
+// hair, beard, or face where the race is iconic. Purely a jumping-off point — every field stays editable.
+const SPECIES_DEFAULTS = {
+  Human: { skin: "#e8c19c", eyes: "#4a2c14", horns: "none" },
+  Elf: { skin: "#f4d9bd", eyes: "#3f6a3a", horns: "none" },
+  "Half-Elf": { skin: "#e8c19c", eyes: "#6b4a26", horns: "none" },
+  Dwarf: { skin: "#d8a878", eyes: "#6b4a26", horns: "none", beard: "full" },
+  Halfling: { skin: "#e8c19c", eyes: "#6b4a26", horns: "none" },
+  Gnome: { skin: "#f4d9bd", eyes: "#2f7c8c", horns: "none" },
+  "Half-Orc": { skin: "#8fbf6a", eyes: "#6b4a26", horns: "none" },
+  Orc: { skin: "#6fa84e", eyes: "#6b4a26", horns: "none", beard: "none" },
+  Dragonborn: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
+  Tiefling: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
+  Goblin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none" },
+  Hobgoblin: { skin: "#cf8a8a", eyes: "#c9a227", horns: "none" },
+  Drow: { skin: "#b7a6d6", eyes: "#d94e42", hairColor: "#efeff3", horns: "none" },
+  Duergar: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none", beard: "full" },
+  Goliath: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none" },
+  Aasimar: { skin: "#f4d9bd", eyes: "#c9a227", horns: "none" },
+  Genasi: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
+  Kobold: { skin: "#cf8a8a", eyes: "#d94e42", horns: "small", face: "angular" },
+  Warforged: { skin: "#a9b0ba", eyes: "#2f7bc4", horns: "none", hair: "bald", beard: "none" },
+  Lizardfolk: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", hair: "bald", beard: "none" },
+  Vampire: { skin: "#d9cdbf", eyes: "#8a3030", hairColor: "#1c140f", horns: "none" },
+  Ghoul: { skin: "#a9b0ba", eyes: "#c9a227", horns: "none", hair: "bald" },
+  Lich: { skin: "#a9b0ba", eyes: "#3f9a4e", horns: "none", hair: "bald", beard: "none" },
+  Hag: { skin: "#8fbf6a", eyes: "#c9a227", hairColor: "#adb0b8", horns: "none", face: "angular" },
+  Werewolf: { skin: "#7c4a2d", eyes: "#c9a227", horns: "none", beard: "full" },
+  Devil: { skin: "#cf8a8a", eyes: "#d94e42", horns: "straight" },
+  Demon: { skin: "#8fbf6a", eyes: "#d94e42", horns: "ram" },
+  Ghost: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
+  Other: {},
+};
 const LOOK_FACES = [["round", "Round"], ["oval", "Oval"], ["square", "Square"], ["long", "Long"], ["heart", "Heart"], ["angular", "Angular"]];
 const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["swept", "Swept"], ["long", "Long"], ["ponytail", "Ponytail"], ["bun", "Bun"], ["curly", "Curly"], ["mohawk", "Mohawk"], ["braids", "Braids"], ["hood", "Hooded"]];
 const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"]];
@@ -6281,8 +6325,12 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const eyeC = L.eyes || EYE_COLORS[0];
   const line = "rgba(0,0,0,.28)";
   const sk = { fill: skin, stroke: line, strokeWidth: 1.4 };
-  const pointy = ["Elf", "Half-Elf"].includes(L.species);
-  const bigEar = L.species === "Goblin";
+  const sp = L.species;
+  const pointy = ["Elf", "Half-Elf", "Drow"].includes(sp);
+  const bigEar = ["Goblin", "Kobold", "Hobgoblin"].includes(sp);
+  const tusks = ["Orc", "Half-Orc"].includes(sp);
+  const fangs = ["Vampire", "Werewolf", "Demon"].includes(sp);
+  const plate = sp === "Warforged";
   const face = (() => {
     switch (L.face) {
       case "oval": return <ellipse cx="50" cy="53" rx="25" ry="31" {...sk} />;
@@ -6359,11 +6407,14 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       {ear(22, -1)}{ear(78, 1)}
       {hairBack}
       {face}
+      {plate && <g stroke="rgba(0,0,0,.28)" strokeWidth="1" fill="none"><line x1="50" y1="30" x2="50" y2="69" /><path d="M31 41 Q50 36 69 41" /><rect x="34" y="30" width="32" height="7" rx="2" fill="rgba(255,255,255,.14)" stroke="none" /></g>}
       {brow(31, 45, 0)}{brow(55, 69, 0)}
       {eye(38)}{eye(62)}
       <path d="M50 58 L48 65 Q50 67 52 65" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" fill="none" strokeLinecap="round" />
       <path d="M43 71 Q50 76 57 71" stroke="#7a3f3f" strokeWidth="2" fill="none" strokeLinecap="round" />
       {beard}
+      {tusks && <g fill="#f2ead6" stroke="rgba(0,0,0,.25)" strokeWidth="0.6"><path d="M41 75 L43.5 66 L46 74 Z" /><path d="M59 75 L56.5 66 L54 74 Z" /></g>}
+      {fangs && <g fill="#fff" stroke="rgba(0,0,0,.2)" strokeWidth="0.5"><path d="M46 70 L47.5 75 L49 70 Z" /><path d="M51 70 L52.5 75 L54 70 Z" /></g>}
       {hairFront}
       {horns}
     </svg>
@@ -6394,11 +6445,14 @@ function NpcAppearance({ value, onChange }) {
         <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => set({ on: true })}>🎨 Build a portrait</button>
       ) : (
         <div className="look-build">
+          <div className="look-species">
+            <label>Species</label>
+            <select className="sbook-search" value={look.species} onChange={(e) => set({ species: e.target.value, ...(SPECIES_DEFAULTS[e.target.value] || {}) })}>
+              {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s}</option>)}</optgroup>)}
+            </select>
+          </div>
           <div className="look-preview"><NpcPortrait look={look} size={132} /></div>
           <div className="look-controls">
-            <label className="look-row"><span>Species</span>
-              <select className="sbook-search" value={look.species} onChange={(e) => set({ species: e.target.value })}>{LOOK_SPECIES.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-            </label>
             <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
             <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
             <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
