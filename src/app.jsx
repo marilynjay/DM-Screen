@@ -517,6 +517,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .dispchip{font-size:11px;font-weight:600;border:1px solid var(--line2);border-radius:5px;padding:1px 7px;background:var(--panel);color:var(--dim);cursor:pointer;flex-shrink:0}
 .npctag{font-size:12px;color:var(--faint);font-style:italic;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .npchint{font-size:10px;color:var(--faint);opacity:.55;margin-left:auto;flex-shrink:0}
+.npcdock{border:1px solid var(--line2);border-top:2px solid var(--gold-soft);border-radius:0 0 10px 10px;background:var(--panel);padding:8px 12px 12px;margin:-2px 4px 8px}
+.npcdock-hd{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--gold);font-size:13px}
 .badges{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1 1 auto}
 .cond{display:inline-flex;align-items:center;font-size:11px;background:var(--raised);border:1px solid var(--line2);border-radius:10px;
   padding:0 7px;line-height:18px;min-height:18px;cursor:pointer;white-space:nowrap;vertical-align:middle}
@@ -3067,6 +3069,9 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           onClick={() => api.setDisposition(c.uid, nextDisp)}>{dispWord}</button>
       )}
       {socialNpc && c.npcTag && <span className="npctag" title="From the DM Notebook">{c.npcTag}</span>}
+      {socialNpc && c.npcId && (
+        <button className="dispchip" title="Open this NPC's notes in a pane below the roster" onClick={() => api.toggleNpcDock(c.npcId)}>📝 Notes</button>
+      )}
       {socialNpc && <span className="npchint" title="Full statblock is a tap away — tap the name">tap name for statblock</span>}
       {oldSchoolHp && !socialNpc && c.hp != null && c.type !== "effect" && (
         <input className="osfield osdmg" type="number" inputMode="numeric" placeholder="–" value={entry?.dmg ?? ""}
@@ -6239,6 +6244,23 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
   );
 }
 
+// Docked pane under the roster: edit a board NPC's notebook notes inline during a social scene.
+// Sections save straight to the notebook (raw — empties are filtered out only in read views).
+function NpcNotesDock({ npcId, notebook, onSave, onClose }) {
+  const npc = ((notebook && notebook.npcs) || []).find((n) => n.id === npcId);
+  if (!npc) return null;
+  const setSections = (secs) => onSave({ ...notebook, npcs: notebook.npcs.map((n) => (n.id === npcId ? { ...n, sections: secs.map((s) => ({ id: s.id || newUid(), title: s.title || "", body: s.body || "" })) } : n)) });
+  return (
+    <div className="npcdock">
+      <div className="npcdock-hd">
+        <span style={{ flex: 1, minWidth: 0 }}>📝 <b>{npc.name}</b>{npc.deceased && <span title="Deceased" style={{ marginLeft: 6 }}>☠️</span>}{npc.tag ? <span style={{ color: "var(--faint)", fontSize: 12 }}> · {npc.tag}</span> : ""}</span>
+        <button className="btn small ghost" onClick={onClose}>Close ▲</button>
+      </div>
+      <SectionsEditor value={npc.sections} onChange={setSections} />
+    </div>
+  );
+}
+
 const NB_TABS = [["npcs", "NPCs", "👤", "NPC"], ["locations", "Locations", "📍", "Location"], ["plot", "Plot", "📜", "Plot point"], ["misc", "Misc", "🗒", "Note"]];
 function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, editNpcId }) {
   const [tab, setTab] = useState("npcs");
@@ -9244,6 +9266,7 @@ export default function App() {
   }, [state.log.length]);
   const [logArm, setLogArm] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
+  const [dockedNpcId, setDockedNpcId] = useState(null); // NPC whose notes/approval pane is docked under the roster
   const [addMenu, setAddMenu] = useState(false);
   const [spellBook, setSpellBook] = useState(false);
   const [peek, setPeek] = useState(null);
@@ -10569,6 +10592,8 @@ export default function App() {
       const c = stateRef.current.combatants.find((x) => x.uid === uid);
       if (c?.npcId) setModal({ type: "notebook", editNpcId: c.npcId });
     },
+    // Toggle the docked notes/approval pane under the roster for a board NPC.
+    toggleNpcDock: (npcId) => setDockedNpcId((cur) => (cur === npcId ? null : npcId)),
     equipItem: (uid, idx) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       const it = lootObj((c.loot || [])[idx]); if (!it) return;
@@ -11649,6 +11674,9 @@ export default function App() {
               <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} />
             ))}
           </div>
+          {dockedNpcId && activeRoster?.notebook && (
+            <NpcNotesDock npcId={dockedNpcId} notebook={activeRoster.notebook} onSave={saveNotebook} onClose={() => setDockedNpcId(null)} />
+          )}
         </>
       )}
 
