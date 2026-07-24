@@ -9212,7 +9212,7 @@ function ColorModal({ combatants, onSet, onAuto, onClear, onClose }) {
 const PM_ICONS = ["👑", "🐉", "🔥", "❄️", "⚡", "☠️", "⚔️", "🛡️", "🏹", "🧙", "👹", "🐺", "🕷️", "🩸", "⭐️", "💀"];
 const PM_CONDS = [["Blinded", "🙈"], ["Charmed", "💘"], ["Deafened", "🔕"], ["Frightened", "😱"], ["Grappled", "🤼"], ["Incapacitated", "🚫"], ["Invisible", "🫥"], ["Paralyzed", "⚡"], ["Petrified", "🗿"], ["Poisoned", "🤢"], ["Prone", "🔻"], ["Restrained", "🪢"], ["Stunned", "😵‍💫"], ["Unconscious", "💤"], ["Exhaustion", "🪫"]];
 const PM_COND_ICON = Object.fromEntries(PM_CONDS);
-const PM_BLANK = () => ({ trackParty: true, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
+const PM_BLANK = () => ({ trackParty: false, allies: [{ id: newUid(), name: "You", hp: "", maxHp: "", me: true, conds: [], ds: { s: 0, f: 0 } }], enemies: [] });
 // Turn a DM party member into a Player Mode ally row. Their party HP total seeds both
 // current and max, so the sheet lands ready-to-play at full health; srcId lets a later
 // re-import skip anyone already on the board.
