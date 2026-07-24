@@ -6269,7 +6269,7 @@ function NoteReadModal({ item, onClose }) {
 // to use in a personal tool. Non-humanoid types still render as a stylised humanoid bust.
 const LOOK_SPECIES_GROUPS = [
   ["Common races", ["Human", "Elf", "Half-Elf", "Dwarf", "Halfling", "Gnome", "Half-Orc", "Dragonborn", "Tiefling"]],
-  ["More races", ["Orc", "Goblin", "Hobgoblin", "Drow", "Duergar", "Goliath", "Aasimar", "Genasi", "Kobold", "Warforged", "Lizardfolk"]],
+  ["More races", ["Orc", "Goblin", "Hobgoblin", "Drow", "Duergar", "Goliath", "Aasimar", "Genasi", "Kobold", "Construct", "Lizardfolk"]],
   ["Monstrous / undead", ["Vampire", "Ghoul", "Lich", "Hag", "Werewolf", "Devil", "Demon", "Ghost"]],
   ["Other", ["Other"]],
 ];
@@ -6295,7 +6295,7 @@ const SPECIES_DEFAULTS = {
   Aasimar: { skin: "#f4d9bd", eyes: "#c9a227", horns: "none" },
   Genasi: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
   Kobold: { skin: "#cf8a8a", eyes: "#d94e42", horns: "small", face: "angular" },
-  Warforged: { skin: "#a9b0ba", eyes: "#2f7bc4", horns: "none", hair: "bald", beard: "none" },
+  Construct: { skin: "#a9b0ba", eyes: "#2f7bc4", horns: "none", hair: "bald", beard: "none" },
   Lizardfolk: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", hair: "bald", beard: "none" },
   Vampire: { skin: "#d9cdbf", eyes: "#8a3030", hairColor: "#1c140f", horns: "none" },
   Ghoul: { skin: "#a9b0ba", eyes: "#c9a227", horns: "none", hair: "bald" },
@@ -6330,7 +6330,7 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const bigEar = ["Goblin", "Kobold", "Hobgoblin"].includes(sp);
   const tusks = ["Orc", "Half-Orc"].includes(sp);
   const fangs = ["Vampire", "Werewolf", "Demon"].includes(sp);
-  const plate = sp === "Warforged";
+  const plate = sp === "Construct" || sp === "Warforged"; // Warforged kept as a back-compat alias for any saved NPC
   const face = (() => {
     switch (L.face) {
       case "oval": return <ellipse cx="50" cy="53" rx="25" ry="31" {...sk} />;
