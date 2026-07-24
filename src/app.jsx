@@ -21,6 +21,7 @@ const CSS = `
   --disp:'Cinzel',Georgia,serif;
 }
 *{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink)}
 .dm-app{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;
   background:var(--ink);color:var(--text);
   font:14px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -3190,7 +3191,7 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
         <button className="btn small ghost" onClick={() => setMenu(!menu)}>⋮</button>
         {menu && (
           <div className="menu" onClick={() => setMenu(false)}>
-            {c.type === "monster" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>}
+            {c.type === "monster" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>}
             {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
             <button onClick={() => api.rename(c.uid)}>Rename…</button>
             {c.type !== "effect" && <button onClick={() => api.openColors()}>🎨 Colour combatants…</button>}
@@ -4203,7 +4204,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
       )}
 
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save…</button>
+        <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>
         <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>
         <button className="btn small" onClick={() => api.openMonsterItems(c.uid)}>🎒 Use item…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>
@@ -4412,7 +4413,7 @@ function SaveRollModal({ c, onRoll, onClose, rolled }) {
     return (
       <div className="overlay" onClick={onClose}>
         <div className="modal" onClick={onClose} style={{ cursor: "pointer" }}>
-          <h3>{c.name} — {rolled.badge.ab} save{rolled.dc ? ` vs DC ${rolled.dc}` : ""}</h3>
+          <h3>{c.name} — {rolled.badge.ab} {rolled.badge.kind === "check" ? "check" : "save"}{rolled.dc ? ` vs DC ${rolled.dc}` : ""}</h3>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", margin: "10px 0" }}>
             <DiceGroup dice={rolled.dice} size={46} />
             <span style={{ fontFamily: "var(--mono)", fontSize: 15, color: "var(--dim)" }}>{fmtMod(rolled.mod)}</span>
@@ -4428,22 +4429,32 @@ function SaveRollModal({ c, onRoll, onClose, rolled }) {
   }
 
   const [dc, setDc] = useState("");
+  const [mode, setMode] = useState("save");
+  const check = mode === "check";
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Saving throw — {c.name}</h3>
+        <h3>{check ? "Ability check" : "Saving throw"} — {c.name}</h3>
+        <div className="tabs" style={{ marginBottom: 6 }}>
+          <button className="btn small" style={!check ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setMode("save")}>Saving throw</button>
+          <button className="btn small" style={check ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}} onClick={() => setMode("check")}>Ability check</button>
+        </div>
         <div className="frow">
           <label>DC (optional)</label>
           <input type="number" value={dc} onChange={(e) => setDc(e.target.value)} autoFocus />
-          {c.advMode !== "none" && <span className={`advtag ${c.advMode}`}>{c.advMode === "adv" ? "ADV" : "DIS"}</span>}
+          {!check && c.advMode !== "none" && <span className={`advtag ${c.advMode}`}>{c.advMode === "adv" ? "ADV" : "DIS"}</span>}
         </div>
         <div className="pick">
-          {["str", "dex", "con", "int", "wis", "cha"].map((ab) => (
-            <button key={ab} className="btn" onClick={() => onRoll(ab, dc ? parseInt(dc, 10) : null)}>
-              {ab.toUpperCase()} {fmtMod(saveMod(c, ab) + (ab === "dex" ? coverBonus(c) : 0))}{ab === "dex" && coverBonus(c) ? "*" : ""}
-            </button>
-          ))}
+          {["str", "dex", "con", "int", "wis", "cha"].map((ab) => {
+            const m = check ? (c.mods?.[ab] ?? 0) : saveMod(c, ab) + (ab === "dex" ? coverBonus(c) : 0);
+            return (
+              <button key={ab} className="btn" onClick={() => onRoll(ab, dc ? parseInt(dc, 10) : null, mode)}>
+                {ab.toUpperCase()} {fmtMod(m)}{!check && ab === "dex" && coverBonus(c) ? "*" : ""}
+              </button>
+            );
+          })}
         </div>
+        {check && <div className="ad" style={{ marginTop: 6 }}>Plain d20 + ability modifier — no save proficiency. Good for an NPC helping the party investigate, sneak, or persuade.</div>}
       </div>
     </div>
   );
@@ -6195,11 +6206,13 @@ function NoteReadModal({ item, onClose }) {
 // Role presets prefill numbers scaled to the party's level; abilities hide behind a toggle.
 function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
   const [tier, setTier] = useState(String(npcTier(partyLevel)));
+  const [presetKey, setPresetKey] = useState("");
   const [showAbil, setShowAbil] = useState(false);
   const set = (k, v) => onChange({ ...stats, [k]: v });
   const setMod = (k, v) => onChange({ ...stats, mods: { ...stats.mods, [k]: v } });
   const setAtk = (i, k, v) => onChange({ ...stats, attacks: stats.attacks.map((a, j) => (j === i ? { ...a, [k]: v } : a)) });
-  const applyPreset = (key) => { const p = NPC_PRESETS.find((x) => x.key === key); if (p) onChange({ ...presetToStats(p, Number(tier)), atkN: stats.atkN || 1 }); };
+  // Re-scale to the chosen tier whenever either the preset OR the tier changes.
+  const applyPreset = (key, t) => { const p = NPC_PRESETS.find((x) => x.key === key); if (p) onChange({ ...presetToStats(p, Number(t)), atkN: stats.atkN || 1 }); };
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
       <div className="frow" style={{ alignItems: "center" }}>
@@ -6207,11 +6220,11 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
         <button className="btn tiny ghost warn" title="Remove combat stats — make this a social-only NPC" onClick={onRemove}>Remove</button>
       </div>
       <div className="frow" style={{ flexWrap: "wrap", marginTop: 4 }}>
-        <select value="" onChange={(e) => { if (e.target.value) applyPreset(e.target.value); }} title="Prefill from a role archetype">
+        <select value={presetKey} onChange={(e) => { const k = e.target.value; setPresetKey(k); if (k) applyPreset(k, tier); }} title="Prefill from a role archetype">
           <option value="">Preset…</option>
           {NPC_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.icon} {p.name}</option>)}
         </select>
-        <select value={tier} onChange={(e) => setTier(e.target.value)} title="Power tier the preset scales to (defaults to your party's level)">
+        <select value={tier} onChange={(e) => { const t = e.target.value; setTier(t); if (presetKey) applyPreset(presetKey, t); }} title="Power tier the preset scales to (defaults to your party's level) — changing it re-scales the chosen preset">
           {NPC_TIERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </div>
@@ -11443,20 +11456,23 @@ export default function App() {
     });
   };
 
-  const applySaveRoll = (ab, dc) => {
+  const applySaveRoll = (ab, dc, mode = "save") => {
     const uid = modal.uid;
+    const check = mode === "check"; // ability check: plain d20 + ability mod, no save proficiency
+    const word = check ? "check" : "save";
     mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
-      const cov = ab === "dex" ? coverBonus(c) : 0;
-      const forced = saveAutoFails(c, ab);
-      const slowPen = slowSavePen(c, ab); // Slow: −2 to DEX saves
-      const bb = blessBaneRoll(c); // Bless +1d4 / Bane −1d4
-      const mod = saveMod(c, ab) + cov - exhaustPen(c) - slowPen;
-      const r = d20(mod, saveAdv(c, ab));
+      const cov = (!check && ab === "dex") ? coverBonus(c) : 0;
+      const forced = check ? false : saveAutoFails(c, ab);
+      const slowPen = check ? 0 : slowSavePen(c, ab); // Slow: −2 to DEX saves (saves only)
+      const bb = check ? { delta: 0, note: "" } : blessBaneRoll(c); // Bless/Bane apply to saves, not checks
+      const baseMod = check ? (c.mods?.[ab] ?? 0) : saveMod(c, ab);
+      const mod = baseMod + cov - (check ? 0 : exhaustPen(c)) - slowPen;
+      const r = d20(mod, check ? "none" : saveAdv(c, ab));
       const total = r.total + bb.delta;
       const passed = dc ? (forced ? false : total >= dc) : null;
       const dcTxt = dc ? ` vs DC ${dc} — <b>${passed ? "SUCCESS" : "FAIL"}</b>${forced ? " (auto-fails)" : ""}` : "";
-      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} save ${forced && dc ? "auto-fails (incapacitated)" : r.text}${bb.note ? ` ${bb.note} = ${total}` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${slowPen ? " (−2 Slow)" : ""}${dcTxt}`);
+      L.push(`<b>${c.name}</b> ${ab.toUpperCase()} ${word} ${forced && dc ? "auto-fails (incapacitated)" : r.text}${bb.note ? ` ${bb.note} = ${total}` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${slowPen ? " (−2 Slow)" : ""}${dcTxt}`);
       const both = r.adv !== "none";
       const dice = both
         ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
@@ -11465,9 +11481,9 @@ export default function App() {
       const ok = dc ? total >= dc : null;
       const chip = {
         id: Math.random(), dice, dieSize: 30,
-        t: ` ${ab.toUpperCase()} save ${fmtMod(mod)} = ${total}${bb.note ? ` (${bb.note})` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${dc ? ` vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}` : ""}`,
+        t: ` ${ab.toUpperCase()} ${word} ${fmtMod(mod)} = ${total}${bb.note ? ` (${bb.note})` : ""}${cov ? ` (incl. +${cov} cover)` : ""}${dc ? ` vs DC ${dc} — ${ok ? "SUCCESS" : "FAIL"}` : ""}`,
         k: ok == null ? "hit" : ok ? "sgood" : "sbad",
-        badge: { ab: ab.toUpperCase(), total, ok },
+        badge: { ab: ab.toUpperCase(), total, ok, kind: word },
         mod, dc,
       };
       setTimeout(() => {
