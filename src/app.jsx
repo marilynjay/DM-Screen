@@ -6308,6 +6308,46 @@ const SPECIES_DEFAULTS = {
   Ghost: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
   Other: {},
 };
+// Hidden name pools for the 🎲 random-name button. Never listed in the UI — just sampled. `last` is an
+// optional surname/clan/epithet; `lastChance` (default 1) is how often it's appended. Names are generic
+// fantasy (no specific published characters), so they're safe to bundle and sell.
+const NAME_BANKS = {
+  human: { first: ["Aldric", "Bram", "Cedric", "Doran", "Edmund", "Garrick", "Halden", "Joris", "Kellen", "Lucan", "Marek", "Nolan", "Osric", "Perrin", "Roderick", "Soren", "Tomas", "Willem", "Alys", "Brenna", "Cora", "Elin", "Faye", "Greta", "Isolde", "Katrin", "Lena", "Mira", "Nessa", "Petra", "Rowan", "Thea"], last: ["Ashford", "Blackwood", "Carrow", "Dunmore", "Fenwick", "Grimsby", "Harrow", "Larkin", "Marsh", "Northgate", "Oakhart", "Ravenshold", "Stonefield", "Thorne", "Underhill", "Vane", "Winters"] },
+  elf: { first: ["Aelar", "Aramil", "Berrian", "Caelynn", "Daellan", "Enna", "Faelar", "Galinndan", "Hadarai", "Immeral", "Ivellios", "Korfel", "Lamlis", "Mindartis", "Naeris", "Paelias", "Quarion", "Riardon", "Soveliss", "Thamior", "Vanuath", "Yara", "Silaqui", "Meriele"], last: ["Amakiir", "Galanodel", "Holimion", "Liadon", "Nailo", "Siannodel", "Moonwhisper", "Starfall", "Nightbreeze", "Silverfrond", "Dawnhollow"] },
+  dwarf: { first: ["Adrik", "Baern", "Brottor", "Dain", "Eberk", "Fargrim", "Gardain", "Harbek", "Kildrak", "Morgran", "Orsik", "Rangrim", "Thoradin", "Vondal", "Bardryn", "Diesa", "Gunnloda", "Hlin", "Kathra", "Mardred", "Riswynn", "Torbera"], last: ["Brawnanvil", "Fireforge", "Frostbeard", "Holderhek", "Ironfist", "Loderr", "Rumnaheim", "Stonehelm", "Deepdelver", "Goldvein", "Strakeln"] },
+  halfling: { first: ["Alton", "Cade", "Eldon", "Garret", "Lyle", "Merric", "Milo", "Osborn", "Roscoe", "Wellby", "Andry", "Bree", "Callie", "Jillian", "Lavinia", "Nedda", "Portia", "Verna"], last: ["Brushgather", "Goodbarrel", "Greenbottle", "Hilltopple", "Leagallow", "Tealeaf", "Thorngage", "Underbough", "Applebrook", "Fairwind"] },
+  gnome: { first: ["Alston", "Boddynock", "Dimble", "Fonkin", "Gimble", "Namfoodle", "Roondar", "Seebo", "Zook", "Breena", "Caramip", "Ella", "Lilli", "Nissa", "Nyx", "Roywyn", "Tana", "Zanna"], last: ["Beren", "Daergel", "Folkor", "Nackle", "Timbers", "Cogsworth", "Sparklight", "Fizzlebang", "Turen"] },
+  orc: { first: ["Grok", "Karg", "Thok", "Ug", "Brakka", "Durg", "Grukk", "Hrogar", "Morg", "Narg", "Ozul", "Ruck", "Skarn", "Thurga", "Vrag", "Zarka", "Gralla", "Ekka", "Nokka", "Bogrot"], last: ["the Cleaver", "Skullsplitter", "Ironmaw", "Bonebreaker", "Bloodtusk", "the Ravager", "Gutripper", "Blacktooth"], lastChance: 0.5 },
+  infernal: { first: ["Akmenos", "Azael", "Barakas", "Damaia", "Ekemon", "Iados", "Kallista", "Lerissa", "Malech", "Mordai", "Nemeia", "Orianna", "Pelaios", "Rieta", "Skamos", "Therai", "Valeria", "Zhaan", "Hope", "Torment", "Ruin", "Mercy", "Vengeance", "Sorrow"], lastChance: 0 },
+  draconic: { first: ["Arjhan", "Balasar", "Donaar", "Ghesh", "Heskan", "Kriv", "Medrash", "Nadarr", "Pandjed", "Rhogar", "Shamash", "Torinn", "Akra", "Biri", "Daar", "Harann", "Kava", "Korinn", "Mishann", "Nala", "Perra", "Raiann", "Sora", "Thava"], last: ["Emberscale", "Stormhorn", "Ashclaw", "Goldwing", "Frostscale", "Duskclaw", "Cindermaw"], lastChance: 0.6 },
+  celestial: { first: ["Seraphiel", "Lumen", "Aurelia", "Cassiel", "Dawn", "Elion", "Halcyon", "Iael", "Lucen", "Micah", "Nael", "Oriel", "Sariel", "Zerah", "Amara", "Celia", "Liora", "Nova", "Sol", "Vesper"], last: ["the Radiant", "Dawnbringer", "Lightborn", "of the Choir"], lastChance: 0.4 },
+  giant: { first: ["Aukan", "Eglath", "Gauthak", "Ilikan", "Keothi", "Kuori", "Lo-Kag", "Manneo", "Maveith", "Nalla", "Orilo", "Paavu", "Thalai", "Thotham", "Uthal", "Vaunea", "Vimak", "Beska", "Kavaki"], last: ["Skywatcher", "Stonebreaker", "Cloudstrider", "Rockmane", "Frostpeak", "Boulderfist"], lastChance: 0.6 },
+  construct: { first: ["Iron", "Cog", "Rust", "Sentinel", "Bulwark", "Anvil", "Ferro", "Sprocket", "Verdict", "Ember", "Slate", "Cinder", "Warden", "Vigil", "Latch", "Tally", "Nine", "Echo", "Bastion"], last: ["Unit-7", "Mark-III", "the Warden", "Model-9", "Series-4"], lastChance: 0.5 },
+  undead: { first: ["Mordecai", "Vasska", "Lucen", "Ophelia", "Draven", "Ysolde", "Emeric", "Ligeia", "Cadence", "Morwen", "Nocturne", "Vespera", "Lazlo", "Ravenna", "Corvus", "Malachi", "Thanatos", "Vyra", "Nyx"], last: ["Nightshade", "Graves", "Hollow", "Ashbourne", "Coldwell", "Blackmoor", "the Pale", "Duskbane"], lastChance: 0.6 },
+};
+const SPECIES_NAME_STYLE = {
+  Human: "human", "Half-Elf": "human", Elf: "elf", "Dark Elf": "elf", Drow: "elf",
+  Dwarf: "dwarf", "Gray Dwarf": "dwarf", Duergar: "dwarf", Halfling: "halfling", Gnome: "gnome",
+  "Half-Orc": "orc", Orc: "orc", Goblin: "orc", Hobgoblin: "orc",
+  Tiefling: "infernal", Fiendkin: "infernal", Devil: "infernal", Demon: "infernal",
+  Dragonborn: "draconic", Dragonkin: "draconic", Kobold: "draconic", Lizardfolk: "draconic",
+  Aasimar: "celestial", Celestialkin: "celestial", Goliath: "giant", Giantkin: "giant",
+  Construct: "construct", Warforged: "construct",
+  Vampire: "undead", Lich: "undead", Ghoul: "undead", Ghost: "undead", Hag: "undead", Werewolf: "undead",
+};
+// Roll a race-appropriate name; retries a few times to avoid handing back the same name twice in a row.
+const rollNpcName = (species, avoid) => {
+  const bank = NAME_BANKS[SPECIES_NAME_STYLE[species] || "human"] || NAME_BANKS.human;
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  let name = "";
+  for (let t = 0; t < 6; t++) {
+    const first = pick(bank.first);
+    const useLast = bank.last && Math.random() < (bank.lastChance == null ? 1 : bank.lastChance);
+    name = useLast ? `${first} ${pick(bank.last)}` : first;
+    if (name !== avoid) break;
+  }
+  return name;
+};
 const LOOK_FACES = [["round", "Round"], ["oval", "Oval"], ["square", "Square"], ["long", "Long"], ["heart", "Heart"], ["angular", "Angular"]];
 const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["swept", "Swept"], ["long", "Long"], ["ponytail", "Ponytail"], ["bun", "Bun"], ["curly", "Curly"], ["mohawk", "Mohawk"], ["braids", "Braids"], ["hood", "Hooded"]];
 const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"]];
@@ -6879,7 +6919,9 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
           {draft ? (
             <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px" }}>
               <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{draft.id ? `Edit ${dSingular}` : `New ${dSingular}`}</div>
-              <div className="frow"><input type="text" placeholder={`${dSingular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus /></div>
+              <div className="frow"><input type="text" placeholder={`${dSingular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus />
+                {draft.tab === "npcs" && <button className="btn small ghost" title={`Roll a random ${(draft.look?.species && draft.look.species !== "Other") ? draft.look.species : "human"}-style name — click again for more`} onClick={() => setDraft((d) => ({ ...d, name: rollNpcName(d.look?.species, d.name) }))}>🎲</button>}
+              </div>
               <div className="frow"><input type="text" placeholder="Tag — optional (e.g. quest-giver, tavern, rumor)" style={{ flex: 1 }} value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} /></div>
               {draft.tab === "npcs" && (<>
                 <div className="frow" style={{ alignItems: "center" }}>
