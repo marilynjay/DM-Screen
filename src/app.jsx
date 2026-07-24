@@ -326,6 +326,8 @@ input[type=number]{width:64px}
 .tut-dot.on{background:var(--gold)}
 .tut-actions{display:flex;align-items:center;gap:6px}
 .tut-scrim{position:fixed;inset:0;z-index:54;pointer-events:none}
+/* transparent catcher so the auto-driven tour can't be knocked off course by taps on the board or header; sits above the header (40) but below the tour card (55). Modals (80) still float above it. */
+.tut-block{position:fixed;inset:0;z-index:53;pointer-events:auto;touch-action:none;background:transparent}
 .tut-arrow{position:fixed;z-index:56;color:var(--gold);font-size:26px;line-height:1;pointer-events:none;text-shadow:0 1px 5px rgba(0,0,0,.8);animation:tutbounce 1s ease-in-out infinite}
 @keyframes tutbounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 .btn.danger{border-color:var(--danger);color:var(--danger)}
@@ -9585,9 +9587,10 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, n
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
-  if (suppressed) return <TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} />;
+  if (suppressed) return <><div className="tut-block" onClickCapture={(e) => e.stopPropagation()} /><TutorialCard step={step} onBack={onBack} onNext={onNext} onSkip={onSkip} onFinish={onFinish} nextDisabled={nextDisabled} gateHint={gateHint} onAuto={onAuto} restoreOnly={restoreOnly} /></>;
   return (
     <>
+      <div className="tut-block" onClickCapture={(e) => e.stopPropagation()} />
       {vp.w > 0 && (
         <svg className="tut-scrim" width={vp.w} height={vp.h} viewBox={`0 0 ${vp.w} ${vp.h}`}>
           <defs>
