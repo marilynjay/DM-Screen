@@ -3113,7 +3113,11 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
   const bloody = isBloodied(c);
   // An NPC out of combat reads as a social contact: name + disposition + tag, no HP/AC/initiative.
   // Its full statblock stays a tap away (peek = the DM reveal); it becomes a normal combatant in a fight.
-  const socialNpc = c.npc && !inCombat && !c.dead;
+  /* An out-of-combat NPC shows as a social card: name, disposition and notes, with its combat numbers
+     hidden until a fight starts. But once it has actually taken damage, hiding HP makes the roster lie —
+     it showed "Bloodied" and no numbers. A hurt NPC gets its HP box back; an untouched one stays social. */
+  const npcHurt = !!(c.npc && c.hp != null && c.maxHp != null && c.hp < c.maxHp);
+  const socialNpc = c.npc && !inCombat && !c.dead && !npcHurt;
   const dispWord = c.side === "ally" ? "🙂 ally" : c.side === "enemy" ? "⚔ enemy" : "• neutral";
   const nextDisp = c.side === "neutral" ? "ally" : c.side === "ally" ? "enemy" : "neutral";
 
@@ -6329,34 +6333,34 @@ const LOOK_SPECIES = LOOK_SPECIES_GROUPS.flatMap(([, list]) => list);
 // A species-appropriate starting point applied when the race is chosen: skin/eyes always, plus horns,
 // hair, beard, or face where the race is iconic. Purely a jumping-off point — every field stays editable.
 const SPECIES_DEFAULTS = {
-  Human: { skin: "#e8c19c", eyes: "#4a2c14", horns: "none" },
-  Elf: { skin: "#f4d9bd", eyes: "#3f6a3a", horns: "none" },
-  "Half-Elf": { skin: "#e8c19c", eyes: "#6b4a26", horns: "none" },
-  Dwarf: { skin: "#d8a878", eyes: "#6b4a26", horns: "none", beard: "full" },
-  Halfling: { skin: "#e8c19c", eyes: "#6b4a26", horns: "none" },
-  Gnome: { skin: "#f4d9bd", eyes: "#2f7c8c", horns: "none" },
-  "Half-Orc": { skin: "#8fbf6a", eyes: "#6b4a26", horns: "none" },
-  Orc: { skin: "#6fa84e", eyes: "#6b4a26", horns: "none", beard: "none" },
-  Dragonborn: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", face: "angular", hair: "bald" },
-  Tiefling: { skin: "#cf8a8a", eyes: "#d94e42", horns: "curved" },
-  Goblin: { skin: "#6fa84e", eyes: "#c9a227", horns: "none" },
-  Hobgoblin: { skin: "#cf8a8a", eyes: "#c9a227", horns: "none" },
-  "Dark Elf": { skin: "#b7a6d6", eyes: "#d94e42", hairColor: "#efeff3", horns: "none" },
-  "Gray Dwarf": { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none", beard: "full" },
-  Giantkin: { skin: "#a9b0ba", eyes: "#6a6a72", horns: "none" },
-  Celestialkin: { skin: "#f4d9bd", eyes: "#c9a227", horns: "none" },
-  Elementkin: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
-  Kobold: { skin: "#cf8a8a", eyes: "#d94e42", horns: "small", face: "angular" },
-  Construct: { skin: "#a9b0ba", eyes: "#2f7bc4", horns: "none", hair: "bald", beard: "none" },
-  Lizardfolk: { skin: "#6fa84e", eyes: "#c9a227", horns: "none", hair: "bald", beard: "none" },
-  Vampire: { skin: "#d9cdbf", eyes: "#8a3030", hairColor: "#1c140f", horns: "none" },
-  Ghoul: { skin: "#a9b0ba", eyes: "#c9a227", horns: "none", hair: "bald" },
-  Lich: { skin: "#a9b0ba", eyes: "#3f9a4e", horns: "none", hair: "bald", beard: "none" },
-  Hag: { skin: "#8fbf6a", eyes: "#c9a227", hairColor: "#adb0b8", horns: "none", face: "angular" },
-  Werewolf: { skin: "#7c4a2d", eyes: "#c9a227", horns: "none", beard: "full" },
-  Devil: { skin: "#cf8a8a", eyes: "#d94e42", horns: "straight" },
-  Demon: { skin: "#8fbf6a", eyes: "#d94e42", horns: "ram" },
-  Ghost: { skin: "#7db0cf", eyes: "#2f7bc4", horns: "none" },
+  Human: { skin: "#e8c19c", eyes: "#4a2c14", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Elf: { skin: "#f4d9bd", eyes: "#3f6a3a", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  "Half-Elf": { skin: "#e8c19c", eyes: "#6b4a26", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Dwarf: { skin: "#d8a878", eyes: "#6b4a26", hair: "short", hairColor: "#5a3b22", face: "round", beard: "full", horns: "none" },
+  Halfling: { skin: "#e8c19c", eyes: "#6b4a26", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Gnome: { skin: "#f4d9bd", eyes: "#2f7c8c", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  "Half-Orc": { skin: "#8fbf6a", eyes: "#6b4a26", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Orc: { skin: "#6fa84e", eyes: "#6b4a26", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Dragonborn: { skin: "#6fa84e", eyes: "#c9a227", hair: "bald", hairColor: "#5a3b22", face: "angular", beard: "none", horns: "none" },
+  Tiefling: { skin: "#cf8a8a", eyes: "#d94e42", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "curved" },
+  Goblin: { skin: "#6fa84e", eyes: "#c9a227", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Hobgoblin: { skin: "#cf8a8a", eyes: "#c9a227", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  "Dark Elf": { skin: "#b7a6d6", eyes: "#d94e42", hair: "short", hairColor: "#efeff3", face: "round", beard: "none", horns: "none" },
+  "Gray Dwarf": { skin: "#a9b0ba", eyes: "#6a6a72", hair: "short", hairColor: "#5a3b22", face: "round", beard: "full", horns: "none" },
+  Giantkin: { skin: "#a9b0ba", eyes: "#6a6a72", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Celestialkin: { skin: "#f4d9bd", eyes: "#c9a227", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Elementkin: { skin: "#7db0cf", eyes: "#2f7bc4", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Kobold: { skin: "#cf8a8a", eyes: "#d94e42", hair: "short", hairColor: "#5a3b22", face: "angular", beard: "none", horns: "small" },
+  Construct: { skin: "#a9b0ba", eyes: "#2f7bc4", hair: "bald", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Lizardfolk: { skin: "#6fa84e", eyes: "#c9a227", hair: "bald", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Vampire: { skin: "#d9cdbf", eyes: "#8a3030", hair: "short", hairColor: "#1c140f", face: "round", beard: "none", horns: "none" },
+  Ghoul: { skin: "#a9b0ba", eyes: "#c9a227", hair: "bald", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Lich: { skin: "#a9b0ba", eyes: "#3f9a4e", hair: "bald", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
+  Hag: { skin: "#8fbf6a", eyes: "#c9a227", hair: "short", hairColor: "#adb0b8", face: "angular", beard: "none", horns: "none" },
+  Werewolf: { skin: "#7c4a2d", eyes: "#c9a227", hair: "short", hairColor: "#5a3b22", face: "round", beard: "full", horns: "none" },
+  Devil: { skin: "#cf8a8a", eyes: "#d94e42", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "straight" },
+  Demon: { skin: "#8fbf6a", eyes: "#d94e42", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "ram" },
+  Ghost: { skin: "#7db0cf", eyes: "#2f7bc4", hair: "short", hairColor: "#5a3b22", face: "round", beard: "none", horns: "none" },
   Other: {},
 };
 /* Hidden name pools for the 🎲 random-name button. Never listed in the UI — just sampled. `last` is an
@@ -6544,7 +6548,18 @@ function NpcAppearance({ value, onChange }) {
   const [choosing, setChoosing] = useState(false); // race + use-default/customize picker, before a portrait exists
   const [expanded, setExpanded] = useState(false);  // full builder controls open
   const set = (patch) => onChange({ ...look, ...patch });
-  const setSpecies = (v) => set({ species: v, ...(SPECIES_DEFAULTS[v] || {}) });
+  /* Switching species used to blind-spread the new species' defaults over the whole look, so a DM who
+     had picked a skin tone, eye colour and horns lost all of it the moment they fumbled the dropdown —
+     which sits right above the preview and is the easiest control here to hit by accident. Only fields
+     the DM hasn't touched (still equal to the OLD species' default, or to the blank baseline) get
+     re-defaulted; anything deliberately chosen survives the switch. */
+  const setSpecies = (v) => {
+    const from = { ...blankLook(), ...(SPECIES_DEFAULTS[look.species] || {}) };
+    const to = SPECIES_DEFAULTS[v] || {};
+    const patch = { species: v };
+    Object.keys(to).forEach((k) => { if (look[k] === undefined || look[k] === from[k]) patch[k] = to[k]; });
+    set(patch);
+  };
   const raceName = look.species === "Other" ? (look.customRace || "Homebrew race") : look.species;
   const speciesPicker = (
     <>
@@ -6696,7 +6711,9 @@ function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose, onEdit }
   const npc = ((notebook && notebook.npcs) || []).find((n) => n.id === npcId);
   if (!npc) return null;
   const setNpc = (patch) => onSave({ ...notebook, npcs: notebook.npcs.map((n) => (n.id === npcId ? { ...n, ...patch } : n)) });
-  const setSections = (secs) => setNpc({ sections: secs.map((s) => ({ id: s.id || newUid(), title: s.title || "", body: s.body || "" })) });
+  // keep `collapsed` — SectionsEditor writes the fold state into it, and dropping it here meant the
+  // ▾ arrow did nothing and every note stayed open, pushing the roster down the screen
+  const setSections = (secs) => setNpc({ sections: secs.map((s) => ({ id: s.id || newUid(), title: s.title || "", body: s.body || "", ...(s.collapsed ? { collapsed: true } : {}) })) });
   const appr = npc.approval || {};
   const partyPool = Number(appr.party) || 0;
   const players = appr.players || {};
@@ -6854,8 +6871,11 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
   const cleanSecs = (secs) => (secs || []).map((s) => ({ id: s.id || newUid(), title: (s.title || "").trim(), body: (s.body || "").trim() })).filter((s) => s.title || s.body);
 
   const commitTab = (k, entries) => onSave({ ...nb, [k]: entries });
-  const startNew = (forTab = tab) => { setNewLoc(null); setNameLock(false); setDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], look: blankLook() }); };
-  const startEdit = (e, forTab = tab) => { setNewLoc(null); setNameLock(!!(e.name || "").trim()); setDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "", look: e.look ? { ...blankLook(), ...e.look } : blankLook() }); };
+  const draftInitRef = useRef("");
+  const openDraft = (d) => { draftInitRef.current = JSON.stringify(d); setDraft(d); };
+  const draftDirty = () => !!draft && JSON.stringify(draft) !== draftInitRef.current;
+  const startNew = (forTab = tab) => { setNewLoc(null); setNameLock(false); openDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], look: blankLook() }); };
+  const startEdit = (e, forTab = tab) => { setNewLoc(null); setNameLock(!!(e.name || "").trim()); openDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "", look: e.look ? { ...blankLook(), ...e.look } : blankLook() }); };
   // Opened from a board NPC's "Edit in Notebook" — jump straight to that NPC's editor.
   useEffect(() => { if (editNpcId) { const n = (nb.npcs || []).find((x) => x.id === editNpcId); if (n) { setTab("npcs"); startEdit(n, "npcs"); } } }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const saveDraft = () => {
@@ -6973,13 +6993,20 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
 
   const dSingular = draft ? singularOf(draft.tab) : "";
   const canParent = draft && draft.tab === "locations" && (!draft.id || childrenOf(draft.id).length === 0);
+  /* Tapping outside the modal, or the ✕, used to bin whatever was being typed without a word — and a
+     gold primary "Done" sat directly under Cancel/Save changes doing the same thing, which is the most
+     inviting button on the panel. Done is hidden while a draft is open, and the other two exits ask. */
+  const tryClose = () => {
+    if (draftDirty() && !window.confirm(`Discard your unsaved changes to this ${dSingular}?`)) return;
+    onClose();
+  };
   const label = NB_TABS.find(([k]) => k === tab)[1];
 
   return (
     <>
-    <div className="overlay" onClick={onClose}>
+    <div className="overlay" onClick={tryClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modalhd"><h3>📓 DM Notebook{party?.name ? ` — ${party.name}` : ""}</h3><button className="modal-x" title="Close" onClick={onClose}>✕</button></div>
+        <div className="modalhd"><h3>📓 DM Notebook{party?.name ? ` — ${party.name}` : ""}</h3><button className="modal-x" title="Close" onClick={tryClose}>✕</button></div>
         {!party ? <div className="trait">Load or create a party first — the notebook is saved with the active party.</div> : (<>
           <div className="tabs" style={{ marginBottom: 8 }}>
             {NB_TABS.map(([k, lbl, icon]) => (
@@ -7091,7 +7118,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, edi
           </>)}
           {!draft && <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Saved with the active party across sessions. NPCs group by location; place them in a city or a building within it.</div>}
         </>)}
-        <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>
+        {!draft && <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}><button className="btn primary" onClick={onClose}>Done</button></div>}
       </div>
     </div>
     {confirm && (
@@ -9826,7 +9853,22 @@ const pmResolveParty = (parties, apId) => {
 };
 function PlayerModeBoard({ onExit }) {
   const [board, setBoard] = useState(null);
-  const [entries, setEntries] = useState({});   // Old-School-style pending { id: { dmg, heal } }, committed together by the Apply bar
+  /* Pending { id: { dmg, heal } }, committed together by the Apply bar. Persisted because iOS reaps a
+     backgrounded tab routinely, and losing half-typed damage mid-combat is exactly when it hurts. */
+  const [entries, setEntriesState] = useState({});
+  const entriesBootRef = useRef(false);
+  const setEntries = (next) => setEntriesState((prev) => {
+    const v = typeof next === "function" ? next(prev) : next;
+    stSet("dm5e:pmEntries", v);
+    return v;
+  });
+  useEffect(() => {
+    (async () => {
+      const saved = await stGet("dm5e:pmEntries");
+      if (saved && typeof saved === "object") setEntriesState(saved);
+      entriesBootRef.current = true;
+    })();
+  }, []);
   const [iconFor, setIconFor] = useState(null); // enemy id whose icon picker is open
   const [colorFor, setColorFor] = useState(null);
   const [condFor, setCondFor] = useState(null); // "e:<id>" / "a:<id>" whose condition picker is open
@@ -9858,7 +9900,18 @@ function PlayerModeBoard({ onExit }) {
   })(); return () => { live = false; }; }, []);
   if (!board) return <div className="dm-app"><style>{CSS}</style></div>;
   const save = (b) => { setBoard(b); stSet("dm5e:pmBoard", b); };
-  const nextColor = () => ROSTER_COLORS[board.enemies.length % ROSTER_COLORS.length];
+  /* Deleting an enemy then adding one used to reuse both the name and the colour of a living row, which
+     defeats the whole point of the tagging. Number past the highest "Monster N" in play, and pick the
+     colour that is least used right now. */
+  const nextEnemyName = (list) => {
+    const used = list.map((e) => { const m = /^Monster (\d+)$/.exec(e.name || ""); return m ? Number(m[1]) : 0; });
+    return `Monster ${Math.max(0, ...used) + 1}`;
+  };
+  const leastUsedColor = (list) => {
+    const counts = ROSTER_COLORS.map((col) => list.filter((e) => e.color === col).length);
+    return ROSTER_COLORS[counts.indexOf(Math.min(...counts))];
+  };
+  const nextColor = () => leastUsedColor(board.enemies);
   // reorder within a list (approximate initiative order)
   const moved = (arr, id, dir) => { const i = arr.findIndex((x) => x.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= arr.length) return arr; const n = [...arr]; [n[i], n[j]] = [n[j], n[i]]; return n; };
   const moveEnemy = (id, dir) => save({ ...board, enemies: moved(board.enemies, id, dir) });
@@ -9887,7 +9940,8 @@ function PlayerModeBoard({ onExit }) {
   };
   // Mark exactly one ally as "you". Your character always shows its HP; teammates stay name-only
   // until whole-party tracking is turned on.
-  const setMe = (id) => save({ ...board, allies: board.allies.map((a) => ({ ...a, me: a.id === id })) });
+  // tapping 👤 on the row that already is you clears it — marking yourself used to be irreversible
+  const setMe = (id) => save({ ...board, allies: board.allies.map((a) => ({ ...a, me: a.id === id && !a.me })) });
   // Pull in every saved party member (names + HP) that isn't on the board yet. HP always imports;
   // whether a teammate's HP is *shown* is governed by "you" + the track-party toggle, not the import.
   const importParty = () => {
@@ -9902,7 +9956,7 @@ function PlayerModeBoard({ onExit }) {
   const toggleAdd = () => save({ ...board, addCollapsed: !board.addCollapsed });
   const togglePartyCollapse = () => save({ ...board, partyCollapsed: !board.partyCollapsed });
   // enemies
-  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: `Monster ${list.length + 1}`, color: ROSTER_COLORS[list.length % ROSTER_COLORS.length], icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); flash(`Added ${n} monster${n === 1 ? "" : "s"}.`); };
+  const addEnemies = (n) => { const list = [...board.enemies]; for (let k = 0; k < n; k++) list.push({ id: newUid(), name: nextEnemyName(list), color: leastUsedColor(list), icons: [], dmg: 0, conds: [] }); save({ ...board, enemies: list }); flash(`Added ${n} monster${n === 1 ? "" : "s"}.`); };
   const addNamedEnemy = (name) => { save({ ...board, enemies: [...board.enemies, { id: newUid(), name, color: nextColor(), icons: [], dmg: 0, conds: [] }] }); flash(`Added ${name} to enemies.`); };
   const setEnemy = (id, patch) => save({ ...board, enemies: board.enemies.map((e) => (e.id === id ? { ...e, ...patch } : e)) });
   const removeEnemy = (id) => save({ ...board, enemies: board.enemies.filter((e) => e.id !== id) });
@@ -9949,7 +10003,14 @@ function PlayerModeBoard({ onExit }) {
     }
     setEntries((m) => { const n = { ...m }; delete n[id]; return n; });
   };
-  const toggleIcon = (id, emo) => { const e = board.enemies.find((x) => x.id === id); if (!e) return; const has = (e.icons || []).includes(emo); setEnemy(id, { icons: has ? e.icons.filter((x) => x !== emo) : [...(e.icons || []), emo].slice(0, 3) }); };
+  const ICON_CAP = 3;
+  const toggleIcon = (id, emo) => {
+    const e = board.enemies.find((x) => x.id === id); if (!e) return;
+    const cur = e.icons || [], has = cur.includes(emo);
+    // the old .slice(0,3) dropped the icon you just tapped, so a 4th tap looked broken. Say why instead.
+    if (!has && cur.length >= ICON_CAP) { flash(`Up to ${ICON_CAP} icons — tap one to remove it first.`); return; }
+    setEnemy(id, { icons: has ? cur.filter((x) => x !== emo) : [...cur, emo] });
+  };
   const setterFor = (kind) => (kind === "e" ? setEnemy : setAlly);
   const commitRename = () => { if (!renameFor) return; setterFor(renameFor.kind)(renameFor.id, { name: (renameFor.name || "").trim() }); setRenameFor(null); };
   const toggleCond = (setter, item, c) => { const has = (item.conds || []).includes(c); setter(item.id, { conds: has ? item.conds.filter((x) => x !== c) : [...(item.conds || []), c] }); };
@@ -10100,7 +10161,7 @@ function PlayerModeBoard({ onExit }) {
                 {!hp && <span className="pm-masknote" title="HP hidden — this is a teammate and party tracking is off">HP hidden</span>}
                 <span className="pm-spring" />
                 {hp && <button className={`btn tiny ${a.down ? "pm-bloodbtn" : "ghost"}`} title="Down — shows death saves. When you're not tracking their max HP, this also zeroes the HP so healing afterwards reads as their real current HP." onClick={() => { const nowDown = !a.down; const maxKnown = a.maxHp !== "" && !isNaN(Number(a.maxHp)); const patch = { down: nowDown }; if (nowDown) { if (!maxKnown) patch.hp = "0"; } else { patch.ds = { s: 0, f: 0 }; } setAlly(a.id, patch); }}>💀</button>}
-                {!a.me && <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>}
+                <button className="btn tiny ghost warn" title="Remove" onClick={() => confirmRemoveAlly(a)}>✕</button>
               </div>
               {hp && (
               <div className="rline r2">
@@ -10537,14 +10598,24 @@ export default function App() {
     const nb = p?.notebook; if (!nb || !Array.isArray(nb.npcs)) return;
     const byId = {}; nb.npcs.forEach((n) => { byId[n.id] = n; });
     let changed = false, npcs = nb.npcs;
-    state.combatants.forEach((c) => {
-      if (!c.npcId || !byId[c.npcId]) return;
+    const linked = state.combatants.filter((c) => c.npcId && byId[c.npcId]);
+    // An NPC can be on the board more than once (a double, an illusion). Deciding "deceased" per copy
+    // let the last one visited win, so killing one of two marked the entry dead while the other stood
+    // there alive. The entry is only deceased once every copy of them is.
+    const allDeadById = {};
+    linked.forEach((c) => { allDeadById[c.npcId] = (allDeadById[c.npcId] ?? true) && !!c.dead; });
+    const seen = new Set();
+    linked.forEach((c) => {
       const stored = byId[c.npcId];
       const patch = {};
       const bag = c.loot || [];
-      if (JSON.stringify(stored.loot || []) !== JSON.stringify(bag)) patch.loot = bag;
-      // die in battle → mark deceased in the notebook; revive on the board → clear it
-      if (!!stored.deceased !== !!c.dead) patch.deceased = !!c.dead;
+      // only the first copy owns the bag — otherwise two rows fight over one inventory
+      if (!seen.has(c.npcId)) {
+        seen.add(c.npcId);
+        if (JSON.stringify(stored.loot || []) !== JSON.stringify(bag)) patch.loot = bag;
+        const dead = allDeadById[c.npcId];
+        if (!!stored.deceased !== dead) patch.deceased = dead;
+      }
       if (Object.keys(patch).length) { changed = true; npcs = npcs.map((n) => (n.id === c.npcId ? { ...n, ...patch } : n)); }
     });
     if (changed) saveNotebook({ ...nb, npcs });
@@ -11567,8 +11638,13 @@ export default function App() {
     addNpcToBoard: (npc) => {
       const side = npc.lastSide || "neutral";
       mutate((d, L, T) => {
-        const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
-        c.npc = true; c.npcId = npc.id; c.npcTag = npc.tag || "";
+        /* Passing an explicit name skips autoName, so adding the same NPC twice gave two rows both
+           called "Duke Varro" sharing one npcId — and the notebook write-back then applied whichever
+           copy it reached last, so killing one marked the other dead. Number the second copy the way
+           monsters are numbered, and only the first keeps the notebook link. */
+        const dupes = d.combatants.filter((x) => x.npcId === npc.id).length;
+        const c = makeMonster(npcToSb(npc), d, { side, name: dupes ? `${npc.name} ${dupes + 1}` : npc.name });
+        c.npc = true; c.npcTag = npc.tag || ""; c.npcId = npc.id;
         if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
         if (npc.deceased) { c.dead = true; c.hp = 0; } // stays dead until the DM revives it here
         d.combatants.push(c);
