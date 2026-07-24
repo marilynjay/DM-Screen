@@ -7849,38 +7849,59 @@ const DGN_FEATURES = [
   ["none", "None"], ["pool", "Pool"], ["fountain", "Fountain"], ["pillar", "Pillar"], ["brazier", "Brazier"],
   ["altar", "Altar"], ["statue", "Statue"], ["chest", "Chest"], ["stairs", "Stairs"], ["circle", "Magic circle"], ["skeletons", "Skeletons"],
 ];
-function TextureDefs() {
+// Each texture builder takes a `suffix` so its element ids stay unique per <svg> instance. That lets a
+// single texture be emitted self-contained inside a swatch's own <svg> — WebKit/Safari will NOT resolve
+// url(#id) paint references across separate <svg> roots, which is why the shared-defs picker came up blank.
+const TEX_FILTERS = {
+  stone: (s) => <filter key="stone" id={`f-stone${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="4" seed="3" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .78 0 0 0 -.3" /></filter>,
+  marble: (s) => <filter key="marble" id={`f-marble${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency=".012 .04" numOctaves="5" seed="9" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  4.2 0 0 0 -2.2" /></filter>,
+  dirt: (s) => <filter key="dirt" id={`f-dirt${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>,
+  mud: (s) => <filter key="mud" id={`f-mud${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>,
+  mist: (s) => <filter key="mist" id={`f-mist${s}`} x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>,
+};
+const TEX_FILTER_OF = { stone: "stone", marble: "marble", dirt: "dirt", mud: "mud", mist: "mist" };
+const TEX_PATTERNS = {
+  stone: (s) => <pattern key="stone" id={`tex-stone${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-stone${s})`} /></pattern>,
+  marble: (s) => <pattern key="marble" id={`tex-marble${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-marble${s})`} /></pattern>,
+  dirt: (s) => <pattern key="dirt" id={`tex-dirt${s}`} width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter={`url(#f-dirt${s})`} /></pattern>,
+  mud: (s) => <pattern key="mud" id={`tex-mud${s}`} width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter={`url(#f-mud${s})`} /></pattern>,
+  mist: (s) => <pattern key="mist" id={`tex-mist${s}`} width="160" height="160" patternUnits="userSpaceOnUse"><rect width="160" height="160" filter={`url(#f-mist${s})`} /></pattern>,
+  brick: (s) => <pattern key="brick" id={`tex-brick${s}`} width="34" height="20" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.42)" strokeWidth="1.6" fill="none"><path d="M0 10H34M0 20H34M17 0V10M0 10V20M34 10V20" /></g><g stroke="rgba(255,255,255,.08)" strokeWidth="1" fill="none"><path d="M0 8.5H34M0 18.5H34" /></g></pattern>,
+  // Round cobbles (circles, not <ellipse> — WebKit renders a stroked-ellipse pattern as solid black).
+  cobble: (s) => <pattern key="cobble" id={`tex-cobble${s}`} width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><circle cx="9" cy="9" r="8" /><circle cx="27" cy="12" r="8.2" /><circle cx="16" cy="27" r="8" /><circle cx="33" cy="30" r="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><circle cx="9" cy="8" r="7" /><circle cx="16" cy="26" r="7" /></g></pattern>,
+  wood: (s) => <pattern key="wood" id={`tex-wood${s}`} width="26" height="70" patternUnits="userSpaceOnUse"><path d="M0 0V70M26 0V70" stroke="rgba(0,0,0,.38)" strokeWidth="1.6" /><path d="M7 4q6 14 0 28q-6 14 0 30" stroke="rgba(0,0,0,.16)" fill="none" /><path d="M17 2q5 16 0 32q-5 14 0 30" stroke="rgba(0,0,0,.12)" fill="none" /><line x1="0" y1="34" x2="26" y2="34" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" /></pattern>,
+  tile: (s) => <pattern key="tile" id={`tex-tile${s}`} width="40" height="40" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgba(255,255,255,.06)" /><rect x="20" y="20" width="20" height="20" fill="rgba(255,255,255,.06)" /><path d="M0 20H40M20 0V40M0 0H40M0 40H40M40 0V40" stroke="rgba(0,0,0,.3)" strokeWidth="1" fill="none" /></pattern>,
+  grass: (s) => <pattern key="grass" id={`tex-grass${s}`} width="26" height="26" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.3" fill="none"><path d="M6 21l-2-8M6 21l0-9M6 21l2-8" /><path d="M17 24l-2-7M17 24l0-8M17 24l2-7" /><path d="M22 13l-1-6M22 13l1-6" /></g><g stroke="rgba(255,255,255,.16)" strokeWidth="1" fill="none"><path d="M6 21l0-9M17 24l0-8" /></g></pattern>,
+  water: (s) => <pattern key="water" id={`tex-water${s}`} width="44" height="15" patternUnits="userSpaceOnUse"><path d="M0 7q11-6 22 0t22 0" fill="none" stroke="rgba(255,255,255,.2)" strokeWidth="1.5" /><path d="M0 13q11-6 22 0t22 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.3" /></pattern>,
+  lava: (s) => <pattern key="lava" id={`tex-lava${s}`} width="50" height="50" patternUnits="userSpaceOnUse"><g stroke="#ff7a1a" strokeWidth="2.2" fill="none" opacity=".9"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /><path d="M37 50L32 34L43 30" /></g><g stroke="#ffd24a" strokeWidth=".9" fill="none" opacity=".8"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /></g></pattern>,
+  ice: (s) => <pattern key="ice" id={`tex-ice${s}`} width="54" height="54" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.32)" strokeWidth="1.3" fill="none"><path d="M27 27L10 8M27 27L48 14M27 27L14 50M27 27L44 48M27 27L52 32M27 27L6 34" /></g></pattern>,
+  sand: (s) => <pattern key="sand" id={`tex-sand${s}`} width="40" height="18" patternUnits="userSpaceOnUse"><path d="M0 12q10-8 20 0t20 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.4" /><path d="M0 10q10-8 20 0t20 0" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" /></pattern>,
+  web: (s) => <pattern key="web" id={`tex-web${s}`} width="64" height="64" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.24)" strokeWidth="1" fill="none"><path d="M0 0L64 64M0 32L64 32M32 0V64M0 64L64 0" /><circle cx="32" cy="32" r="11" /><circle cx="32" cy="32" r="22" /></g></pattern>,
+  gravel: (s) => <pattern key="gravel" id={`tex-gravel${s}`} width="30" height="30" patternUnits="userSpaceOnUse"><g fill="rgba(0,0,0,.3)"><path d="M4 5l4 1-1 4-4-1z" /><path d="M15 3l3 3-3 2-2-3z" /><path d="M22 12l4 2-2 3-3-2z" /><path d="M7 18l3 1-1 3-3-1z" /><path d="M17 20l3 2-2 2-2-2z" /><path d="M25 23l2 3-3 1-1-2z" /></g><g fill="rgba(255,255,255,.08)"><path d="M4 4l4 1-1 3-3-1z" /><path d="M22 11l3 2-2 2z" /></g></pattern>,
+  metal: (s) => <pattern key="metal" id={`tex-metal${s}`} width="28" height="28" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.35)" strokeWidth="1.5" fill="none"><path d="M0 0H28M0 28H28M0 0V28M28 0V28" /></g><g stroke="rgba(255,255,255,.09)" strokeWidth="1" fill="none"><path d="M0 1.5H28M1.5 0V28" /></g><g fill="rgba(255,255,255,.14)"><circle cx="0" cy="0" r="1.7" /><circle cx="28" cy="0" r="1.7" /><circle cx="0" cy="28" r="1.7" /><circle cx="28" cy="28" r="1.7" /></g></pattern>,
+  snow: (s) => <pattern key="snow" id={`tex-snow${s}`} width="26" height="26" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.55)"><circle cx="5" cy="6" r="1.5" /><circle cx="16" cy="4" r="1" /><circle cx="21" cy="13" r="1.7" /><circle cx="10" cy="15" r="1.2" /><circle cx="3" cy="20" r="1" /><circle cx="15" cy="22" r="1.5" /></g></pattern>,
+  slime: (s) => <pattern key="slime" id={`tex-slime${s}`} width="34" height="34" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(120,220,90,.42)" strokeWidth="1.3"><circle cx="8" cy="9" r="5" /><circle cx="24" cy="14" r="6" /><circle cx="14" cy="26" r="5.5" /></g><g fill="rgba(180,255,140,.3)"><circle cx="6" cy="7" r="1.6" /><circle cx="22" cy="12" r="1.8" /><circle cx="12" cy="24" r="1.5" /></g></pattern>,
+  blood: (s) => <pattern key="blood" id={`tex-blood${s}`} width="46" height="46" patternUnits="userSpaceOnUse"><g fill="rgba(122,15,15,.5)"><circle cx="10" cy="12" r="4" /><circle cx="14" cy="16" r="1.5" /><circle cx="30" cy="8" r="2.5" /><circle cx="34" cy="26" r="5" /><circle cx="38" cy="31" r="1.8" /><circle cx="16" cy="34" r="3" /><circle cx="12" cy="38" r="1.2" /></g></pattern>,
+  runes: (s) => <pattern key="runes" id={`tex-runes${s}`} width="60" height="60" patternUnits="userSpaceOnUse"><g stroke="rgba(150,190,255,.42)" strokeWidth="1.4" fill="none"><path d="M10 14v-8m0 4h6m0-4v8" /><circle cx="44" cy="16" r="6" /><path d="M44 10v12" /><path d="M14 44l6 6m0-6l-6 6" /><path d="M40 42h10m-5 0v10" /></g></pattern>,
+  stars: (s) => <pattern key="stars" id={`tex-stars${s}`} width="50" height="50" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.72)"><circle cx="8" cy="10" r="1" /><circle cx="30" cy="6" r="1.5" /><circle cx="44" cy="18" r="1" /><circle cx="18" cy="26" r="1.2" /><circle cx="38" cy="34" r="1" /><circle cx="6" cy="40" r="1.4" /><circle cx="26" cy="44" r="1" /></g><g fill="rgba(180,200,255,.5)"><circle cx="14" cy="16" r=".7" /><circle cx="46" cy="42" r=".8" /></g></pattern>,
+  fungus: (s) => <pattern key="fungus" id={`tex-fungus${s}`} width="42" height="42" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.2" fill="none"><path d="M9 30v-7M26 34v-8M34 18v-6" /></g><g fill="rgba(220,160,180,.4)" stroke="rgba(0,0,0,.2)" strokeWidth="1"><path d="M4 23a5 3.5 0 0 1 10 0z" /><path d="M20 26a6 4 0 0 1 12 0z" /><path d="M29 12a4 3 0 0 1 9 0z" /></g></pattern>,
+};
+// All defs for one <svg> (map + preview). Optional suffix keeps ids unique when several coexist.
+function TextureDefs({ suffix = "" }) {
   return (
     <>
-      <filter id="f-stone" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="4" seed="3" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  .78 0 0 0 -.3" /></filter>
-      <filter id="f-marble" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="turbulence" baseFrequency=".012 .04" numOctaves="5" seed="9" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  4.2 0 0 0 -2.2" /></filter>
-      <filter id="f-dirt" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".18" numOctaves="3" seed="5" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .16  0 0 0 0 .10  0 0 0 0 .05  .72 0 0 0 -.2" /></filter>
-      <filter id="f-mud" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".05 .07" numOctaves="3" seed="2" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 .12  0 0 0 0 .08  0 0 0 0 .05  1 0 0 0 -.35" /></filter>
-      <filter id="f-mist" x="-5%" y="-5%" width="110%" height="110%"><feTurbulence type="fractalNoise" baseFrequency=".013" numOctaves="2" seed="11" result="n" /><feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .6 0 0 0 -.14" /></filter>
-      <pattern id="tex-stone" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-stone)" /></pattern>
-      <pattern id="tex-marble" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-marble)" /></pattern>
-      <pattern id="tex-dirt" width="120" height="120" patternUnits="userSpaceOnUse"><rect width="120" height="120" filter="url(#f-dirt)" /></pattern>
-      <pattern id="tex-mud" width="150" height="150" patternUnits="userSpaceOnUse"><rect width="150" height="150" filter="url(#f-mud)" /></pattern>
-      <pattern id="tex-mist" width="160" height="160" patternUnits="userSpaceOnUse"><rect width="160" height="160" filter="url(#f-mist)" /></pattern>
-      <pattern id="tex-brick" width="34" height="20" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.42)" strokeWidth="1.6" fill="none"><path d="M0 10H34M0 20H34M17 0V10M0 10V20M34 10V20" /></g><g stroke="rgba(255,255,255,.08)" strokeWidth="1" fill="none"><path d="M0 8.5H34M0 18.5H34" /></g></pattern>
-      {/* Round cobbles (circles, not <ellipse> — WebKit renders a stroked-ellipse pattern as solid black). */}
-      <pattern id="tex-cobble" width="36" height="36" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(0,0,0,.4)" strokeWidth="1.5"><circle cx="9" cy="9" r="8" /><circle cx="27" cy="12" r="8.2" /><circle cx="16" cy="27" r="8" /><circle cx="33" cy="30" r="7" /></g><g fill="none" stroke="rgba(255,255,255,.09)" strokeWidth="1"><circle cx="9" cy="8" r="7" /><circle cx="16" cy="26" r="7" /></g></pattern>
-      <pattern id="tex-wood" width="26" height="70" patternUnits="userSpaceOnUse"><path d="M0 0V70M26 0V70" stroke="rgba(0,0,0,.38)" strokeWidth="1.6" /><path d="M7 4q6 14 0 28q-6 14 0 30" stroke="rgba(0,0,0,.16)" fill="none" /><path d="M17 2q5 16 0 32q-5 14 0 30" stroke="rgba(0,0,0,.12)" fill="none" /><line x1="0" y1="34" x2="26" y2="34" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" /></pattern>
-      <pattern id="tex-tile" width="40" height="40" patternUnits="userSpaceOnUse"><rect width="20" height="20" fill="rgba(255,255,255,.06)" /><rect x="20" y="20" width="20" height="20" fill="rgba(255,255,255,.06)" /><path d="M0 20H40M20 0V40M0 0H40M0 40H40M40 0V40" stroke="rgba(0,0,0,.3)" strokeWidth="1" fill="none" /></pattern>
-      <pattern id="tex-grass" width="26" height="26" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.3" fill="none"><path d="M6 21l-2-8M6 21l0-9M6 21l2-8" /><path d="M17 24l-2-7M17 24l0-8M17 24l2-7" /><path d="M22 13l-1-6M22 13l1-6" /></g><g stroke="rgba(255,255,255,.16)" strokeWidth="1" fill="none"><path d="M6 21l0-9M17 24l0-8" /></g></pattern>
-      <pattern id="tex-water" width="44" height="15" patternUnits="userSpaceOnUse"><path d="M0 7q11-6 22 0t22 0" fill="none" stroke="rgba(255,255,255,.2)" strokeWidth="1.5" /><path d="M0 13q11-6 22 0t22 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.3" /></pattern>
-      <pattern id="tex-lava" width="50" height="50" patternUnits="userSpaceOnUse"><g stroke="#ff7a1a" strokeWidth="2.2" fill="none" opacity=".9"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /><path d="M37 50L32 34L43 30" /></g><g stroke="#ffd24a" strokeWidth=".9" fill="none" opacity=".8"><path d="M0 20L15 25L23 14L36 21L50 16" /><path d="M11 50L15 32L24 36L28 23" /></g></pattern>
-      <pattern id="tex-ice" width="54" height="54" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.32)" strokeWidth="1.3" fill="none"><path d="M27 27L10 8M27 27L48 14M27 27L14 50M27 27L44 48M27 27L52 32M27 27L6 34" /></g></pattern>
-      <pattern id="tex-sand" width="40" height="18" patternUnits="userSpaceOnUse"><path d="M0 12q10-8 20 0t20 0" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="1.4" /><path d="M0 10q10-8 20 0t20 0" fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" /></pattern>
-      <pattern id="tex-web" width="64" height="64" patternUnits="userSpaceOnUse"><g stroke="rgba(255,255,255,.24)" strokeWidth="1" fill="none"><path d="M0 0L64 64M0 32L64 32M32 0V64M0 64L64 0" /><circle cx="32" cy="32" r="11" /><circle cx="32" cy="32" r="22" /></g></pattern>
-      <pattern id="tex-gravel" width="30" height="30" patternUnits="userSpaceOnUse"><g fill="rgba(0,0,0,.3)"><path d="M4 5l4 1-1 4-4-1z" /><path d="M15 3l3 3-3 2-2-3z" /><path d="M22 12l4 2-2 3-3-2z" /><path d="M7 18l3 1-1 3-3-1z" /><path d="M17 20l3 2-2 2-2-2z" /><path d="M25 23l2 3-3 1-1-2z" /></g><g fill="rgba(255,255,255,.08)"><path d="M4 4l4 1-1 3-3-1z" /><path d="M22 11l3 2-2 2z" /></g></pattern>
-      <pattern id="tex-metal" width="28" height="28" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.35)" strokeWidth="1.5" fill="none"><path d="M0 0H28M0 28H28M0 0V28M28 0V28" /></g><g stroke="rgba(255,255,255,.09)" strokeWidth="1" fill="none"><path d="M0 1.5H28M1.5 0V28" /></g><g fill="rgba(255,255,255,.14)"><circle cx="0" cy="0" r="1.7" /><circle cx="28" cy="0" r="1.7" /><circle cx="0" cy="28" r="1.7" /><circle cx="28" cy="28" r="1.7" /></g></pattern>
-      <pattern id="tex-snow" width="26" height="26" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.55)"><circle cx="5" cy="6" r="1.5" /><circle cx="16" cy="4" r="1" /><circle cx="21" cy="13" r="1.7" /><circle cx="10" cy="15" r="1.2" /><circle cx="3" cy="20" r="1" /><circle cx="15" cy="22" r="1.5" /></g></pattern>
-      <pattern id="tex-slime" width="34" height="34" patternUnits="userSpaceOnUse"><g fill="none" stroke="rgba(120,220,90,.42)" strokeWidth="1.3"><circle cx="8" cy="9" r="5" /><circle cx="24" cy="14" r="6" /><circle cx="14" cy="26" r="5.5" /></g><g fill="rgba(180,255,140,.3)"><circle cx="6" cy="7" r="1.6" /><circle cx="22" cy="12" r="1.8" /><circle cx="12" cy="24" r="1.5" /></g></pattern>
-      <pattern id="tex-blood" width="46" height="46" patternUnits="userSpaceOnUse"><g fill="rgba(122,15,15,.5)"><circle cx="10" cy="12" r="4" /><circle cx="14" cy="16" r="1.5" /><circle cx="30" cy="8" r="2.5" /><circle cx="34" cy="26" r="5" /><circle cx="38" cy="31" r="1.8" /><circle cx="16" cy="34" r="3" /><circle cx="12" cy="38" r="1.2" /></g></pattern>
-      <pattern id="tex-runes" width="60" height="60" patternUnits="userSpaceOnUse"><g stroke="rgba(150,190,255,.42)" strokeWidth="1.4" fill="none"><path d="M10 14v-8m0 4h6m0-4v8" /><circle cx="44" cy="16" r="6" /><path d="M44 10v12" /><path d="M14 44l6 6m0-6l-6 6" /><path d="M40 42h10m-5 0v10" /></g></pattern>
-      <pattern id="tex-stars" width="50" height="50" patternUnits="userSpaceOnUse"><g fill="rgba(255,255,255,.72)"><circle cx="8" cy="10" r="1" /><circle cx="30" cy="6" r="1.5" /><circle cx="44" cy="18" r="1" /><circle cx="18" cy="26" r="1.2" /><circle cx="38" cy="34" r="1" /><circle cx="6" cy="40" r="1.4" /><circle cx="26" cy="44" r="1" /></g><g fill="rgba(180,200,255,.5)"><circle cx="14" cy="16" r=".7" /><circle cx="46" cy="42" r=".8" /></g></pattern>
-      <pattern id="tex-fungus" width="42" height="42" patternUnits="userSpaceOnUse"><g stroke="rgba(0,0,0,.22)" strokeWidth="1.2" fill="none"><path d="M9 30v-7M26 34v-8M34 18v-6" /></g><g fill="rgba(220,160,180,.4)" stroke="rgba(0,0,0,.2)" strokeWidth="1"><path d="M4 23a5 3.5 0 0 1 10 0z" /><path d="M20 26a6 4 0 0 1 12 0z" /><path d="M29 12a4 3 0 0 1 9 0z" /></g></pattern>
+      {Object.values(TEX_FILTERS).map((f) => f(suffix))}
+      {Object.values(TEX_PATTERNS).map((p) => p(suffix))}
+    </>
+  );
+}
+// Just one texture's defs, self-contained (its filter, if any, + its pattern) — for a swatch's own <svg>.
+function OneTextureDef({ id, suffix = "" }) {
+  const filt = TEX_FILTER_OF[id];
+  return (
+    <>
+      {filt && TEX_FILTERS[filt](suffix)}
+      {TEX_PATTERNS[id] ? TEX_PATTERNS[id](suffix) : null}
     </>
   );
 }
@@ -8439,7 +8460,6 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
           </div>
-          <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden="true"><defs><TextureDefs /></defs></svg>
           <button className="dgn-collapse" onClick={() => toggleSec("tex")}>
             <span className="dgn-fold">{openSec.tex ? "▾" : "▸"}</span>
             <span className="dgn-flabel" style={{ margin: 0 }}>Texture</span>
@@ -8451,9 +8471,11 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
                 <div key={id} className={`dgn-texcell ${(room.texture || "none") === id ? "on" : ""}`}>
                   <button className={`dgn-texbtn ${(room.texture || "none") === id ? "on" : ""}`} title={label} onClick={() => set({ texture: id })}>
                     <svg width="38" height="38" viewBox="0 0 38 38">
+                      {/* self-contained defs (unique -sw ids) so Safari resolves the pattern in-svg */}
+                      {id !== "none" && <defs><OneTextureDef id={id} suffix="-sw" /></defs>}
                       <rect width="38" height="38" fill={room.color || DGN_COLORS[0]} />
                       {id !== "none"
-                        ? <rect width="38" height="38" fill={`url(#tex-${id})`} />
+                        ? <rect width="38" height="38" fill={`url(#tex-${id}-sw)`} />
                         : <line x1="5" y1="33" x2="33" y2="5" stroke="rgba(255,255,255,.3)" strokeWidth="1.5" />}
                     </svg>
                   </button>
