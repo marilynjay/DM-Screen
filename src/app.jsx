@@ -236,6 +236,8 @@ input[type=number]{width:64px}
 .dgn-top input.nm{flex:1;min-width:0;font-family:var(--disp);font-size:16px;background:transparent;border:none;color:var(--text);-webkit-text-fill-color:var(--text)}
 .dgn-canvas{flex:1;position:relative;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
 .dgn-hex{fill:transparent;stroke:var(--line2);stroke-width:1}
+/* on a light backdrop the faint white grid washes out — flip empty-cell lines to dark ink */
+.dgn-light .dgn-hex{stroke:rgba(0,0,0,.34)}
 .dgn-zoom{position:absolute;right:10px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:6px}
 .dgn-zoom button{width:42px;height:42px;font-size:20px;border-radius:10px;background:var(--panel);border:1px solid var(--line2);color:var(--text)}
 .dgn-hint{position:absolute;left:10px;top:10px;font-size:11px;color:var(--faint);background:rgba(0,0,0,.45);padding:4px 8px;border-radius:6px;pointer-events:none}
@@ -7883,9 +7885,11 @@ const DGN_FEATURES = [
   ["none", "None"], ["pool", "Pool"], ["fountain", "Fountain"], ["pillar", "Pillar"], ["brazier", "Brazier"],
   ["altar", "Altar"], ["statue", "Statue"], ["chest", "Chest"], ["stairs", "Stairs"], ["circle", "Magic circle"], ["skeletons", "Skeletons"],
 ];
-// Whole-map backdrops (a per-dungeon setting: dungeon.bg). Each is a deep/muted gradient so the white
-// hex grid + labels stay readable; some carry a very subtle fixed texture layer for outdoor feel. grad
-// paints the map container (CSS); tex (a DGN_TEXTURES id) is drawn once behind the grid at texOp alpha.
+// Whole-map backdrops (a per-dungeon setting: dungeon.bg). grad paints the map container (CSS); tex
+// (a DGN_TEXTURES id) is drawn once behind the grid at texOp alpha. The 6th field marks a *light*
+// backdrop: on those the map container gets .dgn-light, which flips the empty-cell grid lines to dark
+// ink so they don't wash out (room fills are dark and labels are black-outlined, so only the grid needs
+// it). Deep/muted presets first, then the bright ones.
 const DGN_BACKDROPS = [
   ["dark", "Dungeon", "radial-gradient(circle at 35% 20%,#191b23,#0c0d11)", null, 0],
   ["cavern", "Cavern", "radial-gradient(circle at 38% 22%,#241a12,#0b0805)", "dirt", 0.14],
@@ -7895,10 +7899,15 @@ const DGN_BACKDROPS = [
   ["desert", "Desert", "radial-gradient(circle at 40% 24%,#2c2415,#131009)", "sand", 0.2],
   ["snow", "Snow", "radial-gradient(circle at 40% 24%,#222b34,#0c1016)", "snow", 0.5],
   ["night", "Night", "radial-gradient(circle at 45% 20%,#141327,#06060f)", "stars", 0.7],
+  // bright / light backdrops (grid lines flip dark)
+  ["meadow", "Meadow", "radial-gradient(circle at 42% 28%,#74ad55,#3f7233)", "grass", 0.28, true],
+  ["lavafield", "Lava field", "radial-gradient(circle at 45% 32%,#e8721f,#7c2a0b)", "lava", 0.85, true],
+  ["snowfield", "Snowfield", "radial-gradient(circle at 45% 28%,#eff5fa,#c4d2df)", null, 0, true],
+  ["desertsun", "Dunes", "radial-gradient(circle at 45% 30%,#e3c281,#b58f4d)", "sand", 0.3, true],
 ];
 const DGN_BG = Object.fromEntries(DGN_BACKDROPS.map((b) => [b[0], b]));
-// resolve a dungeon's backdrop (fall back to the default dark) → { grad, tex, texOp }
-const dgnBg = (id) => { const b = DGN_BG[id] || DGN_BG.dark; return { grad: b[2], tex: b[3], texOp: b[4] }; };
+// resolve a dungeon's backdrop (fall back to the default dark) → { grad, tex, texOp, light }
+const dgnBg = (id) => { const b = DGN_BG[id] || DGN_BG.dark; return { grad: b[2], tex: b[3], texOp: b[4], light: !!b[5] }; };
 // Each texture builder takes a `suffix` so its element ids stay unique per <svg> instance. That lets a
 // single texture be emitted self-contained inside a swatch's own <svg> — WebKit/Safari will NOT resolve
 // url(#id) paint references across separate <svg> roots, which is why the shared-defs picker came up blank.
@@ -8917,7 +8926,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
           ))}
         </div>
       )}
-      <div className="dgn-canvas" ref={wrapRef} style={{ background: bg.grad }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+      <div className={`dgn-canvas${bg.light ? " dgn-light" : ""}`} ref={wrapRef} style={{ background: bg.grad }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
         <DgnCompass />
         <div className="dgn-hint dgn-hint-compass">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
         <svg width={size.w} height={size.h}>
@@ -9057,7 +9066,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
       </div>
       {!collapsed && (
         <>
-          <div className="dgn-dock-map" ref={wrapRef} style={{ background: bg.grad }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
+          <div className={`dgn-dock-map${bg.light ? " dgn-light" : ""}`} ref={wrapRef} style={{ background: bg.grad }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
             <DgnCompass />
             <svg width={size.w} height={size.h}>
               <defs><TextureDefs /></defs>
