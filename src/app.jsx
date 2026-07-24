@@ -519,6 +519,8 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .npchint{font-size:10px;color:var(--faint);opacity:.55;margin-left:auto;flex-shrink:0}
 .npcdock{border:1px solid var(--line2);border-top:2px solid var(--gold-soft);border-radius:0 0 10px 10px;background:var(--panel);padding:8px 12px 12px;margin:-2px 4px 8px}
 .npcdock-hd{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:var(--gold);font-size:13px}
+.apprbox{border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin-bottom:4px}
+.apprscore{font-family:var(--mono);font-size:13px;min-width:34px;text-align:center;font-weight:700}
 .badges{display:flex;gap:4px;flex-wrap:wrap;align-items:center;flex:1 1 auto}
 .cond{display:inline-flex;align-items:center;font-size:11px;background:var(--raised);border:1px solid var(--line2);border-radius:10px;
   padding:0 7px;line-height:18px;min-height:18px;cursor:pointer;white-space:nowrap;vertical-align:middle}
@@ -2928,7 +2930,7 @@ function DmgFx({ type }) {
 // Roster name-highlight colours — distinct hues a DM can assign to tell same-named monsters apart.
 const ROSTER_COLORS = ["#c0392b", "#cf6a1a", "#c9a227", "#3f9a4e", "#1f9e94", "#2f76c4", "#5a4fd0", "#9b4dc7", "#c0398a", "#7f8c8d"];
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry }) {
+function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry, npcApproval }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
   if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
@@ -3069,6 +3071,9 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           onClick={() => api.setDisposition(c.uid, nextDisp)}>{dispWord}</button>
       )}
       {socialNpc && c.npcTag && <span className="npctag" title="From the DM Notebook">{c.npcTag}</span>}
+      {socialNpc && c.npcId && npcApproval != null && (
+        <button className="dispchip" title={`Approval: ${npcMood(npcApproval).t} (${fmtScore(npcApproval)}) — tap for the tally & notes`} onClick={() => api.toggleNpcDock(c.npcId)}>{npcMood(npcApproval).e} {fmtScore(npcApproval)}</button>
+      )}
       {socialNpc && c.npcId && (
         <button className="dispchip" title="Open this NPC's notes in a pane below the roster" onClick={() => api.toggleNpcDock(c.npcId)}>📝 Notes</button>
       )}
@@ -6244,18 +6249,59 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
   );
 }
 
-// Docked pane under the roster: edit a board NPC's notebook notes inline during a social scene.
-// Sections save straight to the notebook (raw — empties are filtered out only in read views).
-function NpcNotesDock({ npcId, notebook, onSave, onClose }) {
+// Overall standing from a running approval score.
+const npcMood = (n) => (n <= -6 ? { e: "😠", t: "Hostile" } : n <= -2 ? { e: "😒", t: "Cool" } : n < 2 ? { e: "😐", t: "Neutral" } : n < 6 ? { e: "🙂", t: "Warm" } : { e: "😄", t: "Devoted" });
+const fmtScore = (n) => (n > 0 ? `+${n}` : `${n}`);
+// Aggregate approval for a notebook NPC = party pool + every player's pool.
+function npcApprovalAgg(npc) {
+  const a = (npc && npc.approval) || {};
+  return (Number(a.party) || 0) + Object.values(a.players || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+}
+
+// Docked pane under the roster: an NPC's approval tally + editable notes during a social scene.
+// Everything writes straight to the notebook (sections stored raw; empties filtered only in read views).
+function NpcNotesDock({ npcId, notebook, members = [], onSave, onClose }) {
+  const [showPlayers, setShowPlayers] = useState(false);
   const npc = ((notebook && notebook.npcs) || []).find((n) => n.id === npcId);
   if (!npc) return null;
-  const setSections = (secs) => onSave({ ...notebook, npcs: notebook.npcs.map((n) => (n.id === npcId ? { ...n, sections: secs.map((s) => ({ id: s.id || newUid(), title: s.title || "", body: s.body || "" })) } : n)) });
+  const setNpc = (patch) => onSave({ ...notebook, npcs: notebook.npcs.map((n) => (n.id === npcId ? { ...n, ...patch } : n)) });
+  const setSections = (secs) => setNpc({ sections: secs.map((s) => ({ id: s.id || newUid(), title: s.title || "", body: s.body || "" })) });
+  const appr = npc.approval || {};
+  const partyPool = Number(appr.party) || 0;
+  const players = appr.players || {};
+  const named = members.filter((m) => (m.name || "").trim());
+  const aggregate = partyPool + named.reduce((s, m) => s + (Number(players[m.id]) || 0), 0);
+  const bump = (who, d) => {
+    const a = { party: partyPool, players: { ...players } };
+    if (who === "party") a.party += d; else a.players[who] = (Number(a.players[who]) || 0) + d;
+    setNpc({ approval: a });
+  };
+  const mood = npcMood(aggregate);
+  const tickRow = (label, who, val, faint) => (
+    <div className="frow" style={{ alignItems: "center", marginTop: 2 }}>
+      <span style={{ flex: 1, minWidth: 0, color: faint ? "var(--faint)" : undefined }}>{label}</span>
+      <button className="btn tiny" title="Dislike (−1)" onClick={() => bump(who, -1)}>−</button>
+      <span className="apprscore">{fmtScore(val)}</span>
+      <button className="btn tiny" title="Like (+1)" onClick={() => bump(who, +1)}>＋</button>
+    </div>
+  );
   return (
     <div className="npcdock">
       <div className="npcdock-hd">
-        <span style={{ flex: 1, minWidth: 0 }}>📝 <b>{npc.name}</b>{npc.deceased && <span title="Deceased" style={{ marginLeft: 6 }}>☠️</span>}{npc.tag ? <span style={{ color: "var(--faint)", fontSize: 12 }}> · {npc.tag}</span> : ""}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>👤 <b>{npc.name}</b>{npc.deceased && <span title="Deceased" style={{ marginLeft: 6 }}>☠️</span>}{npc.tag ? <span style={{ color: "var(--faint)", fontSize: 12 }}> · {npc.tag}</span> : ""}</span>
         <button className="btn small ghost" onClick={onClose}>Close ▲</button>
       </div>
+      <div className="apprbox">
+        <div className="frow" style={{ alignItems: "center" }}>
+          <span className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".08em", textTransform: "uppercase", flex: 1 }}>Approval</span>
+          <span title="Overall standing (party + everyone)" style={{ fontSize: 12 }}>{mood.e} {mood.t} · <b>{fmtScore(aggregate)}</b></span>
+        </div>
+        {tickRow("Party", "party", partyPool)}
+        {named.length > 0 && <button className="btn tiny ghost" style={{ marginTop: 4 }} onClick={() => setShowPlayers(!showPlayers)}>{showPlayers ? "▾" : "▸"} per player</button>}
+        {showPlayers && named.map((m) => tickRow(m.name, m.id, Number(players[m.id]) || 0, true))}
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 4 }}>Each tick adds to a running score; per-player likes roll up into the party total.</div>
+      </div>
+      <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".08em", textTransform: "uppercase", margin: "10px 0 2px" }}>Notes</div>
       <SectionsEditor value={npc.sections} onChange={setSections} />
     </div>
   );
@@ -11677,11 +11723,11 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`} data-tut="roster">
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} npcApproval={c.npc && c.npcId ? npcApprovalAgg((activeRoster?.notebook?.npcs || []).find((n) => n.id === c.npcId) || {}) : null} />
             ))}
           </div>
           {dockedNpcId && activeRoster?.notebook && (
-            <NpcNotesDock npcId={dockedNpcId} notebook={activeRoster.notebook} onSave={saveNotebook} onClose={() => setDockedNpcId(null)} />
+            <NpcNotesDock npcId={dockedNpcId} notebook={activeRoster.notebook} members={activeRoster.members || []} onSave={saveNotebook} onClose={() => setDockedNpcId(null)} />
           )}
         </>
       )}
