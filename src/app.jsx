@@ -4218,6 +4218,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
       <div className="sect" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="btn small" onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>
         <button className="btn small" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>
+        <button className="btn small" onClick={() => api.addCondition(c.uid)}>Add condition…</button>
         <button className="btn small" onClick={() => api.openMonsterItems(c.uid)}>🎒 Use item…</button>
         <button className="btn small" onClick={() => api.cycleAdv(c.uid)}>
           Rolls: {c.advMode === "none" ? "normal" : c.advMode === "adv" ? "ADVANTAGE" : "DISADVANTAGE"}
@@ -12556,7 +12557,9 @@ export default function App() {
         const pi = alive.findIndex((x) => x.uid === peek);
         const dist = state.mode === "combat" && ai2 >= 0 && pi >= 0 ? (pi - ai2 + alive.length) % alive.length : null;
         return (
-          <div className="overlay" onClick={() => setPeek(null)}>
+          // Sit just below a normal modal (z-80) so actions launched from a peek
+          // — Add condition, Damage/heal, Roll save, etc. — stack on top of it, not behind.
+          <div className="overlay" style={{ zIndex: 78 }} onClick={() => setPeek(null)}>
             <div className="modal peekmodal" onClick={(e) => e.stopPropagation()}>
               <div className="peekbanner">
                 👁 Peeking — {pc.dead ? "dead" : dist == null ? "combat not running" : dist === 0 ? "acting NOW" : `acts in ${dist} turn${dist === 1 ? "" : "s"}`}
