@@ -6440,41 +6440,77 @@ function LookChips({ options, value, onPick }) {
   ))}</div>;
 }
 
-// The appearance section shown in the NPC editor: free-text notes + an opt-in chibi portrait builder.
+// The appearance section shown in the NPC editor: free-text notes + an opt-in chibi portrait. Flow:
+// "Add a portrait" → pick a race and either use its default portrait or open the full builder to customize.
 function NpcAppearance({ value, onChange }) {
   const look = value || blankLook();
+  const [choosing, setChoosing] = useState(false); // race + use-default/customize picker, before a portrait exists
+  const [expanded, setExpanded] = useState(false);  // full builder controls open
   const set = (patch) => onChange({ ...look, ...patch });
+  const setSpecies = (v) => set({ species: v, ...(SPECIES_DEFAULTS[v] || {}) });
+  const raceName = look.species === "Other" ? (look.customRace || "Homebrew race") : look.species;
+  const speciesPicker = (
+    <>
+      <div className="look-species">
+        <label>Species</label>
+        <select className="sbook-search" value={look.species} onChange={(e) => setSpecies(e.target.value)}>
+          {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s === "Other" ? "Homebrew / custom…" : s}</option>)}</optgroup>)}
+        </select>
+      </div>
+      {look.species === "Other" && (
+        <input className="sbook-search" placeholder="Homebrew race name (e.g. Aetherborn)…" value={look.customRace || ""} onChange={(e) => set({ customRace: e.target.value })} style={{ width: "100%", marginBottom: 8 }} />
+      )}
+    </>
+  );
+  const controls = (
+    <div className="look-controls">
+      <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
+      <div className="look-row col"><span>Ears</span><LookChips options={LOOK_EARS} value={look.ears || deriveEars(look.species)} onPick={(v) => set({ ears: v })} /></div>
+      <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
+      <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
+      <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
+      <div className="look-row col"><span>Eyes</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
+      <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
+      <div className="look-row col"><span>Horns</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
+      <div className="look-row col"><span>Teeth</span><LookChips options={LOOK_TEETH} value={look.teeth || deriveTeeth(look.species)} onPick={(v) => set({ teeth: v })} /></div>
+    </div>
+  );
   return (
     <div className="look-sec">
       <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "8px 0 4px" }}>Appearance</div>
       <textarea className="sbook-search" rows={2} placeholder="How do they look? (build, clothing, scars, voice…)" value={look.notes || ""} onChange={(e) => set({ notes: e.target.value })} style={{ width: "100%", resize: "vertical" }} />
-      {!look.on ? (
-        <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => set({ on: true })}>🎨 Build a portrait</button>
-      ) : (
+      {!look.on && !choosing && (
+        <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setChoosing(true)}>🎨 Add a portrait</button>
+      )}
+      {!look.on && choosing && (
         <div className="look-build">
-          <div className="look-species">
-            <label>Species</label>
-            <select className="sbook-search" value={look.species} onChange={(e) => set({ species: e.target.value, ...(SPECIES_DEFAULTS[e.target.value] || {}) })}>
-              {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s === "Other" ? "Homebrew / custom…" : s}</option>)}</optgroup>)}
-            </select>
+          {speciesPicker}
+          <div className="look-preview"><NpcPortrait look={look} size={120} /></div>
+          <div className="look-racecap">{raceName}</div>
+          <div className="frow" style={{ gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="btn small primary" onClick={() => { set({ on: true }); setChoosing(false); }}>Use default portrait</button>
+            <button className="btn small ghost" onClick={() => { set({ on: true }); setChoosing(false); setExpanded(true); }}>Customize…</button>
+            <button className="btn small ghost" onClick={() => setChoosing(false)}>Cancel</button>
           </div>
-          {look.species === "Other" && (
-            <input className="sbook-search" placeholder="Homebrew race name (e.g. Aetherborn)…" value={look.customRace || ""} onChange={(e) => set({ customRace: e.target.value })} style={{ width: "100%", marginBottom: 8 }} />
-          )}
+        </div>
+      )}
+      {look.on && (
+        <div className="look-build">
+          {speciesPicker}
           <div className="look-preview"><NpcPortrait look={look} size={132} /></div>
-          <div className="look-racecap">{look.species === "Other" ? (look.customRace || "Homebrew race") : look.species}</div>
-          <div className="look-controls">
-            <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
-            <div className="look-row col"><span>Ears</span><LookChips options={LOOK_EARS} value={look.ears || deriveEars(look.species)} onPick={(v) => set({ ears: v })} /></div>
-            <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
-            <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
-            <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
-            <div className="look-row col"><span>Eyes</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
-            <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
-            <div className="look-row col"><span>Horns</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
-            <div className="look-row col"><span>Teeth</span><LookChips options={LOOK_TEETH} value={look.teeth || deriveTeeth(look.species)} onPick={(v) => set({ teeth: v })} /></div>
-          </div>
-          <button className="btn tiny ghost warn" style={{ marginTop: 4 }} onClick={() => set({ on: false })}>Remove portrait</button>
+          <div className="look-racecap">{raceName}</div>
+          {expanded ? (<>
+            {controls}
+            <div className="frow" style={{ justifyContent: "space-between", marginTop: 6 }}>
+              <button className="btn tiny ghost warn" onClick={() => { set({ on: false }); setExpanded(false); }}>Remove portrait</button>
+              <button className="btn small primary" onClick={() => setExpanded(false)}>✓ Done customizing</button>
+            </div>
+          </>) : (
+            <div className="frow" style={{ gap: 8, justifyContent: "center", marginTop: 2 }}>
+              <button className="btn small ghost" onClick={() => setExpanded(true)}>🎨 Customize portrait…</button>
+              <button className="btn tiny ghost warn" onClick={() => { set({ on: false }); setExpanded(false); }}>Remove</button>
+            </div>
+          )}
         </div>
       )}
     </div>
