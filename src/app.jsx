@@ -2505,19 +2505,29 @@ const ROLE_WEIGHT = { weak: 0.6, avg: 1, strong: 2.2 };
 
 /* Deterministic proposal: distribute the party's XP budget across monsters by role,
    map each share to a target CR, then scale each monster's own stats toward it. */
-function computeBalance(state, party, roles) {
-  const monsters = state.combatants.filter((c) => c.type === "monster" && c.side === "enemy" && !c.dead);
-  if (monsters.length === 0) return { note: "No living enemies to balance.", proposal: [] };
+function computeBalance(state, party, roles, withAllies = false) {
+  const living = state.combatants.filter((c) => c.type === "monster" && !c.dead);
+  const enemies = living.filter((c) => c.side === "enemy");
+  /* Friendly and neutral monsters are the same kind of thing as enemies — a statblock the DM owns —
+     so they can be scaled too, on request. They are NOT paid for out of the encounter budget: a
+     bodyguard the party fights alongside should track the party, not how nasty tonight's enemies are.
+     Each gets the per-player budget as its target, which is the same number the encounter is built
+     from, so an "average" ally comes out roughly a fair match for one player. */
+  const friends = withAllies ? living.filter((c) => c.side !== "enemy") : [];
+  if (enemies.length + friends.length === 0) return { note: "No living monsters to balance.", proposal: [] };
   const lvl = Math.min(20, Math.max(1, party.level));
   const diffIx = party.difficulty === "low" ? 0 : party.difficulty === "high" ? 2 : 1;
-  const budget = XP_BUDGET[lvl][diffIx] * Math.max(1, party.size);
-  const wsum = monsters.reduce((a, c) => a + (ROLE_WEIGHT[roles[c.uid]] || 1), 0);
+  const perPlayer = XP_BUDGET[lvl][diffIx];
+  const budget = perPlayer * Math.max(1, party.size);
+  const wsum = enemies.reduce((a, c) => a + (ROLE_WEIGHT[roles[c.uid]] || 1), 0);
   const proposal = [];
   let spent = 0;
-  for (const c of monsters) {
-    const share = budget * (ROLE_WEIGHT[roles[c.uid]] || 1) / wsum;
+  for (const c of [...enemies, ...friends]) {
+    const weight = ROLE_WEIGHT[roles[c.uid]] || 1;
+    const friendly = c.side !== "enemy";
+    const share = friendly ? perPlayer * weight : budget * weight / wsum;
     const [tLabel, tNum] = xpToCr(share);
-    spent += xpToCr(share)[2];
+    if (!friendly) spent += xpToCr(share)[2];
     const cNum = crToNum(c.cr);
     const k = (tNum + 0.75) / (cNum + 0.75); // HP & damage scale ~linearly with CR
     const hpRatio = k, dprRatio = k;
@@ -2591,7 +2601,12 @@ function computeBalance(state, party, roles) {
     proposal.push({ uid: c.uid, target: c.name, summary, patch });
   }
   const pct = Math.round((spent / budget) * 100);
-  const note = `Budget: ${budget.toLocaleString()} XP (${party.size} × level ${lvl}, ${party.difficulty}). Proposed roster ≈ ${pct}% of budget. DMG guidelines, not gospel — eyeball anything odd.`;
+  const note = [
+    `Budget: ${budget.toLocaleString()} XP (${party.size} × level ${lvl}, ${party.difficulty}).`,
+    enemies.length ? `Proposed enemies ≈ ${pct}% of budget.` : null,
+    friends.length ? `${friends.length} ally/neutral scaled to one player's share (${perPlayer.toLocaleString()} XP) — they don't spend the encounter budget.` : null,
+    "DMG guidelines, not gospel — eyeball anything odd.",
+  ].filter(Boolean).join(" ");
   return { note, proposal };
 }
 
@@ -7603,16 +7618,23 @@ function BalanceModal({ state, party, onSaveParty, onApply, onClose }) {
   const [size, setSize] = useState(party.set ? String(party.size) : "");
   const [level, setLevel] = useState(party.set ? String(party.level) : "");
   const [difficulty, setDifficulty] = useState(party.difficulty || "moderate");
-  const monsters = state.combatants.filter((c) => c.type === "monster" && c.side === "enemy" && !c.dead);
-  const [roles, setRoles] = useState(() => Object.fromEntries(monsters.map((c) => [c.uid, "avg"])));
+  const livingMonsters = state.combatants.filter((c) => c.type === "monster" && !c.dead);
+  const monsters = livingMonsters.filter((c) => c.side === "enemy");
+  const friends = livingMonsters.filter((c) => c.side !== "enemy");
+  /* An ally is a statblock too, and flipping it to enemy, balancing, then flipping it back is not a
+     workflow — so it is a checkbox. Pre-ticked when allies are the only thing here, since that is the
+     only reason to have opened the screen. */
+  const [withAllies, setWithAllies] = useState(friends.length > 0 && monsters.length === 0);
+  const [roles, setRoles] = useState(() => Object.fromEntries(livingMonsters.map((c) => [c.uid, "avg"])));
   const [phase, setPhase] = useState("setup"); // setup | review
   const [result, setResult] = useState(null);
   const [checked, setChecked] = useState(new Set());
+  const sideWord = (c) => (c.side === "ally" ? "ally" : c.side === "neutral" ? "neutral" : "enemy");
 
   const propose = () => {
     const p = { size: parseInt(size, 10) || 4, level: parseInt(level, 10) || 1, difficulty };
     onSaveParty({ ...party, ...p, set: true });
-    const res = computeBalance(state, p, roles);
+    const res = computeBalance(state, p, roles, withAllies);
     setResult(res);
     setChecked(new Set(res.proposal.filter((pr) => pr.patch).map((pr) => pr.uid)));
     setPhase("review");
@@ -7646,9 +7668,12 @@ function BalanceModal({ state, party, onSaveParty, onApply, onClose }) {
           <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px", letterSpacing: ".1em", textTransform: "uppercase" }}>
             Roles — who's the muscle?
           </div>
-          {monsters.map((c) => (
+          {[...monsters, ...(withAllies ? friends : [])].map((c) => (
             <div className="targetline" key={c.uid}>
-              <span style={{ flex: 1 }}>{c.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>CR {c.cr ?? "?"}</span></span>
+              <span style={{ flex: 1 }}>{c.name}{" "}
+                <span style={{ color: "var(--faint)", fontSize: 11 }}>CR {c.cr ?? "?"}</span>
+                {c.side !== "enemy" && <span className="npctag" style={{ marginLeft: 6 }}>{sideWord(c)}</span>}
+              </span>
               {["weak", "avg", "strong"].map((r) => (
                 <button key={r} className={`btn small ${roles[c.uid] === r ? "sel" : "ghost"}`}
                   style={roles[c.uid] === r ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}}
@@ -7658,13 +7683,22 @@ function BalanceModal({ state, party, onSaveParty, onApply, onClose }) {
               ))}
             </div>
           ))}
-          {monsters.length === 0 && <div className="trait">No living enemies to balance.</div>}
+          {monsters.length === 0 && !withAllies && <div className="trait">No living enemies to balance.</div>}
+          {friends.length > 0 && (
+            <button className={`btn w100 ${withAllies ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "6px 0 0" }}
+              onClick={() => setWithAllies((v) => !v)}>
+              🤝 Balance my allies too{withAllies ? " ✓" : ""}<br />
+              <span style={{ fontSize: 11, color: withAllies ? "inherit" : "var(--faint)" }}>
+                {friends.length} friendly or neutral {friends.length === 1 ? "creature" : "creatures"} on the board — scaled to one player's share, not out of the enemy budget.
+              </span>
+            </button>
+          )}
           <div className="trait" style={{ marginTop: 6, color: "var(--faint)" }}>
             Pure math from the 2024 DMG XP budgets — no AI needed, works offline. Strong takes the lion's share of the budget; Weak stays fodder.
           </div>
           <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
             <button className="btn" onClick={onClose}>Cancel</button>
-            <button className="btn primary" disabled={monsters.length === 0 || !(parseInt(size, 10) > 0) || !(parseInt(level, 10) > 0)} title={!(parseInt(size, 10) > 0) || !(parseInt(level, 10) > 0) ? "Pick player count and level first" : undefined} onClick={propose}>Propose changes</button>
+            <button className="btn primary" disabled={(monsters.length === 0 && !(withAllies && friends.length)) || !(parseInt(size, 10) > 0) || !(parseInt(level, 10) > 0)} title={!(parseInt(size, 10) > 0) || !(parseInt(level, 10) > 0) ? "Pick player count and level first" : undefined} onClick={propose}>Propose changes</button>
           </div>
         </>)}
         {phase === "review" && result && (<>
@@ -13261,10 +13295,10 @@ export default function App() {
 
   /* Balancing is a before-the-fight job: it rewrites monster HP and counts to hit a difficulty, which
      is not a thing to do to a fight already in progress. So the offer is withdrawn during combat and
-     comes back when combat ends. The enemy check matches what the balancer actually reads — a monster
-     switched to the party's side is not something it can weigh. */
+     comes back when combat ends. Any living monster qualifies, either side — the screen can scale an
+     ally or a neutral NPC too, once you tick the box for it. */
   const canBalance = state.mode !== "combat"
-    && state.combatants.some((c) => c.type === "monster" && c.side === "enemy" && !c.dead);
+    && state.combatants.some((c) => c.type === "monster" && !c.dead);
 
   /* ================= render ================= */
   if (pmOn) return <PlayerModeBoard onExit={() => setPmOn(false)} />;
