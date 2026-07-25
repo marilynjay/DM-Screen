@@ -323,6 +323,13 @@ input[type=number]{width:64px}
 .tut-x{background:none;border:none;color:var(--faint);font-size:16px;cursor:pointer;padding:0 2px;line-height:1}
 .tut-body{font-size:13px;line-height:1.42;color:var(--text)}
 .tut-playing{font-size:11px;color:var(--gold);margin-top:6px;letter-spacing:.04em}
+/* the tour's text cursor: a ring on the field plus a blinking caret, shown just before it types */
+.tut-caretring{position:fixed;z-index:94;pointer-events:none;border:2px solid var(--gold);border-radius:9px;
+  box-shadow:0 0 0 4px rgba(212,175,55,.18);animation:caretpop .25s ease-out}
+.tut-caret{position:fixed;z-index:94;pointer-events:none;width:2px;background:var(--gold);
+  animation:caretblink .9s steps(1,end) infinite}
+@keyframes caretblink{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes caretpop{from{transform:scale(1.12);opacity:0}to{transform:scale(1);opacity:1}}
 .tut-dots{display:flex;gap:5px;justify-content:center;margin:9px 0 8px}
 .tut-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
 .tut-dot.on{background:var(--gold)}
@@ -4997,9 +5004,9 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
         : (<>
         <h3>{browse ? "🐉 Bestiary" : "Add from bestiary"}</h3>
         <div className="frow">
-          <input type="text" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus style={{ flex: 1 }} />
+          <input data-tutf="bsearch" type="text" placeholder="Search…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus style={{ flex: 1 }} />
           <label>×</label>
-          <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)} />
+          <input data-tutf="bcount" type="number" min={1} max={20} value={count} onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)} />
         </div>
         <div className="frow">
           <label style={{ minWidth: 0 }}>
@@ -5592,9 +5599,9 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         {rows.map((r, i) => (
           <div className="pgr" key={i}>
             <input type="checkbox" checked={r.here} onChange={(e) => set(i, "here", e.target.checked)} title="Here tonight — unchecked members are remembered but not added" />
-            <input type="text" placeholder="Character *" autoComplete="off" autoCorrect="off" spellCheck={false} value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
-            <input type="number" placeholder="–" title="Armor Class — recommended so the app can adjudicate attacks on them" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
-            <input type="number" placeholder="–" title="Max HP — recommended so the app tracks their damage" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
+            <input data-tutf={`prow${i}-name`} type="text" placeholder="Character *" autoComplete="off" autoCorrect="off" spellCheck={false} value={r.name} onChange={(e) => set(i, "name", e.target.value)} />
+            <input data-tutf={`prow${i}-ac`} type="number" placeholder="–" title="Armor Class — recommended so the app can adjudicate attacks on them" value={r.ac} onChange={(e) => set(i, "ac", e.target.value)} />
+            <input data-tutf={`prow${i}-hp`} type="number" placeholder="–" title="Max HP — recommended so the app tracks their damage" value={r.hp} onChange={(e) => set(i, "hp", e.target.value)} />
             <input type="number" placeholder="–" title="Spell save DC — recommended for spellcasters; auto-fills when they cast" value={r.spellDC} onChange={(e) => set(i, "spellDC", e.target.value)} />
           </div>
         ))}
@@ -5626,7 +5633,7 @@ function PartyFields({ rows, setRows, level, setLevel, teamName, setTeamName }) 
         <input type="number" placeholder="opt." value={level} onChange={(e) => setLevel(e.target.value)} title="Optional — prefills the encounter balancer" style={{ ...FIELD, width: 64 }} />
       </div>
       <div className="frow" style={{ marginTop: 6 }}>
-        <input type="text" placeholder="Team name (optional — e.g. Tuesday group)" autoComplete="off" autoCorrect="off" spellCheck={false} value={teamName} onChange={(e) => setTeamName(e.target.value)} title="Handy if you run more than one table" style={{ ...FIELD, flex: 1, minWidth: 0, boxSizing: "border-box" }} />
+        <input data-tutf="pname" type="text" placeholder="Team name (optional — e.g. Tuesday group)" autoComplete="off" autoCorrect="off" spellCheck={false} value={teamName} onChange={(e) => setTeamName(e.target.value)} title="Handy if you run more than one table" style={{ ...FIELD, flex: 1, minWidth: 0, boxSizing: "border-box" }} />
       </div>
     </>
   );
@@ -5829,7 +5836,7 @@ function RollInitModal({ list, full, edition, onStart, onClose, demo }) {
           <div className="frow" key={c.uid}>
             <label style={{ minWidth: 120 }}>{c.name}{surprised.has(c.uid) && !is2014 ? <span style={{ color: "var(--gold)", fontSize: 11 }}> · roll w/ disadv.</span> : null}</label>
             <input type="number" autoFocus={i === 0} value={vals[c.uid]}
-              onChange={(e) => setVals({ ...vals, [c.uid]: e.target.value })} />
+              data-tutf={`init-${c.uid}`} onChange={(e) => setVals({ ...vals, [c.uid]: e.target.value })} />
           </div>
         ))}
         {showSurprise && (
@@ -7673,7 +7680,7 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
             {helplessCond && <div className="reminder" style={{ marginBottom: 8, color: "var(--gold)", fontSize: 12 }}>⚡ Melee hit on a {helplessCond} target = <b>critical hit</b> — enter the total with double damage dice.</div>}
             <div className="frow">
               <label>Damage</label>
-              <input type="number" inputMode="numeric" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
+              <input data-tutf="atkdmg" type="number" inputMode="numeric" autoFocus value={amt} onChange={(e) => setAmt(e.target.value)}
                 placeholder="" />
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }}>Damage type (optional)</div>
@@ -9755,16 +9762,45 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, onPlay, phase, r
   );
 }
 
+/* A blinking caret the tour parks on a field a beat before it starts typing, so you can see where the
+   text is about to go instead of watching it appear from nowhere. Tracks the field the same way the
+   scrim tracks its targets — measured on an interval, so it follows scrolling and relayout. */
+function TutorialCaret({ field }) {
+  const [box, setBox] = useState(null);
+  useEffect(() => {
+    if (!field) { setBox(null); return; }
+    const measure = () => {
+      const els = document.querySelectorAll(`[data-tutf="${field}"]`);
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.height) { setBox({ x: r.left, y: r.top, w: r.width, h: r.height }); return; }
+      }
+      setBox(null);
+    };
+    measure();
+    const id = setInterval(measure, 120);
+    window.addEventListener("scroll", measure, true);
+    return () => { clearInterval(id); window.removeEventListener("scroll", measure, true); };
+  }, [field]);
+  if (!box) return null;
+  return (
+    <>
+      <div className="tut-caretring" style={{ left: box.x - 3, top: box.y - 3, width: box.w + 6, height: box.h + 6 }} />
+      <div className="tut-caret" style={{ left: box.x + 8, top: box.y + box.h * 0.18, height: box.h * 0.64 }} />
+    </>
+  );
+}
+
 // Wraps the tour card with a golden spotlight scrim + a bouncing arrow that follows the step's target
 // element ([data-tut="…"]). The scrim dims everything but the highlighted control; it never eats clicks,
 // so the DM can actually tap what's being pointed at. Falls back to a gentle full-screen dim when a step
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
-function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, onPlay, phase, restoreOnly }) {
+function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, onPlay, phase, restoreOnly, spotOverride }) {
   const s = TUTORIAL_STEPS[step];
   /* A step can want different things lit before and after its sequence runs. Before, the spotlight
      belongs on the control about to be pressed; after, on whatever changed. Step 5 relies on this —
      until the goblin acts, the card sitting open is still the hero's, and dimming it is the point. */
-  const want = phase === "done" && s.targetPlayed ? s.targetPlayed : s.target;
+  const want = spotOverride || (phase === "done" && s.targetPlayed ? s.targetPlayed : s.target);
   const targets = Array.isArray(want) ? want : want ? [want] : [];
   const [rects, setRects] = useState([]);
   const [vp, setVp] = useState({ w: 0, h: 0 });
@@ -9786,6 +9822,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, o
     window.addEventListener("resize", measure);
     return () => { clearInterval(id); window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
   }, [step, phase, JSON.stringify(targets)]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
@@ -12535,6 +12572,10 @@ export default function App() {
   // Which on-card control the tour is "pressing" right now, so a tap on a card (not a dialogue) is
   // visible rather than the dialogue just appearing out of nowhere.
   const [tutPress, setTutPress] = useState(null);
+  const [tutCaret, setTutCaret] = useState(null); // field the tour is about to type into
+  // A cue can move the spotlight mid-sequence. The step's own target only covers "before" and "after",
+  // and the monster's turn needs its card lit the moment the turn changes hands, not when the step ends.
+  const [tutSpot, setTutSpot] = useState(null);
   const tutPartyIdRef = useRef(null);               // the party the tour saved, so finishing can remove it
 
   /* Step 1 — the party card, because this is the path that REMEMBERS a party. + Add ▸ Player / ally
@@ -12546,13 +12587,21 @@ export default function App() {
     const members = TUT_HEROES.map((h) => ({ name: h.name, ac: String(h.ac), hp: String(h.hp), here: true, dex: String(h.dex ?? ""), spellDC: h.spellDC ? String(h.spellDC) : "" }));
     const cues = [
       [200, () => { tutTop(); setPartyDemo({ members, teamName: "", level: "", fill: 0 }); }],
-      [900, () => setPartyDemo((d) => ({ ...d, teamName: TUT_PARTY_NAME }))],
-      [1600, () => setPartyDemo((d) => ({ ...d, level: "3" }))],
+      // caret first, text second — you see where it's going before it arrives
+      [800, () => setTutCaret("pname")],
+      [1500, () => setPartyDemo((d) => ({ ...d, teamName: TUT_PARTY_NAME }))],
+      [2300, () => { setTutCaret(null); setPartyDemo((d) => ({ ...d, level: "3" })); }],
     ];
-    members.forEach((_, i) => cues.push([2300 + i * 800, () => setPartyDemo((d) => ({ ...d, fill: i + 1 }))]));
+    // each hero gets a caret on their name box, then the whole row fills in
+    members.forEach((_, i) => {
+      const at = 3100 + i * 1700;
+      cues.push([at, () => setTutCaret(`prow${i}-name`)]);
+      cues.push([at + 700, () => setPartyDemo((d) => ({ ...d, fill: i + 1 }))]);
+      cues.push([at + 1200, () => setTutCaret(null)]);
+    });
     cues.push(
-      [4900, () => setPartyDemo((d) => ({ ...d, press: "add" }))],
-      [5500, () => {
+      [8500, () => setPartyDemo((d) => ({ ...d, press: "add" }))],
+      [9100, () => {
         const roster = partyRosterOf(TUT_PARTY_NAME, "3", members);
         tutPartyIdRef.current = newUid();
         savePartyRoster(roster, tutPartyIdRef.current);   // remembered for next session…
@@ -12560,7 +12609,7 @@ export default function App() {
         setPartyDemo(null);
       }],
       // flag them so the rest of the tour (fixed initiative, the rigged monster hit) can find them
-      [6100, () => mutate((d) => d.combatants.forEach((c) => { if (c.type === "player") c._demo = true; }))],
+      [9700, () => mutate((d) => d.combatants.forEach((c) => { if (c.type === "player") c._demo = true; }))],
     );
     return cues;
   };
@@ -12573,14 +12622,21 @@ export default function App() {
       [250, () => { tutTop(); setAddMenu(true); }],
       // press the menu item itself, so the dialogue doesn't just appear from nowhere
       [1500, () => setTutPress("addbestiary")],
-      [2050, () => { setTutPress(null); setAddMenu(false); setModal({ type: "bestiary", demo: { q: "", count: TUT_MONSTER_N } }); }],
+      // opens at one, the way it really does — the count gets adjusted below
+      [2050, () => { setTutPress(null); setAddMenu(false); setModal({ type: "bestiary", demo: { q: "", count: 1 } }); }],
+      [2500, () => setTutCaret("bsearch")],
     ];
     // type the search a letter at a time, so it reads as someone actually looking it up
-    typed.split("").forEach((_, i) => cues.push([2850 + i * 190, () => tutDemo("bestiary", { q: typed.slice(0, i + 1) })]));
+    typed.split("").forEach((_, i) => cues.push([3100 + i * 190, () => tutDemo("bestiary", { q: typed.slice(0, i + 1) })]));
     cues.push(
-      [4550, () => tutDemo("bestiary", { pick: TUT_MONSTER })],   // tap the Goblin Warrior result
-      [5950, () => tutDemo("bestiary", { press: "add" })],        // press Add ×2
-      [6450, () => { setModal(null); tutAddGoblins(); }],
+      // Say how many BEFORE choosing the monster — the ×N box lives beside the search field, and once
+      // you tap a result the dialogue swaps to that monster's card and the box is gone.
+      [4500, () => setTutCaret("bcount")],
+      [5200, () => tutDemo("bestiary", { count: TUT_MONSTER_N })],
+      [5800, () => setTutCaret(null)],
+      [6300, () => tutDemo("bestiary", { pick: TUT_MONSTER })],   // tap the Goblin Warrior result
+      [7500, () => tutDemo("bestiary", { press: "add" })],        // its card now reads "Add ×2"
+      [8000, () => { setModal(null); tutAddGoblins(); }],
     );
     return cues;
   };
@@ -12592,12 +12648,17 @@ export default function App() {
     return [
       [200, () => { tutTop(); startCombat(); }], // fixes the goblins' initiative, leaves the heroes blank
       [900, () => setModal({ type: "roll-init", demo: {} })],
+      ...heroInits.flatMap((v, i) => [[1450 + i * 850, () => {
+        const hero = stateRef.current.combatants.filter((c) => c._demo && c.type === "player")[i];
+        if (hero) setTutCaret(`init-${hero.uid}`);
+      }]]),
       ...heroInits.map((v, i) => [1700 + i * 850, () => setModal((m) => {
         if (!m || m.type !== "roll-init") return m;
         const hero = stateRef.current.combatants.filter((c) => c._demo && c.type === "player")[i];
         if (!hero) return m;
         return { ...m, demo: { ...m.demo, vals: { ...(m.demo?.vals || {}), [hero.uid]: String(v) } } };
       })]),
+      [4300, () => setTutCaret(null)],
       [4500, () => tutDemo("roll-init", { press: "start" })],
       [5000, () => tutDemo("roll-init", { go: true })],
     ];
@@ -12617,10 +12678,12 @@ export default function App() {
       [3100, () => tutDemo("player-attack", { phase: "resolve", press: null })],       // hit or miss?
       [4400, () => tutDemo("player-attack", { press: "hit" })],
       [4900, () => tutDemo("player-attack", { phase: "damage", press: null })],
-      [5900, () => tutDemo("player-attack", { amt: "7" })],                            // the player's damage roll
-      [6500, () => tutDemo("player-attack", { dtype: "slashing" })],
-      [7000, () => tutDemo("player-attack", { press: "apply" })],
-      [7500, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
+      [5500, () => setTutCaret("atkdmg")],
+      [6100, () => tutDemo("player-attack", { amt: "7" })],                            // the player's damage roll
+      [6600, () => setTutCaret(null)],
+      [6900, () => tutDemo("player-attack", { dtype: "slashing" })],
+      [7500, () => tutDemo("player-attack", { press: "apply" })],
+      [8000, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
     ];
   };
 
@@ -12633,8 +12696,11 @@ export default function App() {
     const ai = Math.max(0, (goblin.actions || []).findIndex((a) => a && a.hit != null));
     return [
       [200, () => { tutTop(); next(); }],        // hand the turn to the goblin…
-      [1600, () => setTutPress("attack")],       // …let its card settle, then press its own Attack
-      [2300, () => { setTutPress(null); performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }); }],
+      // …and move the spotlight onto its card straight away. Waiting for the step to finish left the
+      // scrim over the very card whose turn we were showing off.
+      [700, () => setTutSpot(["active", "roster"])],
+      [1700, () => setTutPress("attack")],       // its own Attack button, pressed
+      [2400, () => { setTutPress(null); performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }); }],
     ];
   };
 
@@ -12698,14 +12764,14 @@ export default function App() {
     return () => {
       tutStop();
       setAddMenu(false); setMoreMenu(false); setClearMenu(false);
-      setPartyDemo(null); setTutPress(null);
+      setPartyDemo(null); setTutPress(null); setTutCaret(null); setTutSpot(null);
       setModal((m) => (m && m.demo ? null : m)); // only ever closes a dialogue the tour itself opened
     };
   }, [tutorial]); // eslint-disable-line react-hooks/exhaustive-deps
   const endTutorial = (clear) => {
     tutStop();
     setTutorial(null);
-    setModal(null); setAddMenu(false); setMoreMenu(false); setClearMenu(false); setTutPress(null);
+    setModal(null); setAddMenu(false); setMoreMenu(false); setClearMenu(false); setTutPress(null); setTutCaret(null); setTutSpot(null);
     const snap = tutSnapRef.current;
     if (clear || tutHadRosterRef.current) {
       // restore the pre-tour board — their real roster, or the empty board they started from
@@ -13007,13 +13073,14 @@ export default function App() {
           // the scrim — the tour opens them deliberately and spotlights the item it's talking about.
           const suppressed = !!(modal || spellBook);
           return (
-            <TutorialOverlay step={tutorial} suppressed={suppressed}
+            <><TutorialCaret field={tutCaret} />
+            <TutorialOverlay step={tutorial} suppressed={suppressed} spotOverride={tutSpot}
               onBack={prevTutorialStep}
               onNext={nextTutorialStep}
               onPlay={playTutorialStep}
               phase={tutPhase}
               restoreOnly={tutHadRosterRef.current}
-              onSkip={() => endTutorial(true)} onFinish={endTutorial} />
+              onSkip={() => endTutorial(true)} onFinish={endTutorial} /></>
           );
         })()}
         {dungeonPlayId && dungeons.find((d) => d.id === dungeonPlayId) && (
