@@ -33,6 +33,9 @@ input,select,textarea{font:inherit;font-size:16px;color:var(--text);background:v
 input:focus,select:focus,textarea:focus{border-color:var(--gold)}
 input[type=number]{width:64px}
 
+/* ⋯ is a narrow glyph, so this button sized to 30px next to Clear's 47 — easy to fat-finger into a
+   destructive menu. Match Clear so the two neighbours have the same target. */
+.hdr-more{min-width:47px}
 .hdr{display:flex;align-items:center;gap:12px;padding:10px 14px;
   padding-top:calc(10px + env(safe-area-inset-top,0px));
   border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--ink);z-index:40}
@@ -12990,7 +12993,7 @@ export default function App() {
             )}
           </span>
           <span className="menu-anchor">
-          <button className="btn small ghost" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setClearMenu(false); setAddMenu(false); }}>⋯</button>
+          <button className="btn small ghost hdr-more" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setClearMenu(false); setAddMenu(false); }}>⋯</button>
           {moreMenu && (
             <div className="menu" onClick={() => setMoreMenu(false)}>
               <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
