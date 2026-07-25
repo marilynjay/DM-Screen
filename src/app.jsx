@@ -854,7 +854,10 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   .nm{min-width:64px;font-size:13px}
   .actrow .an{min-width:90px}
   .hdr{gap:4px;padding:8px 6px;padding-top:calc(8px + env(safe-area-inset-top,0px))}
-  .hdr .title{font-size:12px}
+  /* On a 360px phone the setup header (title + Start combat + undo + Add + Clear + ⋯) was wider than
+     the screen, and what got pushed off the right edge was the two menus — including everything
+     behind ⋯. The app's own name is the one thing here nobody needs to read, so it yields first. */
+  .hdr .title{font-size:12px;min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 `;
 
@@ -3253,6 +3256,11 @@ function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp
               c.type === "player" && <button key="char" onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>,
               c.type === "player" && <button key="book" onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>,
               body && <button key="loot" onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>,
+              /* No "Save to my bestiary" here — the custom-monster builder already offers it at the
+                 moment you invent the creature, which is where a DM expects to decide. */
+              c.type === "monster" && !c.npc && <button key="asnpc" onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>,
+              c.npc && <button key="nb" onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>,
+              c.npc && <button key="soc" onClick={() => api.openSocialRoll(c.uid)}>🎭 Social roll…</button>,
               ...(c.npc ? [
                 c.side !== "neutral" && <button key="n" onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>,
                 c.side !== "ally" && <button key="a" onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>,
@@ -3260,12 +3268,6 @@ function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp
               ] : [
                 solid && <button key="sw" onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>,
               ]),
-            ]),
-            sec("Keep", [
-              c.type === "monster" && <button key="best" onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>,
-              c.type === "monster" && !c.npc && <button key="asnpc" onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>,
-              c.npc && <button key="nb" onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>,
-              c.npc && <button key="soc" onClick={() => api.openSocialRoll(c.uid)}>🎭 Social roll…</button>,
             ]),
           ].filter(Boolean);
           const tail = [
@@ -10674,6 +10676,7 @@ export default function App() {
   useEffect(() => { setPeek(null); }, [state.activeUid]);
   const [clearMenu, setClearMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
+  const [mainMore, setMainMore] = useState(false); // the settings-shaped tail of ⋯, expanded in place
   const [restoreBanner, setRestoreBanner] = useState(null);
   const [myBestiary, setMyBestiary] = useState([]);
   const [myItems, setMyItems] = useState([]);
@@ -12154,13 +12157,6 @@ export default function App() {
         L.push(`Attacks against <b>${c.name}</b>: ${v === "adv" ? "ADVANTAGE" : v === "dis" ? "DISADVANTAGE" : "normal (manual flag cleared)"}`);
       });
     },
-    saveToBestiary: (uid) => {
-      const c = stateRef.current.combatants.find((x) => x.uid === uid);
-      if (!c || c.type !== "monster") return;
-      const sb = statblockFromCombatant(c);
-      const { updated } = upsertBestiary([sb]);
-      pushToasts([{ kind: "good", text: `${updated ? "Updated" : "Saved"} "${sb.name}" in your bestiary.` }]);
-    },
     rename: (uid) => setModal({ type: "rename-prompt", uid }),
     openColors: () => setModal({ type: "colors" }),
     setInit: (uid) => setModal({ type: "init-prompt", uid }),
@@ -13077,6 +13073,8 @@ export default function App() {
   const menuCues = (which) => [[300, () => {
     tutTop();
     setMoreMenu(which === "more"); setClearMenu(which === "clear"); setAddMenu(false);
+    // Old School Mode now lives behind ⋯ → More, so expand that too or the spotlight has nothing to land on.
+    setMainMore(which === "more");
   }]];
 
   const cuesFor = (act) => {
@@ -13357,36 +13355,69 @@ export default function App() {
               </div>
             )}
           </span>
-          <span className="menu-anchor">
-          <button className="btn small ghost hdr-more" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setClearMenu(false); setAddMenu(false); }}>⋯</button>
-          {moreMenu && (
-            <div className="menu" onClick={() => setMoreMenu(false)}>
-              <button onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>
-              <button onClick={() => setSpellBook(true)}>📖 Spell compendium…</button>
-              <button onClick={() => setModal({ type: "item-compendium" })}>📦 Item compendium…</button>
-              <button onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>
-              {state.combatants.some((c) => c.side === "ally" && !c.dead) && (
-                <button onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
-              )}
-              <button onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>
-              {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
-                <button onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
-              )}
-              <button onClick={() => setModal({ type: "slots" })}>Saves & groups…</button>
-              <button onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>
-              <button onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>
-              <button onClick={() => setModal({ type: "notebook" })}>📓 DM Notebook…</button>
-              <button onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>
-              <button disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>
-              <button onClick={() => setModal({ type: "anim" })}>🎲 Dice & animations…</button>
-              <button data-tut="oldschool" onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
-              <button onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>
-              <button onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>
-              <button onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>
-              <button onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>
-            </div>
-          )}
-          </span>
+        </span>
+        {/* ⋯ sits outside hdr-narrow: it used to be phone-only, which left everything behind it —
+            bestiary, notebook, dungeons, parties, every setting — unreachable above 640px. The wide
+            header keeps its Log/⚖/Saves shortcuts; this is the only way to the rest. */}
+        <span className="menu-anchor">
+          <button className="btn small ghost hdr-more" data-tut="more" onClick={() => { setMoreMenu(!moreMenu); setMainMore(false); setClearMenu(false); setAddMenu(false); }}>⋯</button>
+          {moreMenu && (() => {
+            /* Grouped the same way as a roster row: what you reach for mid-session on top, reference
+               next, campaign material after that, and the set-once settings folded behind one "More"
+               so the list stops running off the bottom of a phone. Headings come from arrays so a
+               group with nothing live (no allies on the board, say) drops its own heading too. */
+            const sec = (label, items) => { const live = items.filter(Boolean); return live.length ? { label, live } : null; };
+            const groups = [
+              sec("At this table", [
+                <button key="gs" onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>,
+                state.combatants.some((c) => c.side === "ally" && !c.dead) && (
+                  <button key="gc" onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
+                ),
+                state.combatants.some((c) => c.type === "monster" && !c.dead) && (
+                  <button key="bal" onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
+                ),
+                <button key="log" onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>,
+              ]),
+              sec("Look it up", [
+                <button key="best" onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>,
+                <button key="spell" onClick={() => setSpellBook(true)}>📖 Spell compendium…</button>,
+                <button key="item" onClick={() => setModal({ type: "item-compendium" })}>📦 Item compendium…</button>,
+              ]),
+              sec("My campaign", [
+                <button key="pe" onClick={() => setModal({ type: "party-edit" })}>👥 Edit parties…</button>,
+                <button key="pi" onClick={() => setModal({ type: "party-inventory" })}>🎒 Party inventory…</button>,
+                <button key="nb" onClick={() => setModal({ type: "notebook" })}>📓 DM Notebook…</button>,
+                <button key="dgn" onClick={() => setModal({ type: "dungeons" })}>🗺 Dungeon Builder…</button>,
+                <button key="slots" onClick={() => setModal({ type: "slots" })}>Saves &amp; groups…</button>,
+              ]),
+            ].filter(Boolean);
+            const tail = [
+              <button key="anim" onClick={() => setModal({ type: "anim" })}>🎲 Dice &amp; animations…</button>,
+              <button key="os" data-tut="oldschool" onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>,
+              <button key="ties" onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>,
+              <button key="ed" onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>,
+              <button key="tut" disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>,
+              <button key="lic" onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>,
+            ];
+            return (
+              <div className="menu" data-tut="moremenu" onClick={() => { setMoreMenu(false); setMainMore(false); }}>
+                {groups.map((g, i) => (
+                  <React.Fragment key={g.label || `top${i}`}>
+                    {g.label && <div className="menu-sec">{g.label}</div>}
+                    {g.live}
+                  </React.Fragment>
+                ))}
+                {/* the container closes the menu on any click, so this one has to keep its tap */}
+                <button className="menu-more" onClick={(e) => { e.stopPropagation(); setMainMore((v) => !v); }}>
+                  {mainMore ? "▾" : "▸"} More…
+                </button>
+                {mainMore && tail}
+                {/* Player Mode hands the phone to the table, so it sits alone at the foot where a
+                    destructive-ish, one-way action belongs — not inside a heading. */}
+                <button onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>
+              </div>
+            );
+          })()}
         </span>
       </div>
 
