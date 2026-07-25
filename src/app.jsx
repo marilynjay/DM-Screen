@@ -421,6 +421,17 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .sbook-search::placeholder{color:var(--faint);-webkit-text-fill-color:var(--faint);opacity:1}
 .sbook-lvls{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
 .lvlchip{cursor:pointer;font-size:11px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;color:var(--dim);padding:2px 8px}
+/* Damage-type picker in the monster builder. One chip per type cycling through resist → immune →
+   vulnerable, so the three lists can't contradict each other and nothing depends on spelling
+   "bludgeoning" correctly. 30px tall keeps them thumbable without a row per type. */
+.rivgrid{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
+.rivchip{cursor:pointer;font-size:11px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:8px;color:var(--dim);padding:6px 8px;min-height:30px;white-space:nowrap}
+.rivchip.res{color:var(--ok);border-color:var(--ok)}
+.rivchip.imm{color:var(--gold);border-color:var(--gold);background:var(--gold-soft)}
+.rivchip.vul{color:var(--danger);border-color:var(--danger)}
+.rivchip .rivmark{font-family:var(--mono);margin-left:4px}
+.rivkeep{font-size:11px;color:var(--faint);display:flex;flex-wrap:wrap;gap:5px;align-items:baseline;margin-bottom:6px}
 .lvlchip.on{color:var(--gold);border-color:var(--gold)}
 /* the builder's shape/edge/passage pickers are the controls a DM hits most while placing rooms;
    at the shared 11px/2px size they measured 51x22 against a 44px minimum. Scoped so the level
@@ -4808,6 +4819,27 @@ function chassisFor(crLabel, roleKey) {
   };
 }
 const modToScore = (m) => 10 + Number(m) * 2;
+/* Condition immunities a statblock actually lists — the standard set plus Exhaustion. The app knows
+   more conditions than these (Burning, Hasted…) but no creature is written as immune to them. */
+const COND_IMMUNE_PICKS = ["Blinded", "Charmed", "Deafened", "Exhaustion", "Frightened", "Grappled",
+  "Incapacitated", "Paralyzed", "Petrified", "Poisoned", "Prone", "Restrained", "Stunned", "Unconscious"];
+const RIV_NEXT = { none: "res", res: "imm", imm: "vul", vul: "none" };
+const RIV_MARK = { res: "\u00bd", imm: "\u2298", vul: "\u00d72" };
+/* Read a statblock's three damage lists into one state per damage type. Anything not a plain damage
+   type — "bludgeoning from nonmagical attacks", say — is kept verbatim so cloning can't lose it. */
+function rivFromSb(sb) {
+  const state = Object.fromEntries(DTYPES.map((t) => [t, "none"]));
+  const keep = [];
+  for (const [k, mark] of [["resist", "res"], ["immune", "imm"], ["vuln", "vul"]]) {
+    for (const v of sb?.[k] || []) {
+      const t = String(v).trim().toLowerCase();
+      if (DTYPES.includes(t) && state[t] === "none") state[t] = mark;
+      else keep.push({ k, v });
+    }
+  }
+  return { state, keep };
+}
+
 // A damage box is either blank, or something the dice roller can actually read. Anything else silently
 // rolls nothing at the table, so the form has to say so while the DM is still looking at it.
 const dmgAvg = (f) => { const s = String(f ?? "").trim(); if (!s) return null; const r = avgOfFormula(s); return /^\d+$/.test(s) || rollFormula(s) ? r : null; };
@@ -4918,8 +4950,6 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   const [f, setF] = useState({
     name: src?.name || "", count: 1, side: "enemy", notes: "",
     ac: src?.ac ?? 12, hp: src?.hp ?? 10, hpF: src?.hpF || "", cr: src?.cr || "", atkN: initAtkN,
-    resist: (src?.resist || []).join(", "), immune: (src?.immune || []).join(", "),
-    vuln: (src?.vuln || []).join(", "), condImmune: (src?.condImmune || []).join(", "),
     spd: src?.spd || "", senses: src?.senses || "", langs: src?.langs || "",
     legCount: src?.legendary?.count ?? 3, legRes: src?.legRes ?? "",
   });
@@ -4930,6 +4960,10 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
     [k, String(modToScore(src?.mods?.[k] ?? 0))])));
   const [saves, setSaves] = useState(() => Object.fromEntries(ABIL_KEYS.map((k) =>
     [k, src?.saves?.[k] != null ? String(src.saves[k]) : ""])));
+  const [riv, setRiv] = useState(() => rivFromSb(src).state);
+  const [rivKeep, setRivKeep] = useState(() => rivFromSb(src).keep);
+  const [cimm, setCimm] = useState(() => (src?.condImmune || []).filter((v) => COND_IMMUNE_PICKS.includes(v)));
+  const [cimmKeep, setCimmKeep] = useState(() => (src?.condImmune || []).filter((v) => !COND_IMMUNE_PICKS.includes(v)));
   const [acts, setActs] = useState(() => {
     const rows = (src?.actions || []).filter((a) => a.kind === "atk").map((a) => ({ orig: a, n: a.n, hit: a.hit ?? 0, dmg: a.dmg || "", dtype: a.dtype || "slashing" }));
     // a from-scratch monster gets a named attack, because an unnamed row is silently thrown away
@@ -4951,7 +4985,6 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   const set = (k, v) => setF({ ...f, [k]: v });
   const setAct = (i, k, v) => setActs(acts.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   const setSv = (i, k, v) => setSvActs(svActs.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
-  const csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
   const otherActs = (src?.actions || []).filter((a) => a.kind !== "atk" && a.kind !== "save");
   const modOf = (k) => (abilMode === "score" ? scoreToMod(num(abil[k], 10)) : num(abil[k]));
   const genMulti = (n, nm) => `The ${(nm || f.name).trim().toLowerCase() || "creature"} makes ${n} attacks.`;
@@ -5001,7 +5034,10 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
       ...(src || {}), name, cr: f.cr || null, ac: num(f.ac, 10), hp: Math.max(1, num(f.hp, 1)),
       mods: Object.fromEntries(ABIL_KEYS.map((k) => [k, modOf(k)])),
       saves: Object.fromEntries(ABIL_KEYS.filter((k) => saves[k].trim() !== "").map((k) => [k, num(saves[k])])),
-      resist: csv(f.resist), immune: csv(f.immune), vuln: csv(f.vuln), condImmune: csv(f.condImmune),
+      resist: [...DTYPES.filter((t) => riv[t] === "res"), ...rivKeep.filter((x) => x.k === "resist").map((x) => x.v)],
+      immune: [...DTYPES.filter((t) => riv[t] === "imm"), ...rivKeep.filter((x) => x.k === "immune").map((x) => x.v)],
+      vuln: [...DTYPES.filter((t) => riv[t] === "vul"), ...rivKeep.filter((x) => x.k === "vuln").map((x) => x.v)],
+      condImmune: [...cimm, ...cimmKeep],
       traits: named(traits), bonus: named(bonus), reactions: named(reactions),
       actions: [...atkActions, ...saveActions, ...otherActs],
       multi: n > 1 ? (multiText.trim() || genMulti(n)) : null,
@@ -5060,7 +5096,11 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
           </span>
         </button>
 
-        {sect("def", "Defences", `AC ${num(f.ac, 10)} · HP ${Math.max(1, num(f.hp, 1))}`, (<>
+        {sect("def", "Defences", [`AC ${num(f.ac, 10)}`, `HP ${Math.max(1, num(f.hp, 1))}`,
+          DTYPES.filter((t) => riv[t] === "res").length ? `${DTYPES.filter((t) => riv[t] === "res").length} resist` : null,
+          DTYPES.filter((t) => riv[t] === "imm").length ? `${DTYPES.filter((t) => riv[t] === "imm").length} immune` : null,
+          DTYPES.filter((t) => riv[t] === "vul").length ? `${DTYPES.filter((t) => riv[t] === "vul").length} vulnerable` : null,
+          cimm.length ? `${cimm.length} cond. immune` : null].filter(Boolean).join(" · "), (<>
           <div className="grid2">
             <div className="frow"><label>AC</label><input type="number" value={f.ac} onChange={(e) => set("ac", e.target.value)} /></div>
             <div className="frow"><label>HP</label><input type="number" value={f.hp} onChange={(e) => set("hp", e.target.value)} /></div>
@@ -5097,10 +5137,55 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               </label>
             ))}
           </div>
-          <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold…" value={f.resist} onChange={(e) => set("resist", e.target.value)} /></div>
-          <div className="frow"><label>Immunities</label><input type="text" placeholder="poison…" value={f.immune} onChange={(e) => set("immune", e.target.value)} /></div>
-          <div className="frow"><label>Vulnerabilities</label><input type="text" placeholder="bludgeoning…" value={f.vuln} onChange={(e) => set("vuln", e.target.value)} /></div>
-          <div className="frow"><label title="The app refuses to apply these conditions to it">Condition imm.</label><input type="text" placeholder="Charmed, Frightened…" value={f.condImmune} onChange={(e) => set("condImmune", e.target.value)} /></div>
+          {/* One chip per damage type instead of three lists to spell out. Tapping cycles, so a type
+              can only be resistant OR immune OR vulnerable, and there is nothing to typo. */}
+          <div style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 2px" }}>
+            Damage — tap to cycle <span style={{ color: "var(--ok)" }}>½ resistant</span> · <span style={{ color: "var(--gold)" }}>⊘ immune</span> · <span style={{ color: "var(--danger)" }}>×2 vulnerable</span>
+          </div>
+          <div className="rivgrid">
+            {DTYPES.map((t) => {
+              const st = riv[t] || "none";
+              return (
+                <button key={t} className={`rivchip ${st === "none" ? "" : st}`}
+                  title={st === "none" ? `${t}: normal damage` : st === "res" ? `${t}: half damage` : st === "imm" ? `${t}: no damage` : `${t}: double damage`}
+                  onClick={() => setRiv({ ...riv, [t]: RIV_NEXT[st] })}>
+                  {t}{st === "none" ? null : <span className="rivmark">{RIV_MARK[st]}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {rivKeep.length > 0 && (
+            <div className="rivkeep">
+              <span>Kept as written:</span>
+              {rivKeep.map((x, i) => (
+                <button key={i} className="rivchip" title={`${x.k} — tap to remove`}
+                  onClick={() => setRivKeep(rivKeep.filter((_, j) => j !== i))}>{x.v} ✕</button>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }} title="The app refuses to apply these conditions to it">
+            Condition immunities
+          </div>
+          <div className="rivgrid">
+            {COND_IMMUNE_PICKS.map((cn) => {
+              const on = cimm.includes(cn);
+              return (
+                <button key={cn} className={`rivchip ${on ? "imm" : ""}`}
+                  onClick={() => setCimm(on ? cimm.filter((x) => x !== cn) : [...cimm, cn])}>
+                  {cn}{on ? <span className="rivmark">⊘</span> : null}
+                </button>
+              );
+            })}
+          </div>
+          {cimmKeep.length > 0 && (
+            <div className="rivkeep">
+              <span>Kept as written:</span>
+              {cimmKeep.map((v, i) => (
+                <button key={i} className="rivchip" title="tap to remove"
+                  onClick={() => setCimmKeep(cimmKeep.filter((_, j) => j !== i))}>{v} ✕</button>
+              ))}
+            </div>
+          )}
         </>))}
 
         {sect("off", "Attacks & abilities", `${acts.filter((a) => a.n.trim()).length} attack${acts.filter((a) => a.n.trim()).length === 1 ? "" : "s"}${svActs.length ? ` · ${svActs.length} save` : ""}`, (<>
