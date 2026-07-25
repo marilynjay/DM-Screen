@@ -6733,21 +6733,42 @@ function AbilBoostModal({ c, promptScore, onApply, onRemove, onClose }) {
 /* One "Edit creature" dialogue rather than separate Defenses and Add attack menu entries — they are
    the same errand (this creature's numbers are wrong / incomplete) and cost two menu lines. */
 function DefensesModal({ c, onSave, onAddAttack, onClose }) {
-  const [res, setRes] = useState((c.resist || []).join(", "));
-  const [imm, setImm] = useState((c.immune || []).join(", "));
-  const [vul, setVul] = useState((c.vuln || []).join(", "));
-  const csv = (s) => s.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
-  const save = () => onSave(csv(res), csv(imm), csv(vul));
+  // same picker as the monster builder: one chip per damage type, cycling rather than three typed lists
+  const [riv, setRiv] = useState(() => rivFromSb(c).state);
+  const [keep, setKeep] = useState(() => rivFromSb(c).keep);
+  const of = (mark, k) => [...DTYPES.filter((t) => riv[t] === mark), ...keep.filter((x) => x.k === k).map((x) => x.v)];
+  const save = () => onSave(of("res", "resist"), of("imm", "immune"), of("vul", "vuln"));
   const atks = (c.actions || []).filter((a) => a.kind === "atk");
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Edit {c.name}</h3>
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "2px 0 4px" }}>Defenses</div>
-        <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold, slashing…" value={res} onChange={(e) => setRes(e.target.value)} autoFocus /></div>
-        <div className="frow"><label>Immunities</label><input type="text" placeholder="poison, necrotic…" value={imm} onChange={(e) => setImm(e.target.value)} /></div>
-        <div className="frow"><label>Vulnerabilities</label><input type="text" placeholder="bludgeoning…" value={vul} onChange={(e) => setVul(e.target.value)} /></div>
-        <div className="trait" style={{ marginBottom: 8 }}>Comma-separated damage types. Applied automatically to typed damage: resist ½ · immune 0 · vulnerable ×2.</div>
+        <div style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>
+          Tap to cycle <span style={{ color: "var(--ok)" }}>½ resistant</span> · <span style={{ color: "var(--gold)" }}>⊘ immune</span> · <span style={{ color: "var(--danger)" }}>×2 vulnerable</span>
+        </div>
+        <div className="rivgrid">
+          {DTYPES.map((t) => {
+            const st = riv[t] || "none";
+            return (
+              <button key={t} className={`rivchip ${st === "none" ? "" : st}`}
+                title={st === "none" ? `${t}: normal damage` : st === "res" ? `${t}: half damage` : st === "imm" ? `${t}: no damage` : `${t}: double damage`}
+                onClick={() => setRiv({ ...riv, [t]: RIV_NEXT[st] })}>
+                {t}{st === "none" ? null : <span className="rivmark">{RIV_MARK[st]}</span>}
+              </button>
+            );
+          })}
+        </div>
+        {keep.length > 0 && (
+          <div className="rivkeep">
+            <span>Kept as written:</span>
+            {keep.map((x, i) => (
+              <button key={i} className="rivchip" title={`${x.k} — tap to remove`}
+                onClick={() => setKeep(keep.filter((_, j) => j !== i))}>{x.v} ✕</button>
+            ))}
+          </div>
+        )}
+        <div className="trait" style={{ marginBottom: 8 }}>Applied automatically to typed damage: resist ½ · immune 0 · vulnerable ×2.</div>
         {onAddAttack && (<>
           <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "10px 0 4px" }}>Attacks</div>
           <div className="trait" style={{ fontSize: 12, marginBottom: 6 }}>
