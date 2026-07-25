@@ -8795,6 +8795,51 @@ function hasLoot(r) { return !!(r && Array.isArray(r.loot) && r.loot.length); }
 // A room's human label (its name, else short display name, else empty).
 function roomLabelText(r) { return ((r && r.title) || "").trim() || ((r && r.dname) || "").trim() || ""; }
 
+/* ── Running a dungeon ────────────────────────────────────────────────────────
+   Playing a dungeon writes straight onto the saved map — there is no separate
+   run copy. That keeps a session simple (close the app mid-crawl, come back,
+   the ticked loot is still ticked) but it means the prep is consumed by the
+   run. Two things put that right: Reset run wipes the marks so the same map
+   can be run again, and Duplicate makes a clean copy for a second table.
+   These three helpers are the whole model — what counts as a mark, how to
+   strip them, and which dungeons form one multi-level crawl. */
+
+// Rooms whose loot has been ticked off or handed out. Prep (notes, encounters,
+// the loot list itself) is never counted — only what a run leaves behind.
+function dgnRunRooms(dgn) {
+  return Object.values((dgn && dgn.rooms) || {}).filter((rm) =>
+    !!rm.looted || (rm.loot || []).some((it) => it.got || it.to || it.toUid)).length;
+}
+// Same dungeon with every run mark removed. Deletes the keys rather than
+// setting them false, so a reset map is byte-identical to one never played.
+function dgnClearRun(dgn) {
+  const rooms = {};
+  Object.entries((dgn && dgn.rooms) || {}).forEach(([k, rm]) => {
+    const { looted, ...rest } = rm; // eslint-disable-line no-unused-vars
+    rooms[k] = (rm.loot || []).length
+      ? { ...rest, loot: rm.loot.map(({ got, to, toUid, ...it }) => it) } // eslint-disable-line no-unused-vars
+      : rest;
+  });
+  return { ...dgn, rooms };
+}
+// Every level reachable from this one through its 🪜 level exits. A three-floor
+// crypt is three saved dungeons, so resetting or duplicating "the dungeon"
+// has to mean the whole set — otherwise floor 2 keeps last group's loot marks.
+function dgnLevelSet(list, id) {
+  const seen = new Set(), stack = [id];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (!cur || seen.has(cur)) continue;
+    const d = (list || []).find((x) => x.id === cur);
+    if (!d) continue;
+    seen.add(cur);
+    Object.values(d.rooms || {}).forEach((rm) => {
+      if (rm.link && rm.link.kind === "level" && rm.link.dungeon) stack.push(rm.link.dungeon);
+    });
+  }
+  return [...seen];
+}
+
 // Has the DM put anything into this room worth protecting? A freshly-added, untouched room
 // (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
 function roomTouched(r) {
@@ -9475,7 +9520,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
-function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasParty = false, onAssignLoot, onRun, onEdit, onUpdateRoom, onLoadLevel, backName, onBack, onClose }) {
+function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasParty = false, onAssignLoot, onRun, onEdit, onUpdateRoom, onLoadLevel, onResetRun, runKey, backName, onBack, onClose }) {
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -9483,6 +9528,9 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   // rooms whose encounter has been added this session. Keyed by room, not by the current selection —
   // tapping away and back used to re-arm the button and silently double the monsters.
   const [ranKeys, setRanKeys] = useState(() => new Set());
+  // A Reset run puts the loot back; the encounters have to re-arm with it, or the map says
+  // "come and get it" while every room still reads "already added to the roster".
+  useEffect(() => { setRanKeys(new Set()); }, [runKey]);
   const [openF, setOpenF] = useState({});    // which note fields are expanded in the room panel
   const [openS, setOpenS] = useState({});    // which titled sub-sections (within a field) are expanded
   // A titled sub-section starts from the DM's editor collapse choice, then follows any in-play toggle.
@@ -9575,6 +9623,10 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
       <div className="dgn-dock-hd">
         {onBack && <button className="btn small ghost" title={`Back up to ${backName || "the previous level"}`} onClick={onBack}>◀ Up</button>}
         <span className="nm">🗺 {dungeon.name?.trim() || "Dungeon"}</span>
+        {onResetRun && dgnRunRooms(dungeon) > 0 && (
+          <button className="btn small ghost" style={{ color: "var(--gold)" }}
+            title="Reset run — put the collected loot back on the map so this dungeon can be run again" onClick={onResetRun}>↺</button>
+        )}
         <button className="btn small ghost" title="Edit this dungeon in the builder" onClick={onEdit}>✎ Edit</button>
         <button className="btn small ghost" onClick={() => setCollapsed(!collapsed)}>{collapsed ? "▼ Show map" : "▲ Hide map"}</button>
         <button className="modal-x" title="Close play mode" onClick={onClose}>✕</button>
@@ -10563,6 +10615,41 @@ export default function App() {
     if (prev) setDungeonPlayId(prev);
   };
   const [dgnDelId, setDgnDelId] = useState(null); // dungeon pending a delete confirmation, or null
+  const [dgnResetId, setDgnResetId] = useState(null); // dungeon whose run is pending a reset confirmation
+  // Bumped by a reset so the play panel forgets which encounters it has already dropped in — those
+  // live in the panel, not on the map, and a reset that left them armed would be a half reset.
+  const [dgnRunKey, setDgnRunKey] = useState(0);
+  // Put a played-through dungeon back the way it was prepped, across every linked level.
+  const resetDungeonRun = (id) => {
+    const ids = new Set(dgnLevelSet(dungeonsRef.current, id));
+    saveDungeons(dungeonsRef.current.map((d) => (ids.has(d.id) ? dgnClearRun(d) : d)));
+    setDgnRunKey((k) => k + 1);
+    pushToasts([{ kind: "good", text: `Run reset — the loot is back on the map${ids.size > 1 ? ` (${ids.size} levels)` : ""}.` }]);
+  };
+  // A second copy for a second table: fresh ids, level exits repointed at the copies, and no run
+  // marks carried over — the whole point is a map the other group hasn't been through yet.
+  const duplicateDungeon = (id) => {
+    const ids = dgnLevelSet(dungeonsRef.current, id);
+    if (!ids.length) return;
+    const idMap = {}; ids.forEach((x) => { idMap[x] = newUid(); });
+    const used = new Set(dungeonsRef.current.map((d) => (d.name || "").trim()));
+    const copies = ids.map((x) => {
+      const nd = dgnClearRun(JSON.parse(JSON.stringify(dungeonsRef.current.find((d) => d.id === x))));
+      nd.id = idMap[x];
+      const base = (nd.name || "").trim() || "Untitled dungeon";
+      let nm = `${base} (copy)`;
+      for (let i = 2; used.has(nm); i++) nm = `${base} (copy ${i})`;
+      used.add(nm); nd.name = nm;
+      Object.values(nd.rooms || {}).forEach((rm) => {
+        if (rm.link && rm.link.kind === "level" && idMap[rm.link.dungeon]) rm.link.dungeon = idMap[rm.link.dungeon];
+      });
+      return nd;
+    });
+    saveDungeons([...dungeonsRef.current, ...copies]);
+    pushToasts([{ kind: "good", text: copies.length > 1
+      ? `Copied ${copies.length} levels — the copies' exits link to each other.`
+      : `Copied to “${copies[0].name}”.` }]);
+  };
   const savePartiesAll = (list, activeId) => {
     setPartiesState(list); stSet("dm5e:parties", list);
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
@@ -13114,7 +13201,7 @@ export default function App() {
             players={state.combatants.filter((x) => x.type === "player" && !x.dead)} hasParty={!!activeRoster}
             onAssignLoot={(item, playerUid) => api.giveItemToPlayer(item, playerUid)}
             onRun={runRoomEncounter} onEdit={() => setDungeonEditId(dungeonPlayId)} onUpdateRoom={updateRoomInPlay}
-            onLoadLevel={descendToLevel}
+            onLoadLevel={descendToLevel} onResetRun={() => setDgnResetId(dungeonPlayId)} runKey={dgnRunKey}
             backName={dungeonNav.length ? ((dungeons.find((d) => d.id === dungeonNav[dungeonNav.length - 1]) || {}).name || "").trim() || "the level above" : null}
             onBack={dungeonNav.length ? ascendLevel : null}
             onClose={() => { setDungeonNav([]); setDungeonPlayId(null); }} />
@@ -13526,16 +13613,25 @@ export default function App() {
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3>🗺 Dungeon Builder</h3>
-            <div className="trait" style={{ marginBottom: 8 }}>Build a hex map of rooms — shapes, colours, and notes. (Loading a dungeon into play comes next.)</div>
+            <div className="trait" style={{ marginBottom: 8 }}>Build a hex map of rooms — shapes, colours, and notes. Playing one ticks loot off the map as the party takes it: <b>↺</b> puts it all back to run again, <b>⧉</b> makes a clean copy for another group.</div>
             {dungeons.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No dungeons yet.</div>}
             {dungeons.map((d) => {
               const n = Object.keys(d.rooms || {}).length;
+              // run marks across this level and every level linked to it, so a played-through
+              // three-floor crypt offers Reset run from whichever floor you are looking at
+              const levels = dgnLevelSet(dungeons, d.id);
+              const played = levels.reduce((s, id) => s + dgnRunRooms(dungeons.find((x) => x.id === id)), 0);
               return (
-                <div key={d.id} className="gs-row" style={{ alignItems: "center" }}>
-                  <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
-                  <span className="ad">{n} room{n === 1 ? "" : "s"}</span>
+                // The name gets its own line: with five actions beside it, "The Sunken Crypt (copy 2)"
+                // truncated to "The Sunken…" — and telling a copy from its original is the whole point
+                // of having copies.
+                <div key={d.id} className="gs-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
+                  <b style={{ flexBasis: "100%", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
+                  <span className="ad" style={{ flex: 1 }}>{n} room{n === 1 ? "" : "s"}{played ? ` · ${played} looted` : ""}</span>
                   <button className="btn small ok" title="Open this dungeon in the builder to edit it" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>✎ Edit</button>
                   {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { playDungeon(d.id); setModal(null); }}>▶ Play</button>}
+                  {n > 0 && <button className="btn small ghost" title="Duplicate — a clean copy of this dungeon (and any levels linked to it) to run with another group" onClick={() => duplicateDungeon(d.id)}>⧉</button>}
+                  {played > 0 && <button className="btn small ghost" style={{ color: "var(--gold)" }} title="Reset run — put the collected loot back so this dungeon can be run again" onClick={() => setDgnResetId(d.id)}>↺</button>}
                   <button className="btn small danger" title="Delete this dungeon" onClick={() => setDgnDelId(d.id)}>✕</button>
                 </div>
               );
@@ -13565,6 +13661,20 @@ export default function App() {
           <ConfirmModal text={`Delete ${nm === "this dungeon" ? "this dungeon" : `the “${nm}” dungeon`}? Its rooms and notes will be lost — this can't be undone.`} confirmLabel="Delete dungeon"
             onYes={() => { saveDungeons(dungeons.filter((x) => x.id !== dgnDelId)); if (dungeonPlayId === dgnDelId) setDungeonPlayId(null); setDgnDelId(null); }}
             onClose={() => setDgnDelId(null)} />
+        );
+      })()}
+      {dgnResetId && (() => {
+        const dg = dungeons.find((x) => x.id === dgnResetId);
+        if (!dg) return null;
+        const levels = dgnLevelSet(dungeons, dgnResetId);
+        const rooms = levels.reduce((s, id) => s + dgnRunRooms(dungeons.find((x) => x.id === id)), 0);
+        const nm = (dg.name || "").trim() || "this dungeon";
+        return (
+          <ConfirmModal
+            text={`Reset the run through ${nm === "this dungeon" ? "this dungeon" : `“${nm}”`}? Collected loot goes back on the map in ${rooms} room${rooms === 1 ? "" : "s"}${levels.length > 1 ? ` across ${levels.length} linked levels` : ""}, and its encounters re-arm. Rooms, notes and loot lists are untouched — and anything already handed to a player stays in their bag.`}
+            confirmLabel="Reset run"
+            onYes={() => { resetDungeonRun(dgnResetId); setDgnResetId(null); }}
+            onClose={() => setDgnResetId(null)} />
         );
       })()}
       {dungeons.some((d) => Object.keys(d.rooms || {}).length > 0) && state.mode === "setup" && state.combatants.length > 0 && !dungeonPlayId && !dungeonEditId && (
