@@ -668,6 +668,9 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
   max-height:min(70vh,calc(100vh - 92px));overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
 .menu button{display:block;width:100%;text-align:left;padding:8px 12px;font-size:13px}
 .menu button:hover{background:var(--gold-soft)}
+/* second line under a menu item, for the one entry whose label alone kept sending DMs down the
+   wrong path — the caveat has to be visible at the moment of choosing, not inside the dialog */
+.menu-sub{display:block;font-size:11px;color:var(--faint);font-weight:400;margin-top:1px;white-space:normal}
 .menu button.warn{color:var(--danger)}
 
 /* main column */
@@ -1893,8 +1896,12 @@ function revealHidden(c, logs) {
   c.conditions = c.conditions.filter((cd) => cd.name !== "Hiding");
   logs.push(`<b>${c.name}</b> is no longer <b>Hiding</b> — attacking gives their position away.`);
 }
+/* Temp HP is a number the app can hold even for a player who tracks their own HP — the shell is not
+   their hit points. It used to refuse them outright, which hit exactly the creatures that receive
+   temp HP most: Heroism, Aid, False Life and Armor of Agathys nearly always land on the party, and
+   most DMs never type player HP in. */
 function grantTempHp(c, amt, logs) {
-  if (c.hp == null || amt <= 0) return;
+  if (amt <= 0) return;
   if ((c.thp || 0) >= amt) {
     logs.push(`<b>${c.name}</b> keeps existing ${c.thp} temp HP (higher than ${amt} offered — temp HP doesn't stack).`);
   } else {
@@ -1905,7 +1912,20 @@ function grantTempHp(c, amt, logs) {
 
 function applyDamage(c, amt, dtype, logs, toasts) {
   if (c.type === "player" && c.hp == null) {
-    logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — players track their own HP.`);
+    /* The shell still absorbs first, even though the HP behind it isn't tracked here — that is the
+       whole point of temp HP, and it is the one number at the table only the DM is holding. Report
+       the split so the player knows what to actually subtract from their sheet. */
+    const shell = c.thp || 0;
+    const { finalDmg } = adjustDamage(c, amt, dtype);
+    if (shell > 0 && finalDmg > 0) {
+      const absorbed = Math.min(shell, finalDmg);
+      c.thp = shell - absorbed;
+      const through = finalDmg - absorbed;
+      logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — ${absorbed} absorbed by temp HP${c.thp ? ` (${c.thp} temp left)` : " (shell gone)"}; <b>${through}</b> through to their sheet.`);
+      toasts.push({ kind: through > 0 ? "bad" : "good", text: `${c.name}: temp HP took ${absorbed}${through > 0 ? ` — ${through} through` : " — all of it"}.` });
+    } else {
+      logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — players track their own HP.`);
+    }
     if (c.concentration) {
       const dc = Math.max(10, Math.floor(amt / 2));
       toasts.push({ kind: "bad", text: `${c.name}: DC ${dc} CON save to keep concentrating on ${concLabel(c)}!` });
@@ -3286,6 +3306,13 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           title="Healing — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("heal", e.target.value)} />
       )}
 
+      {/* A player tracking their own HP has no hpbox to hang the shell off, but the shell is the app's
+          number to hold — show it here or the DM is the only one who can't see what they granted. */}
+      {!socialNpc && c.hp == null && (c.thp || 0) > 0 && c.type !== "effect" && (
+        <button className="thpchip" title={`${c.thp} temporary HP — damage comes off this first. Tap to edit.`}
+          onClick={() => api.openThp(c.uid)}>+{c.thp}</button>
+      )}
+
       {!socialNpc && effAc != null && (
         <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
           AC {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? "*" : ""}
@@ -4485,7 +4512,7 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
         </div>
         {mode === "thp" && (
           <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 6 }}>
-            Doesn't stack — targets keep the higher value. Healing won't restore it.
+            Doesn't stack — targets keep the higher value. Healing won't restore it. Damage comes off the shell first, so players tracking their own HP only subtract what gets through.
           </div>
         )}
         {mode === "set" && (
@@ -4515,7 +4542,8 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
           <div className="targetline" key={m.uid}>
             <input type="checkbox" checked={sel.has(m.uid)} onChange={() => toggle(sel, m.uid, setSel)} />
             <span style={{ flex: 1, opacity: m.dead ? 0.5 : 1 }}>
-              {m.name} {m.dead ? "(dead)" : m.hp != null ? `· ${m.hp}/${m.maxHp}${m.thp ? ` (+${m.thp})` : ""}` : "· self-tracked (no temp HP tracking)"}
+              {/* a self-tracked player still shows their temp HP — the app holds the shell even when it isn't holding their HP */}
+              {m.name} {m.dead ? "(dead)" : m.hp != null ? `· ${m.hp}/${m.maxHp}${m.thp ? ` (+${m.thp})` : ""}` : `· HP on their sheet${m.thp ? ` · +${m.thp} temp` : ""}`}
             </span>
             {mode === "dmg" && <label style={{ fontSize: 12, color: "var(--dim)" }}><input type="checkbox" checked={half.has(m.uid)} onChange={() => toggle(half, m.uid, setHalf)} /> ½</label>}
           </div>
@@ -5684,7 +5712,7 @@ function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
   const [loadOpen, setLoadOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   /* Guided tour: the tour types into this card for real, because this is the path that *remembers* a
-     party for next session — + Add ▸ Player / ally only drops someone on tonight's board. */
+     party for next session — + Add ▸ Guest player only drops someone on tonight's board. */
   const demoName = demo?.teamName, demoLevel = demo?.level, demoFill = demo?.fill, demoLoad = demo?.loadOpen;
   useEffect(() => {
     if (!demo) return;
@@ -6412,19 +6440,19 @@ const SPECIES_DEFAULTS = {
    These pools keep each species' phonetic flavour without reusing its source list. If you extend one,
    invent the entries or take them from public-domain sources; don't copy them out of a rulebook. */
 const NAME_BANKS = {
-  human: { first: ["Aldric", "Bram", "Cedric", "Doran", "Edmund", "Gareth", "Halden", "Joris", "Kelric", "Lucan", "Marek", "Nolan", "Osric", "Padraig", "Roderick", "Soren", "Tomas", "Willem", "Alys", "Brenna", "Clea", "Elin", "Faye", "Greta", "Isolde", "Katrin", "Lena", "Mira", "Nessa", "Petra", "Rowan", "Thea"], last: ["Ashford", "Blackwood", "Carrow", "Dunmore", "Fenwick", "Grimsby", "Harrow", "Larkin", "Marsh", "Northgate", "Oakhart", "Ravenshold", "Stonefield", "Thorne", "Ashdown", "Vane", "Winters"] },
-  elf: { first: ["Aelithar", "Caelvan", "Thalorin", "Sylvaeth", "Vaerion", "Nymeril", "Ithavar", "Loraeth", "Aerdwin", "Maelthir", "Quelvaris", "Faernil", "Serathil", "Ondriel", "Aelinwe", "Caeliss", "Thalira", "Sylvenna", "Vaerys", "Nymira", "Ithaleen", "Loraveth", "Maelis", "Quelantha", "Seralyn", "Belara"], last: ["Sylvarion", "Thaliondre", "Aerimglade", "Nymbrellis", "Quelathien", "Faerondil", "Loravanth", "Ondemere", "Maelanthe", "Belanviel", "Duskpetal", "Rainsong", "Emberleaf", "Willowmere"] },
-  dwarf: { first: ["Kazrin", "Durmak", "Bolgrin", "Hargrim", "Grimbek", "Onnvar", "Farnok", "Volgar", "Thorgar", "Yorvig", "Brannok", "Dolgrin", "Hendra", "Brynja", "Solvi", "Gerdra", "Kolla", "Ingra", "Thruda", "Halla", "Vigdis", "Astrid"], last: ["Stonehelm", "Deepdelver", "Goldvein", "Coalhearth", "Anvilborn", "Runeward", "Stoutkeg", "Ironvow", "Cinderhall", "Barrowdelve", "Thunderpick"] },
-  halfling: { first: ["Pip", "Tobin", "Wendel", "Corly", "Marlo", "Denby", "Rufus", "Ambry", "Sedge", "Tucker", "Bandy", "Coby", "Posy", "Nella", "Dilly", "Bramble", "Cressy", "Tibby", "Odella", "Winnow", "Maple", "Juniper"], last: ["Applebrook", "Fairwind", "Kettlewhistle", "Barleymow", "Puddlestone", "Honeycrock", "Nettleby", "Wickerbourne", "Mosslow", "Thimblewick"] },
-  gnome: { first: ["Fizwick", "Wobbin", "Tannick", "Jindle", "Perrywig", "Snodd", "Quibb", "Doffin", "Warlin", "Tocksley", "Winnifer", "Tibba", "Prilla", "Quilla", "Ondi", "Fenna", "Bexa", "Merribel"], last: ["Sparklight", "Fizzlebang", "Gearwhistle", "Tinderbolt", "Cranklewick", "Spanglenut", "Whirlyspoke", "Brasslatch", "Coppertick", "Wrenchwhistle"] },
-  orc: { first: ["Grok", "Karg", "Kruul", "Ug", "Brakka", "Durg", "Grukk", "Hrogar", "Morg", "Narg", "Ozul", "Ruck", "Skarn", "Thurga", "Vrag", "Zarka", "Gralla", "Ekka", "Nokka", "Bogrot"], last: ["the Cleaver", "Skullsplitter", "Ironmaw", "Bonebreaker", "Bloodtusk", "the Ravager", "Gutripper", "Blacktooth"], lastChance: 0.5 },
-  infernal: { first: ["Azvareth", "Malketh", "Zerith", "Vasquen", "Karnias", "Draveth", "Sulveth", "Nirokh", "Corvath", "Ezreth", "Vorkas", "Ashvenn", "Azael", "Lilveth", "Nyxara", "Serazel", "Kaelith", "Mordessa", "Velisha", "Ashryn", "Zaraphine", "Cindraeth", "Ilyth", "Marveth", "Valeria", "Zhaan", "Ruin", "Mercy", "Vengeance", "Solace", "Requiem", "Penance", "Verdict", "Silence"], last: ["the Fallen", "Ashborne", "of the Ninefold", "Emberbound", "the Unbidden", "Cinderheart", "Hellswake"], lastChance: 0.5 },
-  draconic: { first: ["Zarrhak", "Vundir", "Kethran", "Morvax", "Ssarith", "Bhaxar", "Ordrek", "Vasketh", "Thurmax", "Grazzil", "Nyxarr", "Skarveth", "Sarrha", "Vektha", "Ismara", "Kaavi", "Ozzira", "Thessa", "Draneth", "Ryvakka", "Solthra", "Ushara", "Neshari", "Valkra"], last: ["Emberscale", "Stormhorn", "Ashclaw", "Goldwing", "Frostscale", "Duskclaw", "Cindermaw"], lastChance: 0.6 },
-  celestial: { first: ["Seraphiel", "Lumen", "Aurelia", "Cassiel", "Dawn", "Elion", "Halcyon", "Iael", "Lucen", "Micah", "Nael", "Oriel", "Ithuriel", "Zerah", "Amara", "Celia", "Liora", "Nova", "Sol", "Vesper"], last: ["the Radiant", "Dawnbringer", "Lightborn", "of the Choir"], lastChance: 0.4 },
-  giant: { first: ["Ormak", "Tulgar", "Vashkun", "Hodrik", "Kelvath", "Ruuno", "Tharnak", "Ghelan", "Aruk", "Denvik", "Yorvath", "Skagra", "Halvi", "Ondura", "Vaska", "Torvi", "Enkala", "Bruna"], last: ["Skywatcher", "Stonebreaker", "Cloudstrider", "Rockmane", "Frostpeak", "Boulderfist"], lastChance: 0.6 },
-  construct: { first: ["Ingot", "Cog", "Rust", "Sentinel", "Rampart", "Anvil", "Ferro", "Sprocket", "Verdict", "Ember", "Slate", "Cinder", "Warden", "Vigil", "Latch", "Tally", "Nine", "Echo", "Bastion"], last: ["Unit-7", "Mark-III", "the Warden", "Model-9", "Series-4"], lastChance: 0.5 },
-  elemental: { first: ["Sirocco", "Quartz", "Zephyr", "Basalt", "Rime", "Torrent", "Geode", "Pyre", "Squall", "Loam", "Scoria", "Shale", "Brine", "Gust", "Magma", "Drift", "Cairn", "Surge", "Ashfall", "Tideglass"], last: ["of the Deep Vein", "Stormborn", "Everburning", "Tidewrought", "Stonewaked"], lastChance: 0.4 },
-  undead: { first: ["Mordecai", "Voss", "Lucen", "Ophelia", "Draven", "Ysolde", "Emeric", "Ligeia", "Cadence", "Lenore", "Nocturne", "Vespera", "Lazlo", "Ravenna", "Corvus", "Malachi", "Thanatos", "Vyra", "Vesna"], last: ["Nightshade", "Graves", "Hollow", "Ashbourne", "Coldwell", "Grimmere", "the Pale", "Duskbane"], lastChance: 0.6 },
+  human: { m: ["Aldric", "Bram", "Cedric", "Doran", "Edmund", "Gareth", "Halden", "Joris", "Kelric", "Lucan", "Marek", "Nolan", "Osric", "Padraig", "Roderick", "Soren", "Tomas", "Willem"], f: ["Alys", "Brenna", "Clea", "Elin", "Faye", "Greta", "Isolde", "Katrin", "Lena", "Mira", "Nessa", "Petra", "Thea"], n: ["Rowan"], last: ["Ashford", "Blackwood", "Carrow", "Dunmore", "Fenwick", "Grimsby", "Harrow", "Larkin", "Marsh", "Northgate", "Oakhart", "Ravenshold", "Stonefield", "Thorne", "Ashdown", "Vane", "Winters"] },
+  elf: { m: ["Aelithar", "Caelvan", "Thalorin", "Sylvaeth", "Vaerion", "Nymeril", "Ithavar", "Loraeth", "Aerdwin", "Maelthir", "Quelvaris", "Faernil", "Serathil", "Ondriel"], f: ["Aelinwe", "Caeliss", "Thalira", "Sylvenna", "Vaerys", "Nymira", "Ithaleen", "Loraveth", "Maelis", "Quelantha", "Seralyn", "Belara"], last: ["Sylvarion", "Thaliondre", "Aerimglade", "Nymbrellis", "Quelathien", "Faerondil", "Loravanth", "Ondemere", "Maelanthe", "Belanviel", "Duskpetal", "Rainsong", "Emberleaf", "Willowmere"] },
+  dwarf: { m: ["Kazrin", "Durmak", "Bolgrin", "Hargrim", "Grimbek", "Onnvar", "Farnok", "Volgar", "Thorgar", "Yorvig", "Brannok", "Dolgrin"], f: ["Hendra", "Brynja", "Solvi", "Gerdra", "Kolla", "Ingra", "Thruda", "Halla", "Vigdis", "Astrid"], last: ["Stonehelm", "Deepdelver", "Goldvein", "Coalhearth", "Anvilborn", "Runeward", "Stoutkeg", "Ironvow", "Cinderhall", "Barrowdelve", "Thunderpick"] },
+  halfling: { m: ["Tobin", "Wendel", "Denby", "Rufus", "Tucker"], f: ["Ambry", "Posy", "Nella", "Dilly", "Cressy", "Tibby", "Odella"], n: ["Pip", "Corly", "Marlo", "Sedge", "Bandy", "Coby", "Bramble", "Winnow", "Maple", "Juniper"], last: ["Applebrook", "Fairwind", "Kettlewhistle", "Barleymow", "Puddlestone", "Honeycrock", "Nettleby", "Wickerbourne", "Mosslow", "Thimblewick"] },
+  gnome: { m: ["Fizwick", "Wobbin", "Tannick", "Jindle", "Perrywig", "Snodd", "Quibb", "Doffin", "Warlin", "Tocksley"], f: ["Winnifer", "Tibba", "Prilla", "Quilla", "Ondi", "Fenna", "Bexa", "Merribel"], last: ["Sparklight", "Fizzlebang", "Gearwhistle", "Tinderbolt", "Cranklewick", "Spanglenut", "Whirlyspoke", "Brasslatch", "Coppertick", "Wrenchwhistle"] },
+  orc: { m: ["Grok", "Karg", "Kruul", "Ug", "Durg", "Grukk", "Hrogar", "Morg", "Narg", "Ozul", "Ruck", "Skarn", "Vrag", "Bogrot"], f: ["Brakka", "Thurga", "Zarka", "Gralla", "Ekka", "Nokka"], last: ["the Cleaver", "Skullsplitter", "Ironmaw", "Bonebreaker", "Bloodtusk", "the Ravager", "Gutripper", "Blacktooth"], lastChance: 0.5 },
+  infernal: { m: ["Azvareth", "Malketh", "Zerith", "Vasquen", "Karnias", "Draveth", "Sulveth", "Nirokh", "Corvath", "Ezreth", "Vorkas", "Ashvenn", "Azael"], f: ["Lilveth", "Nyxara", "Serazel", "Kaelith", "Mordessa", "Velisha", "Ashryn", "Zaraphine", "Cindraeth", "Ilyth", "Marveth", "Valeria"], n: ["Zhaan", "Ruin", "Mercy", "Vengeance", "Solace", "Requiem", "Penance", "Verdict", "Silence"], last: ["the Fallen", "Ashborne", "of the Ninefold", "Emberbound", "the Unbidden", "Cinderheart", "Hellswake"], lastChance: 0.5 },
+  draconic: { m: ["Zarrhak", "Vundir", "Kethran", "Morvax", "Ssarith", "Bhaxar", "Ordrek", "Vasketh", "Thurmax", "Grazzil", "Nyxarr", "Skarveth"], f: ["Sarrha", "Vektha", "Ismara", "Kaavi", "Ozzira", "Thessa", "Draneth", "Ryvakka", "Solthra", "Ushara", "Neshari", "Valkra"], last: ["Emberscale", "Stormhorn", "Ashclaw", "Goldwing", "Frostscale", "Duskclaw", "Cindermaw"], lastChance: 0.6 },
+  celestial: { m: ["Seraphiel", "Cassiel", "Elion", "Iael", "Lucen", "Micah", "Nael", "Oriel", "Ithuriel", "Zerah"], f: ["Aurelia", "Amara", "Celia", "Liora"], n: ["Lumen", "Dawn", "Halcyon", "Nova", "Sol", "Vesper"], last: ["the Radiant", "Dawnbringer", "Lightborn", "of the Choir"], lastChance: 0.4 },
+  giant: { m: ["Ormak", "Tulgar", "Vashkun", "Hodrik", "Kelvath", "Ruuno", "Tharnak", "Ghelan", "Aruk", "Denvik", "Yorvath"], f: ["Skagra", "Halvi", "Ondura", "Vaska", "Torvi", "Enkala", "Bruna"], last: ["Skywatcher", "Stonebreaker", "Cloudstrider", "Rockmane", "Frostpeak", "Boulderfist"], lastChance: 0.6 },
+  construct: { n: ["Ingot", "Cog", "Rust", "Sentinel", "Rampart", "Anvil", "Ferro", "Sprocket", "Verdict", "Ember", "Slate", "Cinder", "Warden", "Vigil", "Latch", "Tally", "Nine", "Echo", "Bastion"], last: ["Unit-7", "Mark-III", "the Warden", "Model-9", "Series-4"], lastChance: 0.5 },
+  elemental: { n: ["Sirocco", "Quartz", "Zephyr", "Basalt", "Rime", "Torrent", "Geode", "Pyre", "Squall", "Loam", "Scoria", "Shale", "Brine", "Gust", "Magma", "Drift", "Cairn", "Surge", "Ashfall", "Tideglass"], last: ["of the Deep Vein", "Stormborn", "Everburning", "Tidewrought", "Stonewaked"], lastChance: 0.4 },
+  undead: { m: ["Mordecai", "Voss", "Lucen", "Draven", "Emeric", "Lazlo", "Corvus", "Malachi", "Thanatos"], f: ["Ophelia", "Ysolde", "Ligeia", "Lenore", "Vespera", "Ravenna", "Vyra", "Vesna"], n: ["Cadence", "Nocturne"], last: ["Nightshade", "Graves", "Hollow", "Ashbourne", "Coldwell", "Grimmere", "the Pale", "Duskbane"], lastChance: 0.6 },
 };
 const SPECIES_NAME_STYLE = {
   Human: "human", "Half-Elf": "human", Elf: "elf", "Dark Elf": "elf", Drow: "elf",
@@ -6436,13 +6464,25 @@ const SPECIES_NAME_STYLE = {
   Construct: "construct", Warforged: "construct", Elementkin: "elemental",
   Vampire: "undead", Lich: "undead", Ghoul: "undead", Ghost: "undead", Hag: "undead", Werewolf: "undead",
 };
-// Roll a race-appropriate name; retries a few times to avoid handing back the same name twice in a row.
-const rollNpcName = (species, avoid) => {
+/* Which first names a roll may draw from. Each bank splits into masculine (m), feminine (f) and
+   unisex (n) — the unisex list is always in play, since "Rowan" suits anyone and a construct called
+   Bastion has no sex to match. Asking for "na", or not saying, draws from everything: N/A is a real
+   answer about the character, not a reason to narrow the dice. Banks with no m/f at all (constructs,
+   elementals) simply return their whole list whatever you ask for. */
+const namePool = (bank, sex) => {
+  const n = bank.n || [];
+  if (sex === "m" && bank.m) return [...bank.m, ...n];
+  if (sex === "f" && bank.f) return [...bank.f, ...n];
+  return [...(bank.m || []), ...(bank.f || []), ...n];
+};
+// Roll a species-appropriate name; retries a few times to avoid handing back the same name twice in a row.
+const rollNpcName = (species, avoid, sex) => {
   const bank = NAME_BANKS[SPECIES_NAME_STYLE[species] || "human"] || NAME_BANKS.human;
+  const firsts = namePool(bank, sex);
   const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
   let name = "";
   for (let t = 0; t < 6; t++) {
-    const first = pick(bank.first);
+    const first = pick(firsts);
     const useLast = bank.last && Math.random() < (bank.lastChance == null ? 1 : bank.lastChance);
     name = useLast ? `${first} ${pick(bank.last)}` : first;
     if (name !== avoid) break;
@@ -6955,7 +6995,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
     commitTab("npcs", [...get("npcs"), copy]);
     startEdit(copy, "npcs");
   };
-  const startNew = (forTab = tab) => { setNewLoc(null); setNameLock(false); openDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], look: blankLook() }); };
+  const startNew = (forTab = tab) => { setNewLoc(null); setNameLock(false); openDraft({ tab: forTab, id: null, name: "", tag: "", sections: asSections(""), loc: "", parent: "", stats: null, sb: null, loot: [], lastSide: "", look: blankLook() }); };
   const startEdit = (e, forTab = tab) => { setNewLoc(null); setNameLock(!!(e.name || "").trim()); openDraft({ tab: forTab, id: e.id, name: e.name || "", tag: e.tag || "", sections: asSections(e.sections), loc: e.loc || "", parent: e.parent || "", stats: e.stats ? JSON.parse(JSON.stringify(e.stats)) : null, sb: e.sb ? JSON.parse(JSON.stringify(e.sb)) : null, loot: Array.isArray(e.loot) ? JSON.parse(JSON.stringify(e.loot)) : [], lastSide: e.lastSide || "", look: e.look ? { ...blankLook(), ...e.look } : blankLook() }); };
   // Opened from a board NPC's "Edit in Notebook" — jump straight to that NPC's editor.
   useEffect(() => { if (editNpcId) { const n = (nb.npcs || []).find((x) => x.id === editNpcId); if (n) { setTab("npcs"); startEdit(n, "npcs"); } } }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -7103,11 +7143,28 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
               <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", marginBottom: 6 }}>{draft.id ? `Edit ${dSingular}` : `New ${dSingular}`}</div>
               <div className="frow"><input type="text" placeholder={`${dSingular} name`} style={{ flex: 1 }} value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} autoFocus />
                 {draft.tab === "npcs" && (<>
-                  <button className="btn small ghost" disabled={nameLock} style={nameLock ? { opacity: 0.4 } : undefined} title={nameLock ? "Name is locked — tap the lock to reroll" : `Roll a random ${(draft.look?.species && draft.look.species !== "Other") ? draft.look.species : "human"}-style name — click again for more`} onClick={() => setDraft((d) => ({ ...d, name: rollNpcName(d.look?.species, d.name) }))}>🎲</button>
+                  <button className="btn small ghost" disabled={nameLock} style={nameLock ? { opacity: 0.4 } : undefined}
+                    title={nameLock ? "Name is locked — tap the lock to reroll"
+                      : `Roll a random ${(draft.look?.species && draft.look.species !== "Other") ? draft.look.species : "human"}-style ${draft.look?.sex === "m" ? "masculine " : draft.look?.sex === "f" ? "feminine " : ""}name — click again for more`}
+                    onClick={() => setDraft((d) => ({ ...d, name: rollNpcName(d.look?.species, d.name, d.look?.sex) }))}>🎲</button>
                   <button className="btn small ghost" title={nameLock ? "Name locked against the dice — tap to allow rerolling" : "Lock this name so the 🎲 can't overwrite it"} onClick={() => setNameLock((v) => !v)}>{nameLock ? "🔒" : "🔓"}</button>
                 </>)}
               </div>
               {draft.tab === "npcs" && <NpcIdentityRow value={draft.look} onChange={(l) => setDraft({ ...draft, look: l })} />}
+              {draft.tab === "npcs" && (
+                /* How they arrive on the board. The field already existed — the board's disposition chip
+                   wrote it back — so a friendly NPC came up neutral the first time and only remembered
+                   after you fixed it. Now you can say up front. */
+                <div className="frow" style={{ alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                  <label style={{ minWidth: 0 }} title="Which side this NPC joins when you add them to the encounter board">On the board</label>
+                  <span className="look-chips" style={{ flex: 1 }}>
+                    {[["ally", "🙂 Ally"], ["neutral", "• Neutral"], ["enemy", "⚔ Hostile"]].map(([k, lbl]) => (
+                      <button key={k} type="button" className={`look-chip ${(draft.lastSide || "neutral") === k ? "on" : ""}`}
+                        onClick={() => setDraft({ ...draft, lastSide: k })}>{lbl}</button>
+                    ))}
+                  </span>
+                </div>
+              )}
               <div className="frow"><input type="text" placeholder="Tag — optional (e.g. quest-giver, tavern, rumor)" style={{ flex: 1 }} value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} /></div>
               {draft.tab === "npcs" && (<>
                 <div className="frow" style={{ alignItems: "center" }}>
@@ -9838,7 +9895,7 @@ const TUT_MONSTER = "Goblin Warrior", TUT_MONSTER_N = 2;
 const TUT_PARTY_NAME = "Tutorial Party";
 const TUTORIAL_STEPS = [
   { key: "welcome", title: "Welcome — sit back and watch \ud83c\udf93", body: "A quick guided show. Every step explains itself first, then you tap \u201cShow me\u201d and watch it happen for real \u2014 no reading and watching at the same time. Nothing here touches your game: \u201cClear & finish\u201d at the end puts everything back." },
-  { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], targetPlayed: ["roster"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Player / ally is for a guest or a summoned ally \u2014 it drops someone on the board without saving them.)" },
+  { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], targetPlayed: ["roster"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Guest player is for someone at the table for one night only \u2014 it drops them on the board without saving them.)" },
   { key: "monsters", act: "monsters", title: "2 \u00b7 Add monsters", target: ["addbestiary", "add"], targetPlayed: ["roster"], body: "Now the foes: \uff0b Add \u25b8 Monster from bestiary. Watch me search for \u201cgoblin\u201d, pick the Goblin Warrior out of the results, and add two. That\u2019s 300+ SRD monsters with full statblocks \u2014 no book required." },
   { key: "start", act: "start", title: "3 \u00b7 Roll initiative", target: ["start", "roster"], targetPlayed: ["active", "roster"], body: "The app rolls the monsters itself. For your heroes you get this dialogue \u2014 type each initiative as the table calls it out, then Start combat. (I use fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
   { key: "playerAttack", act: "playerAttack", title: "4 \u00b7 A hero attacks", target: ["cardattack", "active"], targetPlayed: ["roster"], body: "Bram is up. Your players roll their own dice, so you just record what happened: tap \u2694 Attack, pick the target, say whether it hit, type the damage. Watch the goblin\u2019s HP drop in the roster." },
@@ -12218,6 +12275,27 @@ export default function App() {
     });
     setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp(""); setPDex("");
   };
+  /* Same character, but remembered: writes them into the active party as well as onto the board, so
+     their spells, bag and stats survive the session. Without this the only fix for "I used the quick
+     add for a real PC" was to type them in again somewhere else. */
+  const addPlayerToParty = () => {
+    const name = pName.trim(); if (!name) return false;
+    const pid = livePartyId();
+    if (!pid) { pushToasts([{ kind: "bad", text: "No saved party yet — build one from the party card, then they can be added to it." }]); return false; }
+    const member = { id: newUid(), name,
+      ac: pAc !== "" ? parseInt(pAc, 10) : null, hp: pHp !== "" ? parseInt(pHp, 10) : null,
+      pp: pPp !== "" ? parseInt(pPp, 10) : null, dex: pDex !== "" ? parseInt(pDex, 10) : null, spells: [] };
+    const list = partiesRef.current.map((p) => (p.id === pid ? { ...p, members: [...(p.members || []), member] } : p));
+    savePartiesAll(list, pid);
+    const partyName = ((partiesRef.current.find((p) => p.id === pid) || {}).name || "").trim() || "your party";
+    mutate((d, L) => {
+      d.combatants.push(makePlayer({ name, init: pInit, ac: member.ac, hp: member.hp, pp: member.pp, dex: pDex, memberId: member.id }));
+      L.push(`Added <b>${name}</b> and saved them to <b>${partyName}</b>.`);
+    });
+    pushToasts([{ kind: "good", text: `${name} saved to ${partyName} — they'll be there next session.` }]);
+    setPName(""); setPInit(""); setPAc(""); setPHp(""); setPPp(""); setPDex("");
+    return true;
+  };
 
   const addPartyNow = (members, level) => {
     if (!members.length) return;
@@ -12748,7 +12826,7 @@ export default function App() {
   const [tutSpot, setTutSpot] = useState(null);
   const tutPartyIdRef = useRef(null);               // the party the tour saved, so finishing can remove it
 
-  /* Step 1 — the party card, because this is the path that REMEMBERS a party. + Add ▸ Player / ally
+  /* Step 1 — the party card, because this is the path that REMEMBERS a party. + Add ▸ Guest player
      only puts someone on tonight's board, so teaching that as the way to build a party teaches the
      wrong habit. The tour fills this in and presses Add party for real, which both saves the group
      and puts it on screen; "Clear & finish" deletes the party it saved. */
@@ -13118,8 +13196,15 @@ export default function App() {
             <div className="menu" onClick={() => setAddMenu(false)}>
               <button data-tut="addbestiary" className={tutPress === "addbestiary" ? "demo-press" : ""} onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
-              <button onClick={() => setModal({ type: "player" })}>Player / ally…</button>
               <button onClick={() => setModal({ type: "notebook" })}>👤 NPC (build or add)…</button>
+              {/* Below the NPC entry, and named for what it is. It used to head the list as
+                  "Player / ally…", which read as *the* way to add a player and quietly dropped their
+                  sheet: no memberId means no saved spells, bag or party link. Allies are better served
+                  by an NPC (statblock, notes, portrait) or a bestiary creature set to Make ally. */}
+              <button onClick={() => setModal({ type: "player" })}>
+                Guest player — tonight only…
+                <span className="menu-sub">not saved to a party · for allies use 👤 NPC</span>
+              </button>
               <button onClick={() => setModal({ type: "suggest-enc" })}>🎲 Suggest encounter…</button>
               <button onClick={() => setModal({ type: "slots", focus: "groups" })}>📦 Monster groups (save / add)…</button>
               <button onClick={addEffectPrompt}>Effect / lair actions…</button>
@@ -13823,7 +13908,7 @@ export default function App() {
       {modal?.type === "player" && (
         <div className="overlay" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Add player / ally</h3>
+            <h3>Guest player — tonight only</h3>
             <div className="frow"><label>Character</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={pName} onChange={(e) => setPName(e.target.value)} autoFocus /></div>
             <div className="frow"><label>Initiative (opt.)</label><input type="number" value={pInit} onChange={(e) => setPInit(e.target.value)} placeholder="later is fine" /></div>
             <div className="frow"><label>AC (optional)</label><input type="number" value={pAc} onChange={(e) => setPAc(e.target.value)} /></div>
@@ -13831,9 +13916,18 @@ export default function App() {
             <div className="frow"><label>Passive Perception</label><input type="number" value={pPp} onChange={(e) => setPPp(e.target.value)} placeholder="opt." /></div>
             <div className="frow"><label>DEX modifier</label><input type="number" value={pDex} onChange={(e) => setPDex(e.target.value)} placeholder="opt. — breaks init ties" /></div>
             <div className="trait" style={{ marginBottom: 8 }}>With HP filled in, the app tracks this character's damage and healing (concentration prompts them to roll their own save). PP shows on their row for quick reference. DEX is only used to break initiative ties — it's never shown.</div>
-            <div className="frow" style={{ justifyContent: "flex-end" }}>
+            {/* The escape hatch: this dialogue drops someone on tonight's board and forgets them, which
+                is wrong for a regular PC. Rather than only warn about it, offer the fix in one tap. */}
+            <div className="trait" style={{ marginBottom: 8, color: "var(--gold)", fontSize: 12 }}>
+              This drops them on tonight's board only — nothing is remembered next session. Building an ally? <b>👤 NPC</b> gives them a statblock, notes and a portrait.
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
               <button className="btn" onClick={() => setModal(null)}>Cancel</button>
-              <button className={`btn primary ${modal.demo?.press === "add" ? "demo-press" : ""}`} disabled={!pName.trim()} onClick={() => { addPlayerNow(); setModal(null); }}>Add</button>
+              {activeRoster && (
+                <button className="btn ok" disabled={!pName.trim()} title={`Add them to “${(activeRoster.name || "").trim() || "your party"}” as well, so their sheet is remembered`}
+                  onClick={() => { if (addPlayerToParty()) setModal(null); }}>＋ Save to my party</button>
+              )}
+              <button className={`btn primary ${modal.demo?.press === "add" ? "demo-press" : ""}`} disabled={!pName.trim()} onClick={() => { addPlayerNow(); setModal(null); }}>Add for tonight</button>
             </div>
           </div>
         </div>
