@@ -3236,13 +3236,12 @@ function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp
           const body = c.type !== "effect", solid = body && c.type !== "object";
           const sec = (label, items) => { const live = items.filter(Boolean); return live.length ? { label, live } : null; };
           const groups = [
-            sec(null, [
+            sec("Quick actions", [
               c.hp != null && body && <button key="dmg" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>,
               <button key="cond" onClick={() => api.addCondition(c.uid)}>Add condition…</button>,
               c.type === "monster" && <button key="save" onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>,
               solid && <button key="adv" onClick={() => api.openAdv(c.uid)}>Advantage…</button>,
               solid && <button key="grap" onClick={() => api.openGrapple(c.uid)}>🤼 Grapple / Shove…</button>,
-              body && <button key="loot" onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>,
               /* Revive only exists while a creature is down, so filing it under "More" would make it two
                  taps deep every single time it applied — and a downed creature's menu is mostly opened
                  to bring them back. It rides on top whenever it is offered at all. */
@@ -3253,16 +3252,14 @@ function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp
               body && <button key="edit" onClick={() => api.openDefenses(c.uid)}>Edit creature…</button>,
               c.type === "player" && <button key="char" onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>,
               c.type === "player" && <button key="book" onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>,
-            ]),
-            sec("Turn order", [
-              c.type !== "object" && <button key="init" onClick={() => api.setInit(c.uid)}>Set initiative…</button>,
-            ]),
-            sec("Sides", c.npc ? [
-              c.side !== "neutral" && <button key="n" onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>,
-              c.side !== "ally" && <button key="a" onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>,
-              c.side !== "enemy" && <button key="e" onClick={() => api.setDisposition(c.uid, "enemy")}>Make enemy</button>,
-            ] : [
-              solid && <button key="sw" onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>,
+              body && <button key="loot" onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>,
+              ...(c.npc ? [
+                c.side !== "neutral" && <button key="n" onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>,
+                c.side !== "ally" && <button key="a" onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>,
+                c.side !== "enemy" && <button key="e" onClick={() => api.setDisposition(c.uid, "enemy")}>Make enemy</button>,
+              ] : [
+                solid && <button key="sw" onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>,
+              ]),
             ]),
             sec("Keep", [
               c.type === "monster" && <button key="best" onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>,
@@ -3272,6 +3269,7 @@ function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp
             ]),
           ].filter(Boolean);
           const tail = [
+            c.type !== "object" && <button key="init" onClick={() => api.setInit(c.uid)}>Set initiative…</button>,
             solid && <button key="react" onClick={() => api.openReactions(c.uid)}>Reactions…</button>,
             solid && <button key="conc" onClick={() => api.setConc(c.uid)}>Set concentration…</button>,
             body && <button key="col" onClick={() => api.openColors()}>🎨 Colour combatants…</button>,
