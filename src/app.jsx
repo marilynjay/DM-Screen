@@ -4751,7 +4751,67 @@ function DeathSavesModal({ c, onRecord, onClose }) {
 
 const ABIL_FULL = { STR: "Strength", DEX: "Dexterity", CON: "Constitution", INT: "Intelligence", WIS: "Wisdom", CHA: "Charisma" };
 const ABILS = Object.keys(ABIL_FULL);
+const ABIL_KEYS = ["str", "dex", "con", "int", "wis", "cha"];
 const CR_LABELS = [...CR_STEPS.map(([l]) => l), "22", "23", "24", "25", "26", "28", "30"];
+
+/* ---- CR chassis -------------------------------------------------------------------------------
+   The DMG's "Monster Statistics by Challenge Rating" table, condensed to
+   [CR, AC, HP, attack bonus, damage per round, save DC]. HP and damage are the midpoints of the
+   table's bands. The balancer already does this arithmetic when it retunes a monster; offering it up
+   front means a DM picks a CR and a role instead of inventing seven numbers from nothing. */
+const CR_CHASSIS = [
+  ["0", 13, 4, 3, 1, 13], ["1/8", 13, 21, 3, 3, 13], ["1/4", 13, 43, 3, 5, 13], ["1/2", 13, 60, 3, 7, 13],
+  ["1", 13, 78, 3, 12, 13], ["2", 13, 93, 3, 18, 13], ["3", 13, 108, 4, 24, 13], ["4", 14, 123, 5, 30, 14],
+  ["5", 15, 138, 6, 36, 15], ["6", 15, 153, 6, 42, 15], ["7", 15, 168, 6, 48, 15], ["8", 16, 183, 7, 54, 16],
+  ["9", 16, 198, 7, 60, 16], ["10", 17, 213, 7, 66, 16], ["11", 17, 228, 8, 72, 17], ["12", 17, 243, 8, 78, 17],
+  ["13", 18, 258, 8, 84, 18], ["14", 18, 273, 8, 90, 18], ["15", 18, 288, 8, 96, 18], ["16", 18, 303, 9, 102, 18],
+  ["17", 19, 318, 10, 108, 19], ["18", 19, 333, 10, 114, 19], ["19", 19, 348, 10, 120, 19], ["20", 19, 378, 10, 132, 19],
+  ["21", 19, 423, 11, 150, 20], ["22", 19, 468, 11, 168, 20], ["23", 19, 513, 11, 186, 20], ["24", 19, 558, 12, 204, 21],
+  ["25", 19, 603, 12, 222, 21], ["26", 19, 648, 12, 240, 21], ["28", 19, 738, 13, 276, 22], ["30", 19, 828, 14, 312, 23],
+];
+/* What kind of thing is it? Each role bends the table numbers the way that kind of monster bends
+   them — a brute is tougher and easier to hit, a caster is squishier — and names a starting attack. */
+const CR_ROLES = [
+  { key: "soldier", name: "Soldier", icon: "🛡", atkN: 2, hp: 1, ac: 1, atk: "Longsword", dt: "slashing", primary: "str" },
+  { key: "brute", name: "Brute", icon: "🪓", atkN: 1, hp: 1.25, ac: -2, atk: "Slam", dt: "bludgeoning", primary: "str" },
+  { key: "skirmisher", name: "Skirmisher", icon: "🗡", atkN: 2, hp: 0.85, ac: 1, atk: "Shortsword", dt: "piercing", primary: "dex" },
+  { key: "artillery", name: "Artillery", icon: "🏹", atkN: 2, hp: 0.8, ac: 0, atk: "Longbow", dt: "piercing", primary: "dex" },
+  { key: "caster", name: "Caster", icon: "🔮", atkN: 1, hp: 0.75, ac: -1, atk: "Arcane Bolt", dt: "force", primary: "int" },
+];
+const profForCr = (n) => Math.max(2, Math.min(9, 2 + Math.floor(Math.max(0, n - 1) / 4)));
+// A dice formula whose average lands on `avg` — d8s plus a modifier, which is how statblocks read.
+function diceForAvg(avg) {
+  const t = Math.max(1, Math.round(avg));
+  if (t <= 2) return String(t);
+  if (t <= 4) return "1d4";
+  const n = Math.max(1, Math.round(t / 5.5));
+  const mod = t - Math.round(n * 4.5);
+  return `${n}d8${mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : ""}`;
+}
+function chassisFor(crLabel, roleKey) {
+  const row = CR_CHASSIS.find((r) => r[0] === crLabel);
+  if (!row) return null;
+  const role = CR_ROLES.find((r) => r.key === roleKey) || CR_ROLES[0];
+  const [, ac, hp, hit, dpr, dc] = row;
+  const prof = profForCr(crToNum(crLabel));
+  // the table's attack bonus is proficiency plus the attacking ability, so the ability falls out of it
+  const primary = Math.max(0, Math.min(10, hit - prof));
+  const mods = { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 };
+  mods[role.primary] = primary;
+  mods.con = Math.max(0, Math.round(primary * (role.key === "brute" ? 0.9 : 0.5)));
+  if (role.key === "caster") mods.wis = Math.max(0, Math.round(primary * 0.5));
+  if (role.primary === "dex") mods.str = Math.max(0, Math.round(primary * 0.3));
+  return {
+    ac: Math.max(10, ac + role.ac), hp: Math.max(1, Math.round(hp * role.hp)),
+    atkN: role.atkN, hit, dc, mods, atkName: role.atk, dtype: role.dt,
+    dmg: diceForAvg(dpr / role.atkN), dpr,
+  };
+}
+const modToScore = (m) => 10 + Number(m) * 2;
+// A damage box is either blank, or something the dice roller can actually read. Anything else silently
+// rolls nothing at the table, so the form has to say so while the DM is still looking at it.
+const dmgAvg = (f) => { const s = String(f ?? "").trim(); if (!s) return null; const r = avgOfFormula(s); return /^\d+$/.test(s) || rollFormula(s) ? r : null; };
+const dmgBad = (f) => String(f ?? "").trim().length > 0 && dmgAvg(f) == null;
 
 /* Prefill helpers: pull form-editable fields out of an existing statblock's save action,
    falling back to parsing its description text the same way the resolvers do. */
@@ -4817,29 +4877,113 @@ function npcToSb(npc) {
   };
 }
 
-function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create" }) {
+/* One name + prose row, shared by traits, bonus actions, reactions and legendary options. All four
+   are the same shape in a statblock, and all four were unreachable for a homebrew creature before —
+   which meant a cloned monster could have Pack Tactics and an invented one never could. */
+function ProseRows({ rows, onChange, what, placeholder }) {
+  const set = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
+  return (
+    <>
+      {rows.map((r, i) => (
+        <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
+          <div className="frow">
+            <input type="text" placeholder="Name" autoComplete="off" spellCheck={false} style={{ flex: 1 }}
+              value={r.n} onChange={(e) => set(i, "n", e.target.value)} />
+            <button className="btn small ghost" title={`Remove this ${what}`} onClick={() => onChange(rows.filter((_, j) => j !== i))}>✕</button>
+          </div>
+          <textarea rows={2} placeholder={placeholder} value={r.d} onChange={(e) => set(i, "d", e.target.value)}
+            style={{ width: "100%", marginTop: 4, boxSizing: "border-box", borderRadius: 7, padding: "6px 8px" }} />
+        </div>
+      ))}
+      <button className="btn small ghost" onClick={() => onChange([...rows, { n: "", d: "" }])}>+ {what}</button>
+    </>
+  );
+}
+
+/* A labelled field caption that survives wrapping. The attack row used to be five bare boxes that
+   wrapped mid-row on a phone, and because they ship prefilled their placeholders were never visible —
+   so "4" and "1d6+2" sat there with nothing saying which was to-hit and which was damage. */
+const capStyle = { fontSize: 9, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".06em",
+  display: "block", marginBottom: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+const Capped = ({ cap, width, children }) => (
+  <label style={{ display: "block", flex: width ? "none" : "1 1 90px", width: width || "auto", minWidth: 0 }}>
+    <span style={capStyle}>{cap}</span>{children}
+  </label>
+);
+
+function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create", existingNames = [] }) {
   const src = initial || null;
   const editing = mode === "edit";
   const initAtkN = src ? parseAtkBudget(src.multi, src.actions || []).max : 1;
   const [f, setF] = useState({
     name: src?.name || "", count: 1, side: "enemy", notes: "",
-    ac: src?.ac ?? 12, hp: src?.hp ?? 10, cr: src?.cr || "", atkN: initAtkN,
-    str: src?.mods?.str ?? 0, dex: src?.mods?.dex ?? 0, con: src?.mods?.con ?? 0,
-    int: src?.mods?.int ?? 0, wis: src?.mods?.wis ?? 0, cha: src?.mods?.cha ?? 0,
-    resist: (src?.resist || []).join(", "), immune: (src?.immune || []).join(", "), vuln: (src?.vuln || []).join(", "),
+    ac: src?.ac ?? 12, hp: src?.hp ?? 10, hpF: src?.hpF || "", cr: src?.cr || "", atkN: initAtkN,
+    resist: (src?.resist || []).join(", "), immune: (src?.immune || []).join(", "),
+    vuln: (src?.vuln || []).join(", "), condImmune: (src?.condImmune || []).join(", "),
+    spd: src?.spd || "", senses: src?.senses || "", langs: src?.langs || "",
+    legCount: src?.legendary?.count ?? 3, legRes: src?.legRes ?? "",
   });
+  // Abilities live as raw strings so typing "18" in score mode isn't mangled into a modifier keystroke
+  // by keystroke; the conversion happens when the mode flips and again when the statblock is built.
+  const [abilMode, setAbilMode] = useState("score");
+  const [abil, setAbil] = useState(() => Object.fromEntries(ABIL_KEYS.map((k) =>
+    [k, String(modToScore(src?.mods?.[k] ?? 0))])));
+  const [saves, setSaves] = useState(() => Object.fromEntries(ABIL_KEYS.map((k) =>
+    [k, src?.saves?.[k] != null ? String(src.saves[k]) : ""])));
   const [acts, setActs] = useState(() => {
     const rows = (src?.actions || []).filter((a) => a.kind === "atk").map((a) => ({ orig: a, n: a.n, hit: a.hit ?? 0, dmg: a.dmg || "", dtype: a.dtype || "slashing" }));
-    return rows.length ? rows : [{ n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }];
+    // a from-scratch monster gets a named attack, because an unnamed row is silently thrown away
+    return rows.length ? rows : [{ n: "Attack", hit: 4, dmg: "1d6+2", dtype: "slashing" }];
   });
   const [svActs, setSvActs] = useState(() => (src?.actions || []).filter((a) => a.kind === "save").map(saveRowFrom));
+  const [traits, setTraits] = useState(() => (src?.traits || []).map((t) => ({ ...t })));
+  const [bonus, setBonus] = useState(() => (src?.bonus || []).map((t) => ({ ...t })));
+  const [reactions, setReactions] = useState(() => (src?.reactions || []).map((t) => ({ ...t })));
+  const [legOpts, setLegOpts] = useState(() => (src?.legendary?.options || []).map((t) => ({ ...t })));
+  const [multiText, setMultiText] = useState(src?.multi || "");
+  const [multiTouched, setMultiTouched] = useState(!!src?.multi);
   const [saveToo, setSaveToo] = useState(true);
+  const [rollHp, setRollHp] = useState(false);
+  const [role, setRole] = useState("soldier");
+  const [open, setOpen] = useState({ def: true, off: true });
+
+  const num = (v, d = 0) => { const n = parseInt(v, 10); return isNaN(n) ? d : n; };
   const set = (k, v) => setF({ ...f, [k]: v });
   const setAct = (i, k, v) => setActs(acts.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   const setSv = (i, k, v) => setSvActs(svActs.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   const csv = (s) => s.split(",").map((x) => x.trim()).filter(Boolean);
-  const num = (v, d = 0) => { const n = parseInt(v, 10); return isNaN(n) ? d : n; };
   const otherActs = (src?.actions || []).filter((a) => a.kind !== "atk" && a.kind !== "save");
+  const modOf = (k) => (abilMode === "score" ? scoreToMod(num(abil[k], 10)) : num(abil[k]));
+  const genMulti = (n, nm) => `The ${(nm || f.name).trim().toLowerCase() || "creature"} makes ${n} attacks.`;
+  const setAtkN = (v) => {
+    setF({ ...f, atkN: v });
+    const n = Math.max(1, Math.min(6, num(v, 1)));
+    if (!multiTouched) setMultiText(n > 1 ? genMulti(n) : "");
+  };
+  const setName = (v) => {
+    setF({ ...f, name: v });
+    const n = Math.max(1, Math.min(6, num(f.atkN, 1)));
+    if (!multiTouched && n > 1) setMultiText(genMulti(n, v));
+  };
+  const named = (rows) => rows.filter((r) => (r.n || "").trim()).map((r) => ({ ...r, n: r.n.trim(), d: (r.d || "").trim() }));
+
+  // the CR chassis: what the DMG table says a creature of this CR and shape looks like
+  const chassis = chassisFor(f.cr, role);
+  const applyChassis = () => {
+    if (!chassis) return;
+    setF({ ...f, ac: chassis.ac, hp: chassis.hp, hpF: "", atkN: chassis.atkN });
+    setAbil(Object.fromEntries(ABIL_KEYS.map((k) => [k, String(abilMode === "score" ? modToScore(chassis.mods[k]) : chassis.mods[k])])));
+    setActs([{ n: chassis.atkName, hit: chassis.hit, dmg: chassis.dmg, dtype: chassis.dtype }]);
+    if (!multiTouched) setMultiText(chassis.atkN > 1 ? genMulti(chassis.atkN) : "");
+    setSvActs(svActs.map((r) => ({ ...r, dc: chassis.dc })));
+  };
+
+  const atkErrs = acts.some((a) => dmgBad(a.dmg)) || svActs.some((r) => dmgBad(r.dmg));
+  const hpFErr = f.hpF.trim().length > 0 && !rollFormula(f.hpF.trim());
+  const unnamedAtk = acts.some((a) => !a.n.trim() && (String(a.dmg).trim() || num(a.hit) !== 0));
+  const clash = !editing && saveToo && f.name.trim()
+    && existingNames.some((n) => n.toLowerCase() === f.name.trim().toLowerCase());
+  const blocked = !f.name.trim() || atkErrs || hpFErr;
 
   const buildSb = () => {
     const name = f.name.trim();
@@ -4853,115 +4997,243 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
       return a;
     });
     const n = Math.max(1, Math.min(6, num(f.atkN, 1)));
-    let multi = src?.multi || null;
-    if (n !== initAtkN) multi = n > 1 ? `The ${name.toLowerCase() || "creature"} makes ${n} attacks.` : null;
     const sb = {
       ...(src || {}), name, cr: f.cr || null, ac: num(f.ac, 10), hp: Math.max(1, num(f.hp, 1)),
-      mods: { str: num(f.str), dex: num(f.dex), con: num(f.con), int: num(f.int), wis: num(f.wis), cha: num(f.cha) },
-      resist: csv(f.resist), immune: csv(f.immune), vuln: csv(f.vuln),
-      actions: [...atkActions, ...saveActions, ...otherActs], multi,
+      mods: Object.fromEntries(ABIL_KEYS.map((k) => [k, modOf(k)])),
+      saves: Object.fromEntries(ABIL_KEYS.filter((k) => saves[k].trim() !== "").map((k) => [k, num(saves[k])])),
+      resist: csv(f.resist), immune: csv(f.immune), vuln: csv(f.vuln), condImmune: csv(f.condImmune),
+      traits: named(traits), bonus: named(bonus), reactions: named(reactions),
+      actions: [...atkActions, ...saveActions, ...otherActs],
+      multi: n > 1 ? (multiText.trim() || genMulti(n)) : null,
     };
-    if (src && sb.hp !== src.hp) delete sb.hpF; // edited flat HP invalidates the roll formula
+    if (f.spd.trim()) sb.spd = f.spd.trim(); else delete sb.spd;
+    if (f.senses.trim()) sb.senses = f.senses.trim(); else delete sb.senses;
+    if (f.langs.trim()) sb.langs = f.langs.trim(); else delete sb.langs;
+    // a formula the roller can read keeps rolled HP available; anything else would silently roll nothing
+    if (f.hpF.trim() && rollFormula(f.hpF.trim())) sb.hpF = f.hpF.trim(); else delete sb.hpF;
+    const lo = named(legOpts);
+    if (lo.length) sb.legendary = { count: Math.max(1, num(f.legCount, 3)), options: lo }; else delete sb.legendary;
+    if (String(f.legRes).trim() && num(f.legRes) > 0) sb.legRes = num(f.legRes); else delete sb.legRes;
     return sb;
   };
 
+  const sect = (id, title, sub, body) => (
+    <React.Fragment key={id}>
+      <button className="btn small ghost w100" style={{ width: "100%", textAlign: "left", margin: "8px 0 2px" }}
+        onClick={() => setOpen({ ...open, [id]: !open[id] })}>
+        {open[id] ? "▾" : "▸"} {title}
+        {sub ? <span style={{ color: "var(--faint)", fontWeight: 400 }}> · {sub}</span> : null}
+      </button>
+      {open[id] ? body : null}
+    </React.Fragment>
+  );
+
   const carried = [];
-  if (src?.traits?.length) carried.push(`${src.traits.length} trait${src.traits.length > 1 ? "s" : ""}`);
-  if (src?.bonus?.length) carried.push("bonus actions");
-  if (src?.reactions?.length) carried.push("reactions");
-  if (src?.legendary) carried.push("legendary actions");
   if (otherActs.length) carried.push(otherActs.map((a) => a.n).join(", "));
+  if (src?.fl) carried.push("flavour text");
 
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>{editing ? "Edit monster" : mode === "clone" ? "Clone & tweak" : "Custom monster"}</h3>
-        <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={f.name} onChange={(e) => set("name", e.target.value)} autoFocus /></div>
+        <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={f.name} onChange={(e) => setName(e.target.value)} autoFocus /></div>
         <div className="grid2">
-          {!editing && (<>
-            <div className="frow"><label>Count</label><input type="number" value={f.count} min={1} max={20} onChange={(e) => set("count", e.target.value)} /></div>
-            <div className="frow"><label>Side</label>
-              <select value={f.side} onChange={(e) => set("side", e.target.value)}>
-                <option value="enemy">Enemy</option><option value="ally">Ally / NPC</option>
-              </select></div>
-          </>)}
-          <div className="frow"><label>AC</label><input type="number" value={f.ac} onChange={(e) => set("ac", e.target.value)} /></div>
-          <div className="frow"><label>HP</label><input type="number" value={f.hp} onChange={(e) => set("hp", e.target.value)} /></div>
-          <div className="frow"><label title="Used by encounter balancing and XP math">CR</label>
+          <div className="frow"><label title="Drives encounter balancing and XP math — and the starting numbers below">CR</label>
             <select value={f.cr} onChange={(e) => set("cr", e.target.value)}>
               <option value="">—</option>
               {CR_LABELS.map((l) => (<option key={l} value={l}>{l}</option>))}
             </select></div>
-          <div className="frow"><label title="How many attack rolls it gets per turn (Multiattack)">Attacks/turn</label><input type="number" min={1} max={6} value={f.atkN} onChange={(e) => set("atkN", e.target.value)} /></div>
+          <div className="frow"><label title="What shape of creature — bends the table numbers and names a first attack">Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              {CR_ROLES.map((r) => <option key={r.key} value={r.key}>{r.icon} {r.name}</option>)}
+            </select></div>
         </div>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Ability modifiers (drive saves & initiative)</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6, marginBottom: 6 }}>
-          {["str", "dex", "con", "int", "wis", "cha"].map((k) => (
-            <label key={k} style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", textAlign: "center", letterSpacing: ".06em" }}>
-              {k}
-              <input type="number" value={f[k]} onChange={(e) => set(k, e.target.value)} style={{ width: "100%", padding: "6px 2px", textAlign: "center", display: "block", marginTop: 2 }} />
-            </label>
+        {/* The balancer already owns this arithmetic. Handing it over up front turns "invent seven
+            numbers" into "pick two things, then tweak". */}
+        <button className="btn w100" style={{ width: "100%", textAlign: "left", margin: "2px 0 4px" }}
+          disabled={!chassis} title={chassis ? undefined : "Pick a CR first"} onClick={applyChassis}>
+          ⚙ Fill the numbers from {chassis ? `CR ${f.cr}` : "CR"}{chassis ? ` · ${(CR_ROLES.find((r) => r.key === role) || {}).name}` : ""}<br />
+          <span style={{ fontSize: 11, color: "var(--faint)" }}>
+            {chassis
+              ? `AC ${chassis.ac} · HP ${chassis.hp} · ${chassis.atkN} × ${fmtMod(chassis.hit)} to hit for ${chassis.dmg} ${chassis.dtype} · save DC ${chassis.dc}`
+              : "DMG monster-statistics table — pick a CR above and this fills AC, HP, attacks and abilities."}
+          </span>
+        </button>
+
+        {sect("def", "Defences", `AC ${num(f.ac, 10)} · HP ${Math.max(1, num(f.hp, 1))}`, (<>
+          <div className="grid2">
+            <div className="frow"><label>AC</label><input type="number" value={f.ac} onChange={(e) => set("ac", e.target.value)} /></div>
+            <div className="frow"><label>HP</label><input type="number" value={f.hp} onChange={(e) => set("hp", e.target.value)} /></div>
+          </div>
+          <div className="frow"><label title="Optional — lets this creature roll its HP like a bestiary monster">HP formula</label>
+            <input type="text" placeholder="8d8+16 (optional)" autoComplete="off" spellCheck={false} value={f.hpF} onChange={(e) => set("hpF", e.target.value)} />
+            {f.hpF.trim() && !hpFErr && <button className="btn small ghost" title="Set HP to this formula's average" onClick={() => set("hp", Math.max(1, Math.round(avgOfFormula(f.hpF.trim()))))}>avg {Math.round(avgOfFormula(f.hpF.trim()))}</button>}
+          </div>
+          {hpFErr && <div className="trait" style={{ color: "var(--danger)", fontSize: 11 }}>That HP formula won't roll — try something like 8d8+16.</div>}
+          <div className="frow" style={{ alignItems: "baseline", gap: 8 }}>
+            <span style={{ fontSize: 11, color: "var(--faint)" }}>Abilities</span>
+            <button className="btn tiny ghost" title="Statblocks print scores; the app rolls with modifiers. Switch whichever way you're reading from."
+              onClick={() => {
+                const next = abilMode === "score" ? "mod" : "score";
+                setAbil(Object.fromEntries(ABIL_KEYS.map((k) => [k, String(next === "mod" ? scoreToMod(num(abil[k], 10)) : modToScore(num(abil[k])))])));
+                setAbilMode(next);
+              }}>{abilMode === "score" ? "scores (18)" : "modifiers (+4)"} ⇄</button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6, marginBottom: 4 }}>
+            {ABIL_KEYS.map((k) => (
+              <label key={k} style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", textAlign: "center", letterSpacing: ".06em" }}>
+                {k}
+                <input type="number" value={abil[k]} onChange={(e) => setAbil({ ...abil, [k]: e.target.value })} style={{ width: "100%", padding: "6px 2px", textAlign: "center", display: "block", marginTop: 2 }} />
+                <span style={{ fontSize: 9, color: "var(--faint)" }}>{abilMode === "score" ? fmtMod(modOf(k)) : modToScore(num(abil[k]))}</span>
+              </label>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }}>Saving throws — blank means it just uses the ability</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 6, marginBottom: 4 }}>
+            {ABIL_KEYS.map((k) => (
+              <label key={k} style={{ fontSize: 10, color: "var(--faint)", textTransform: "uppercase", textAlign: "center", letterSpacing: ".06em" }}>
+                {k}
+                <input type="number" placeholder="—" value={saves[k]} onChange={(e) => setSaves({ ...saves, [k]: e.target.value })} style={{ width: "100%", padding: "6px 2px", textAlign: "center", display: "block", marginTop: 2 }} />
+              </label>
+            ))}
+          </div>
+          <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold…" value={f.resist} onChange={(e) => set("resist", e.target.value)} /></div>
+          <div className="frow"><label>Immunities</label><input type="text" placeholder="poison…" value={f.immune} onChange={(e) => set("immune", e.target.value)} /></div>
+          <div className="frow"><label>Vulnerabilities</label><input type="text" placeholder="bludgeoning…" value={f.vuln} onChange={(e) => set("vuln", e.target.value)} /></div>
+          <div className="frow"><label title="The app refuses to apply these conditions to it">Condition imm.</label><input type="text" placeholder="Charmed, Frightened…" value={f.condImmune} onChange={(e) => set("condImmune", e.target.value)} /></div>
+        </>))}
+
+        {sect("off", "Attacks & abilities", `${acts.filter((a) => a.n.trim()).length} attack${acts.filter((a) => a.n.trim()).length === 1 ? "" : "s"}${svActs.length ? ` · ${svActs.length} save` : ""}`, (<>
+          <div className="frow"><label title="How many attack rolls it gets per turn (Multiattack)">Attacks/turn</label><input type="number" min={1} max={6} value={f.atkN} onChange={(e) => setAtkN(e.target.value)} /></div>
+          {num(f.atkN, 1) > 1 && (
+            <div className="frow"><label title="What the card shows for Multiattack — edit it if the creature splits its attacks">Multiattack</label>
+              <input type="text" value={multiText} onChange={(e) => { setMultiText(e.target.value); setMultiTouched(true); }} /></div>
+          )}
+          {acts.map((a, i) => (
+            <div className="frow" key={i} style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+              <Capped cap="attack" width="100%">
+                <input type="text" placeholder="Claw" autoComplete="off" spellCheck={false} style={{ width: "100%" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
+              </Capped>
+              <Capped cap="to hit" width={70}>
+                <input type="number" style={{ width: "100%" }} value={a.hit} onChange={(e) => setAct(i, "hit", e.target.value)} />
+              </Capped>
+              <Capped cap={dmgBad(a.dmg) ? "damage ⚠" : `damage${dmgAvg(a.dmg) != null ? ` · avg ${Math.round(dmgAvg(a.dmg))}` : ""}`} width={100}>
+                <input type="text" placeholder="2d6+3" autoComplete="off" spellCheck={false}
+                  style={{ width: "100%", borderColor: dmgBad(a.dmg) ? "var(--danger)" : undefined }}
+                  value={a.dmg} onChange={(e) => setAct(i, "dmg", e.target.value)} />
+              </Capped>
+              <Capped cap="type">
+                <select style={{ width: "100%" }} value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
+                  {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                </select>
+              </Capped>
+              <button className="btn small ghost" title="Remove attack" onClick={() => setActs(acts.filter((_, j) => j !== i))}>✕</button>
+            </div>
           ))}
-        </div>
-        <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold…" value={f.resist} onChange={(e) => set("resist", e.target.value)} /></div>
-        <div className="frow"><label>Immunities</label><input type="text" placeholder="poison…" value={f.immune} onChange={(e) => set("immune", e.target.value)} /></div>
-        <div className="frow"><label>Vulnerabilities</label><input type="text" placeholder="bludgeoning…" value={f.vuln} onChange={(e) => set("vuln", e.target.value)} /></div>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Attacks (optional)</div>
-        {acts.map((a, i) => (
-          <div className="frow" key={i}>
-            <input type="text" placeholder="Name" autoComplete="off" autoCorrect="off" spellCheck={false} style={{ width: 110, flex: "none" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
-            <input type="number" placeholder="+hit" value={a.hit} onChange={(e) => setAct(i, "hit", e.target.value)} />
-            <input type="text" placeholder="2d6+3" style={{ width: 80, flex: "none" }} value={a.dmg} onChange={(e) => setAct(i, "dmg", e.target.value)} />
-            <select value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
-              {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-            </select>
-            <button className="btn small ghost" title="Remove attack" onClick={() => setActs(acts.filter((_, j) => j !== i))}>✕</button>
+          <button className="btn small ghost" onClick={() => setActs([...acts, { n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }])}>+ another attack</button>
+          {unnamedAtk && <div className="trait" style={{ color: "var(--gold)", fontSize: 11 }}>An attack with no name is dropped — give it one and it'll be on the card.</div>}
+          <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Save abilities — breath weapons, auras, stings</div>
+          {svActs.map((r, i) => (
+            <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
+              <div className="frow">
+                <input type="text" placeholder="Name (e.g. Fire Breath)" autoComplete="off" autoCorrect="off" spellCheck={false} style={{ flex: 1 }} value={r.n} onChange={(e) => setSv(i, "n", e.target.value)} />
+                <button className="btn small ghost" title="Remove ability" onClick={() => setSvActs(svActs.filter((_, j) => j !== i))}>✕</button>
+              </div>
+              <div className="frow" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+                <Capped cap="DC" width={58}><input type="number" style={{ width: "100%" }} value={r.dc} onChange={(e) => setSv(i, "dc", e.target.value)} /></Capped>
+                <Capped cap="save" width={78}>
+                  <select style={{ width: "100%" }} value={r.ability} onChange={(e) => setSv(i, "ability", e.target.value)}>
+                    {ABILS.map((a2) => (<option key={a2}>{a2}</option>))}
+                  </select>
+                </Capped>
+                <Capped cap={dmgBad(r.dmg) ? "damage ⚠" : `damage${dmgAvg(r.dmg) != null ? ` · avg ${Math.round(dmgAvg(r.dmg))}` : ""}`} width={92}>
+                  <input type="text" placeholder="4d6 (blank = none)" autoComplete="off" spellCheck={false}
+                    style={{ width: "100%", borderColor: dmgBad(r.dmg) ? "var(--danger)" : undefined }}
+                    value={r.dmg} onChange={(e) => setSv(i, "dmg", e.target.value)} />
+                </Capped>
+                <Capped cap="type">
+                  <select style={{ width: "100%" }} value={r.dtype} onChange={(e) => setSv(i, "dtype", e.target.value)}>
+                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                  </select>
+                </Capped>
+              </div>
+              <div className="frow" style={{ flexWrap: "wrap" }}>
+                <select value={r.cond} onChange={(e) => setSv(i, "cond", e.target.value)}>
+                  <option value="">no condition on fail</option>
+                  {Object.keys(CONDITIONS).map((cn) => (<option key={cn} value={cn}>{cn} on fail</option>))}
+                </select>
+                <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.half} onChange={(e) => setSv(i, "half", e.target.checked)} /> half on save</label>
+                <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.rech} onChange={(e) => setSv(i, "rech", e.target.checked)} /> recharge 5–6</label>
+              </div>
+            </div>
+          ))}
+          <button className="btn small ghost" onClick={() => setSvActs([...svActs, { n: "", ability: "DEX", dc: chassis ? chassis.dc : 13, dmg: "", dtype: "fire", half: true, cond: "", rech: false }])}>+ save ability</button>
+        </>))}
+
+        {sect("traits", "Traits", traits.length ? `${traits.length}` : "Pack Tactics, Regeneration…", (<>
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>
+            Named the way the books name them, several run themselves — Regeneration heals at turn start, Magic Resistance and Pack Tactics grant advantage.
+          </div>
+          <ProseRows rows={traits} onChange={setTraits} what="trait" placeholder="What it does, in the statblock's words." />
+        </>))}
+
+        {sect("more", "Bonus actions, reactions, legendary", [bonus.length && `${bonus.length} bonus`, reactions.length && `${reactions.length} reaction`, legOpts.length && `${legOpts.length} legendary`].filter(Boolean).join(" · ") || "optional", (<>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 4px" }}>Bonus actions</div>
+          <ProseRows rows={bonus} onChange={setBonus} what="bonus action" placeholder="e.g. Misty Step (3/Day)." />
+          <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Reactions</div>
+          <ProseRows rows={reactions} onChange={setReactions} what="reaction" placeholder="Trigger, then response." />
+          <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Legendary actions</div>
+          <div className="grid2">
+            <div className="frow"><label>Per round</label><input type="number" min={1} max={5} value={f.legCount} onChange={(e) => set("legCount", e.target.value)} /></div>
+            <div className="frow"><label title="Legendary Resistance uses per day — shown as pips on the card">Leg. resist</label><input type="number" placeholder="—" value={f.legRes} onChange={(e) => set("legRes", e.target.value)} /></div>
+          </div>
+          <ProseRows rows={legOpts} onChange={setLegOpts} what="legendary action" placeholder="Costs 1 action unless it says otherwise." />
+        </>))}
+
+        {sect("flav", "Speed, senses, languages", [f.spd, f.senses, f.langs].filter(Boolean).join(" · ") || "optional", (<>
+          <div className="frow"><label>Speed</label><input type="text" placeholder="30 ft." value={f.spd} onChange={(e) => set("spd", e.target.value)} /></div>
+          <div className="frow"><label>Senses</label><input type="text" placeholder="Darkvision 60 ft." value={f.senses} onChange={(e) => set("senses", e.target.value)} /></div>
+          <div className="frow"><label>Languages</label><input type="text" placeholder="Common, Goblin" value={f.langs} onChange={(e) => set("langs", e.target.value)} /></div>
+        </>))}
+
+        {sect("prev", "Preview the statblock", "as the card and bestiary will show it", (
+          <div style={{ border: "1px solid var(--line2)", borderRadius: 10, padding: "8px 10px", marginTop: 4 }}>
+            <h3 style={{ margin: "0 0 4px" }}>{f.name.trim() || "Unnamed"} <span style={{ color: "var(--faint)", fontSize: 11 }}>{f.cr ? `CR ${f.cr}` : ""}</span></h3>
+            <StatblockBody sb={buildSb()} />
           </div>
         ))}
-        <button className="btn small ghost" onClick={() => setActs([...acts, { n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }])}>+ another attack</button>
-        <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Save abilities — breath weapons, auras, stings (optional)</div>
-        {svActs.map((r, i) => (
-          <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
-            <div className="frow">
-              <input type="text" placeholder="Name (e.g. Fire Breath)" autoComplete="off" autoCorrect="off" spellCheck={false} style={{ flex: 1 }} value={r.n} onChange={(e) => setSv(i, "n", e.target.value)} />
-              <button className="btn small ghost" title="Remove ability" onClick={() => setSvActs(svActs.filter((_, j) => j !== i))}>✕</button>
-            </div>
-            <div className="frow" style={{ flexWrap: "wrap" }}>
-              <label style={{ minWidth: 0 }}>DC</label>
-              <input type="number" value={r.dc} onChange={(e) => setSv(i, "dc", e.target.value)} />
-              <select value={r.ability} onChange={(e) => setSv(i, "ability", e.target.value)}>
-                {ABILS.map((a2) => (<option key={a2}>{a2}</option>))}
-              </select>
-              <input type="text" placeholder="4d6 (blank = none)" style={{ width: 92, flex: "none" }} value={r.dmg} onChange={(e) => setSv(i, "dmg", e.target.value)} />
-              <select value={r.dtype} onChange={(e) => setSv(i, "dtype", e.target.value)}>
-                {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-              </select>
-            </div>
-            <div className="frow" style={{ flexWrap: "wrap" }}>
-              <select value={r.cond} onChange={(e) => setSv(i, "cond", e.target.value)}>
-                <option value="">no condition on fail</option>
-                {Object.keys(CONDITIONS).map((cn) => (<option key={cn} value={cn}>{cn} on fail</option>))}
-              </select>
-              <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.half} onChange={(e) => setSv(i, "half", e.target.checked)} /> half on save</label>
-              <label style={{ minWidth: 0 }}><input type="checkbox" checked={r.rech} onChange={(e) => setSv(i, "rech", e.target.checked)} /> recharge 5–6</label>
-            </div>
-          </div>
-        ))}
-        <button className="btn small ghost" onClick={() => setSvActs([...svActs, { n: "", ability: "DEX", dc: 13, dmg: "", dtype: "fire", half: true, cond: "", rech: false }])}>+ save ability</button>
+
         {carried.length > 0 && (
           <div className="trait" style={{ marginTop: 8, color: "var(--faint)", fontSize: 11 }}>
             Carried over unchanged: {carried.join(" · ")}.
           </div>
         )}
+
+        {/* Count, side and notes are about tonight's encounter, not about the creature — so they sit
+            with the button that acts on them rather than above its stats. */}
         {!editing && (<>
-          <div className="frow" style={{ marginTop: 6 }}><label>Notes</label><input type="text" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></div>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>This encounter</div>
+          <div className="grid2">
+            <div className="frow"><label>Count</label><input type="number" value={f.count} min={1} max={20} onChange={(e) => set("count", e.target.value)} /></div>
+            <div className="frow"><label>Side</label>
+              <select value={f.side} onChange={(e) => set("side", e.target.value)}>
+                <option value="enemy">Enemy</option><option value="ally">Ally</option><option value="neutral">Neutral</option>
+              </select></div>
+          </div>
+          <div className="frow"><label>Notes</label><input type="text" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></div>
+          {f.hpF.trim() && !hpFErr && (
+            <div className="frow"><label style={{ minWidth: 0 }}><input type="checkbox" checked={rollHp} onChange={(e) => setRollHp(e.target.checked)} /> Roll HP from {f.hpF.trim()} for each one</label></div>
+          )}
           <div className="frow"><label style={{ minWidth: 0 }}><input type="checkbox" checked={saveToo} onChange={(e) => setSaveToo(e.target.checked)} /> Save to my bestiary</label></div>
+          {clash && <div className="trait" style={{ color: "var(--gold)", fontSize: 11 }}>⚠ Your bestiary already has a "{f.name.trim()}" — saving will replace it.</div>}
         </>)}
+        {editing && clash && <div className="trait" style={{ color: "var(--gold)", fontSize: 11 }}>⚠ Another entry is already called "{f.name.trim()}".</div>}
+        {atkErrs && <div className="trait" style={{ color: "var(--danger)", fontSize: 11 }}>Fix the damage marked ⚠ first — the dice roller can't read it, so the attack would hit for nothing.</div>}
         <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
           <button className="btn" onClick={onClose}>Cancel</button>
           {editing
-            ? <button className="btn primary" disabled={!f.name.trim()} onClick={() => onSaveEdit(buildSb())}>Save changes</button>
-            : <button className="btn primary" disabled={!f.name.trim()} onClick={() => onAdd(buildSb(), num(f.count, 1), f.side, f.notes, saveToo)}>Add</button>}
+            ? <button className="btn primary" disabled={blocked} onClick={() => onSaveEdit(buildSb())}>Save changes</button>
+            : <button className="btn primary" disabled={blocked} onClick={() => onAdd(buildSb(), num(f.count, 1), f.side, f.notes, saveToo, rollHp)}>Add</button>}
         </div>
       </div>
     </div>
@@ -4981,13 +5253,12 @@ function FlavorText({ text }) {
   );
 }
 
-function StatblockView({ sb, count, rollHp, onAdd, onClone, onSaveAsNpc, onBack }) {
+/* The statblock body on its own, so the custom-monster form can preview exactly what the browser
+   shows — same renderer, no second opinion about how a homebrew creature will read. */
+function StatblockBody({ sb }) {
   const mods = sb.mods || {};
   return (
-    <div>
-      <div className="frow"><button className="btn small ghost" onClick={onBack}>← Back to list</button></div>
-      <h3 style={{ marginTop: 6 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · Tome of Beasts" : ""}</span></h3>
-      {sb.fl && <FlavorText text={sb.fl} />}
+    <>
       <div className="statline">
         <b>AC</b> {sb.ac} · <b>HP</b> {sb.hp}{sb.hpF ? ` (${sb.hpF})` : ""} · <b>Speed</b> {sb.spd || "30 ft."}
         {sb.senses ? <> · <b>Senses</b> {sb.senses}</> : null}
@@ -5017,6 +5288,17 @@ function StatblockView({ sb, count, rollHp, onAdd, onClone, onSaveAsNpc, onBack 
       {sb.bonus?.length ? (<div className="sect"><div className="lbl">Bonus Actions</div>{sb.bonus.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       {sb.reactions?.length ? (<div className="sect"><div className="lbl">Reactions</div>{sb.reactions.map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
       {sb.legendary ? (<div className="sect"><div className="lbl">Legendary Actions ({sb.legendary.count}/round)</div>{(sb.legendary.options || []).map((t, i) => (<div className="trait" key={i}><b>{t.n}.</b> {t.d}</div>))}</div>) : null}
+    </>
+  );
+}
+
+function StatblockView({ sb, count, rollHp, onAdd, onClone, onSaveAsNpc, onBack }) {
+  return (
+    <div>
+      <div className="frow"><button className="btn small ghost" onClick={onBack}>← Back to list</button></div>
+      <h3 style={{ marginTop: 6 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · Tome of Beasts" : ""}</span></h3>
+      {sb.fl && <FlavorText text={sb.fl} />}
+      <StatblockBody sb={sb} />
       <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
         <button className="btn" onClick={onBack}>← Back</button>
         {onSaveAsNpc && <button className="btn" title="Save as an NPC in your DM Notebook — keeps this full statblock for later" onClick={() => onSaveAsNpc(sb)}>👤 Save as NPC</button>}
@@ -12327,9 +12609,16 @@ export default function App() {
       L.push(`Added <b>${m.name}</b>${hp != null ? ` — HP ${m.maxHp} [${sb.hpF}]` : ""}`);
     }
   });
-  const addCustom = (sb, count, side, notes, saveToo) => {
+  const addCustom = (sb, count, side, notes, saveToo, rollHp) => {
     mutate((d, L) => {
-      for (let i = 0; i < count; i++) { const m = makeMonster(sb, d, { side, notes }); d.combatants.push(m); L.push(`Added <b>${m.name}</b>`); }
+      for (let i = 0; i < count; i++) {
+        // a homebrew creature with an HP formula rolls it like a bestiary one, per copy
+        let hp;
+        if (rollHp && sb.hpF) { const r = rollFormula(sb.hpF); if (r) hp = Math.max(1, r.total); }
+        const m = makeMonster(sb, d, hp != null ? { side, notes, hp } : { side, notes });
+        d.combatants.push(m);
+        L.push(`Added <b>${m.name}</b>${hp != null ? ` — HP ${m.maxHp} [${sb.hpF}]` : ""}`);
+      }
     });
     if (saveToo) { upsertBestiary([sb]); pushToasts([{ kind: "good", text: `"${sb.name}" saved to your bestiary.` }]); }
   };
@@ -13673,7 +13962,8 @@ export default function App() {
       {modal?.type === "custom" && <CustomMonsterForm
         initial={modal.edit || modal.from || null}
         mode={modal.edit ? "edit" : modal.from ? "clone" : "create"}
-        onAdd={(sb, count, side, notes, saveToo) => { addCustom(sb, count, side, notes, saveToo); setModal(null); }}
+        existingNames={myBestiary.filter((x) => !modal.edit || x.name !== modal.edit.name).map((x) => x.name)}
+        onAdd={(sb, count, side, notes, saveToo, rollHp) => { addCustom(sb, count, side, notes, saveToo, rollHp); setModal(null); }}
         onSaveEdit={(sb) => { saveEditedMonster(sb, modal.edit.name); setModal({ type: "bestiary" }); }}
         onClose={() => setModal(modal.edit || modal.from ? { type: "bestiary" } : null)} />}
       {modal?.type === "bestiary" && (
