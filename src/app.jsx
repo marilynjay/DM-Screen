@@ -430,6 +430,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rivchip.res{color:var(--ok);border-color:var(--ok)}
 .rivchip.imm{color:var(--gold);border-color:var(--gold);background:var(--gold-soft)}
 .rivchip.vul{color:var(--danger);border-color:var(--danger)}
+.rivchip.auto{color:var(--gold);border-color:var(--gold);background:var(--gold-soft)}
 .rivchip .rivmark{font-family:var(--mono);margin-left:4px}
 .rivkeep{font-size:11px;color:var(--faint);display:flex;flex-wrap:wrap;gap:5px;align-items:baseline;margin-bottom:6px}
 /* the dice picker in the monster builder: count · die faces · flat bonus, with a formula readout */
@@ -4871,6 +4872,38 @@ function parseSpellcasting(sb) {
     atk: (d.match(/([+-]\d+) to hit with spell attacks/i) || [])[1] || "",
   };
 }
+/* A shelf of traits in the books' own words, because the wording is not decoration — four of these
+   are read back by the engine, and a paraphrase would quietly turn the automation off. {n} becomes
+   the creature's name on the way in, the way a statblock writes it. `auto` marks the ones the app
+   actually runs; everything else is reference text on the card. */
+const TRAIT_LIBRARY = [
+  { n: "Magic Resistance", auto: "Advantage on saves against spells", d: "The {n} has Advantage on saving throws against spells and other magical effects." },
+  { n: "Regeneration", auto: "heals at the start of its turn", d: "The {n} regains 10 Hit Points at the start of each of its turns if it has at least 1 Hit Point. If the {n} takes Acid or Fire damage, this trait doesn't function on the {n}'s next turn." },
+  { n: "Legendary Resistance", auto: "pips on the card — set the count below", d: "If the {n} fails a saving throw, it can choose to succeed instead." },
+  { n: "Aura of Authority", auto: "Advantage on its attacks and saves", d: "While in a 10-foot Emanation originating from the {n}, the {n} and its allies have Advantage on attack rolls and saving throws, provided the {n} doesn't have the Incapacitated condition." },
+  { n: "Bloodied Frenzy", auto: "Advantage once it is Bloodied", d: "While Bloodied, the {n} has Advantage on attack rolls and saving throws." },
+  { n: "Pack Tactics", d: "The {n} has Advantage on an attack roll against a creature if at least one of the {n}'s allies is within 5 feet of the creature and the ally doesn't have the Incapacitated condition." },
+  { n: "Blood Frenzy", d: "The {n} has Advantage on attack rolls against any creature that doesn't have all its Hit Points." },
+  { n: "Sunlight Sensitivity", d: "While in sunlight, the {n} has Disadvantage on ability checks and attack rolls." },
+  { n: "Amphibious", d: "The {n} can breathe air and water." },
+  { n: "Water Breathing", d: "The {n} can breathe only underwater." },
+  { n: "Hold Breath", d: "The {n} can hold its breath for 1 hour." },
+  { n: "Spider Climb", d: "The {n} can climb difficult surfaces, including along ceilings, without needing to make an ability check." },
+  { n: "Web Walker", d: "The {n} ignores movement restrictions caused by webs, and the {n} knows the location of any other creature in contact with the same web." },
+  { n: "Ice Walk", d: "The {n} can move across and climb icy surfaces without needing to make an ability check. Additionally, Difficult Terrain composed of ice or snow doesn't cost it extra movement." },
+  { n: "Flyby", d: "The {n} doesn't provoke an Opportunity Attack when it flies out of an enemy's reach." },
+  { n: "Agile", d: "The {n} doesn't provoke an Opportunity Attack when it moves out of an enemy's reach." },
+  { n: "Standing Leap", d: "The {n}'s Long Jump is up to 10 feet and its High Jump is up to 5 feet with or without a running start." },
+  { n: "Amorphous", d: "The {n} can move through a space as narrow as 1 inch without expending extra movement to do so." },
+  { n: "Incorporeal Movement", d: "The {n} can move through other creatures and objects as if they were Difficult Terrain. It takes 5 (1d10) Force damage if it ends its turn inside an object." },
+  { n: "Immutable Form", d: "The {n} can't shape-shift." },
+  { n: "Siege Monster", d: "The {n} deals double damage to objects and structures." },
+  { n: "Illumination", d: "The {n} sheds Bright Light in a 10-foot radius and Dim Light for an additional 10 feet." },
+  { n: "Swarm", d: "The swarm can occupy another creature's space and vice versa, and the swarm can move through any opening large enough for a Tiny creature. The swarm can't regain Hit Points or gain Temporary Hit Points." },
+  { n: "Fire Aura", d: "At the end of each of the {n}'s turns, each creature in a 5-foot Emanation originating from the {n} takes 13 (3d8) Fire damage." },
+  { n: "Death Burst", d: "The {n} explodes when it dies. Dexterity Saving Throw: DC 13, each creature in a 5-foot Emanation originating from the {n}. Failure: 7 (2d6) Fire damage. Success: Half damage." },
+  { n: "Undead Fortitude", d: "If damage reduces the {n} to 0 Hit Points, it makes a Constitution saving throw (DC 5 plus the damage taken) unless the damage is Radiant or from a Critical Hit. On a success, the {n} drops to 1 Hit Point instead." },
+];
 const DIE_PICKS = [4, 6, 8, 10, 12, 20];
 /* A damage box used to be a text field you had to spell "2d6+3" into. These split it: how many dice,
    which die, and the flat bonus that gets added on — the three things a statblock actually prints. */
@@ -5098,6 +5131,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   const [spAtk, setSpAtk] = useState(spInit?.atk || "");
   const [spells, setSpells] = useState(spInit?.picked || []);
   const [spellQ, setSpellQ] = useState("");
+  const [traitQ, setTraitQ] = useState("");
   const [multiText, setMultiText] = useState(src?.multi || "");
   const [multiTouched, setMultiTouched] = useState(!!src?.multi);
   const [saveToo, setSaveToo] = useState(true);
@@ -5433,9 +5467,32 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
           )}
         </>))}
 
-        {sect("traits", "Traits", traits.length ? `${traits.length}` : "Pack Tactics, Regeneration…", (<>
+        {sect("traits", "Traits", traits.length ? traits.filter((t) => t.n.trim()).map((t) => t.n).join(", ") || `${traits.length}` : "Pack Tactics, Regeneration…", (<>
           <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>
-            Named the way the books name them, several run themselves — Regeneration heals at turn start, Magic Resistance and Pack Tactics grant advantage.
+            Pick one off the shelf in the book's own words, or write your own below. The ⚙ ones the app
+            actually runs — the rest are reference text on the card.
+          </div>
+          <div className="frow"><label>Find a trait</label>
+            <input type="text" placeholder="regeneration…" autoComplete="off" spellCheck={false} value={traitQ} onChange={(e) => setTraitQ(e.target.value)} /></div>
+          <div className="rivgrid">
+            {TRAIT_LIBRARY
+              .filter((t) => !traits.some((r) => r.n.trim().toLowerCase() === t.n.toLowerCase()))
+              .filter((t) => { const q = traitQ.trim().toLowerCase(); return !q || t.n.toLowerCase().includes(q) || t.d.toLowerCase().includes(q); })
+              .map((t) => (
+                <button key={t.n} className={`rivchip ${t.auto ? "auto" : ""}`} title={t.auto ? `The app runs this: ${t.auto}` : t.d}
+                  onClick={() => {
+                    const who = f.name.trim().toLowerCase() || "creature";
+                    setTraits([...traits, { n: t.n, d: t.d.replace(/\{n\}/g, who) }]);
+                    // Legendary Resistance is pips on the card, and pips need a number to count down
+                    if (t.n === "Legendary Resistance" && !String(f.legRes).trim()) set("legRes", 3);
+                    setTraitQ("");
+                  }}>
+                  {t.auto ? "⚙ " : "+ "}{t.n}
+                </button>
+              ))}
+            {traitQ.trim() && !TRAIT_LIBRARY.some((t) => t.n.toLowerCase().includes(traitQ.trim().toLowerCase()) || t.d.toLowerCase().includes(traitQ.trim().toLowerCase())) && (
+              <span style={{ fontSize: 11, color: "var(--faint)" }}>Nothing on the shelf matches — write it yourself below.</span>
+            )}
           </div>
           <ProseRows rows={traits} onChange={setTraits} what="trait" placeholder="What it does, in the statblock's words." />
         </>))}
