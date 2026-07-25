@@ -861,6 +861,12 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .toastwrap{position:fixed;top:calc(56px + env(safe-area-inset-top,0px));right:14px;z-index:90;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--raised);border:1px solid var(--gold);border-radius:8px;padding:10px 14px;
   font-size:13px;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+/* Storage is full / refusing writes. Deliberately loud and un-dismissable: it clears itself
+   the moment a write succeeds, and until then everything the DM does is being thrown away.
+   Sits above the sticky header (z 40) but below the dialog overlay (z 80) — a warning that
+   floats over an open dialog would swallow the taps meant for it. */
+.savefail{position:sticky;top:0;z-index:45;margin:0 4px 6px;padding:8px 12px;font-size:12.5px;line-height:1.45;
+  border:1px solid var(--danger);border-radius:8px;background:rgba(150,40,40,.22);color:var(--text)}
 .toast.bad{border-color:var(--danger)}
 .toast.good{border-color:var(--ok)}
 .hdr-wide{display:flex;align-items:center;gap:8px}
@@ -998,9 +1004,28 @@ function condAdvVs(c) {
 }
 const isBloodied = (c) => c.hp != null && c.maxHp > 0 && !c.dead && c.hp <= Math.floor(c.maxHp / 2);
 
-/* ---------------- storage ---------------- */
+/* ---------------- storage ----------------
+   Everything lives in one browser store (localStorage behind the shim in index.html),
+   which is capped at roughly 5MB. A write that busts the cap throws, and this used to
+   swallow the exception — so the app kept running, kept looking fine, and quietly
+   stopped saving. A DM would lose the whole session and only find out next time they
+   opened it. Writes now report whether they landed, and the app shows a banner that
+   does not go away until a save succeeds. */
 const hasStorage = () => typeof window !== "undefined" && !!window.storage;
-async function stSet(k, v) { try { if (hasStorage()) await window.storage.set(k, JSON.stringify(v)); } catch (e) {} }
+let storeFailCb = null;
+const onStoreTrouble = (fn) => { storeFailCb = fn; };
+const isQuotaErr = (e) => !!e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || /quota/i.test(String(e.message || e)));
+async function stSet(k, v) {
+  if (!hasStorage()) return false;
+  try {
+    await window.storage.set(k, JSON.stringify(v));
+    if (storeFailCb) storeFailCb(null); // a write got through — clear any standing warning
+    return true;
+  } catch (e) {
+    if (storeFailCb) storeFailCb({ key: k, quota: isQuotaErr(e), msg: String((e && e.message) || e) });
+    return false;
+  }
+}
 async function stGet(k) {
   try { if (!hasStorage()) return null; const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; }
   catch (e) { return null; }
@@ -11596,6 +11621,10 @@ export default function App() {
   const [moreMenu, setMoreMenu] = useState(false);
   const [mainMore, setMainMore] = useState(false); // the settings-shaped tail of ⋯, expanded in place
   const [restoreBanner, setRestoreBanner] = useState(null);
+  /* A failed write is the one error a DM must not miss — the app keeps working and
+     silently stops persisting. The banner stays up until some later write succeeds. */
+  const [storeTrouble, setStoreTrouble] = useState(null);
+  useEffect(() => { onStoreTrouble((info) => setStoreTrouble((prev) => (info ? info : (prev ? null : prev)))); return () => onStoreTrouble(null); }, []);
   const [myBestiary, setMyBestiary] = useState([]);
   const [myItems, setMyItems] = useState([]);
   const [animSpeed, setAnimSpeedState] = useState("fast"); // most DMs want the result, not the show
@@ -14234,6 +14263,14 @@ export default function App() {
     <div className="dm-app" style={{ paddingBottom: botPad }}>
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
+      {storeTrouble && (
+        <div className="savefail" role="alert">
+          <b>⚠ Not saving.</b>{" "}
+          {storeTrouble.quota
+            ? "This browser's storage is full, so nothing you do from here is being kept. Back up now (⋯ › Saved & groups › Backup everything), then free space by deleting old encounters, dungeons or NPC photos."
+            : `The browser refused to save (${storeTrouble.msg}). Back up now — ⋯ › Saved & groups › Backup everything.`}
+        </div>
+      )}
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} fxs={rowFxs} api={api} />
       {screenFx && <ScreenFx key={screenFx.id} kind={screenFx.kind} color={screenFx.color} />}
       {victory && (
