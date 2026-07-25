@@ -5815,7 +5815,7 @@ function PartySetupCard({ parties, onPick, onAdd, onSave, onDeleteParty, demo })
    new HP, roster changes, team names, whole new tables. Never touches whoever
    is currently in the fight. Edits are local until Save; empty parties (no
    named members) are discarded on save. */
-function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onClose, screenMemberIds, onApply }) {
+function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onLoad, onClose, screenMemberIds, onApply }) {
   const toDraft = (p) => ({ id: p.id, teamName: p.name ?? "", level: p.level ?? "", rows: partyRowsFrom(p) });
   const newDraft = () => ({ id: newUid(), teamName: "", level: "", rows: partyRowsFrom(null) });
   const [st, setSt] = useState(() => {
@@ -5845,11 +5845,17 @@ function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onClose, 
   // how many members being edited are the same players currently on screen (linked by row id)
   const liveSet = new Set(screenMemberIds || []);
   const liveCount = st.list.reduce((n, p) => n + p.rows.filter((r) => r.id && liveSet.has(r.id)).length, 0);
-  const save = () => {
+  // Turn the drafts into stored parties and persist them. Load goes through this first, so what lands
+  // on the board is what is saved — half-typed edits are committed rather than silently diverging.
+  const commit = () => {
     const clean = st.list
       .map((x) => ({ id: x.id, ...partyRosterOf(x.teamName, x.level, x.rows) }))
       .filter((p) => p.members.length);
     onSaveAll(clean, clean.some((p) => p.id === st.sel) ? st.sel : (clean[0]?.id ?? null));  // clean comes from the draft list, so a deleted party can't come back
+    return clean;
+  };
+  const save = () => {
+    const clean = commit();
     if (applyLive && liveCount && onApply) onApply(clean); // onApply owns the modal transition (heal prompt or close)
     else onClose();
   };
@@ -5872,6 +5878,22 @@ function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onClose, 
         ) : (
           <div className="trait" style={{ margin: "8px 0" }}>Changes apply the next time a party is added to the screen — players already in the fight aren't modified. Only names are required; a party with no named members is discarded when you save.</div>
         )}
+        {/* The way back from an accidental Clear. The party card carries a Load list, but it only shows
+            outside combat and only while no player is on the board — so mid-fight, or after losing one
+            of four, there was no route back to a saved party at all. This dialogue is always reachable. */}
+        {(() => {
+          const going = d.rows.filter((r) => r.here && r.name.trim());
+          if (!going.length) return null;
+          return (
+            <div className="frow" style={{ marginBottom: 6 }}>
+              <button className="btn small ok" style={{ width: "100%", textAlign: "left" }}
+                title={`Put ${going.map((r) => r.name.trim()).join(", ")} on the encounter board`}
+                onClick={() => { const clean = commit(); onLoad(clean.find((p) => p.id === st.sel) || null); }}>
+                ▶ Load {curLabel || "this party"} onto the board ({going.length})
+              </button>
+            </div>
+          );
+        })()}
         <div className="frow">
           <button className="btn small danger" onClick={() => setConfirmDel(true)}>Delete this party</button>
           <span style={{ flex: 1 }} />
@@ -12375,17 +12397,31 @@ export default function App() {
     return true;
   };
 
+  /* A party can now be loaded with people already standing on the board (⋯ ▸ Edit parties ▸ Load, the
+     way back from an accidental Clear), so anyone whose stored member is already there is skipped
+     rather than minted a second time. Counted up front: mutate's updater runs later, so the tally has
+     to be worked out before it, not inside. */
   const addPartyNow = (members, level) => {
-    if (!members.length) return;
+    if (!members.length) return 0;
+    const standing = new Set(stateRef.current.combatants.filter((c) => c.type === "player" && c.memberId).map((c) => c.memberId));
+    const fresh = members.filter((m) => !m.id || !standing.has(m.id));
+    const skipped = members.length - fresh.length;
+    if (!fresh.length) {
+      pushToasts([{ kind: "bad", text: members.length === 1 ? "They're already on the board." : "They're all already on the board." }]);
+      return 0;
+    }
     mutate((d, L) => {
-      members.forEach((m) => {
+      fresh.forEach((m) => {
         const p = makePlayer({ name: m.name, init: "", ac: m.ac !== "" && m.ac != null ? parseInt(m.ac, 10) : null, hp: m.hp !== "" && m.hp != null ? m.hp : null, pp: m.pp !== "" && m.pp != null ? m.pp : null, pi: m.pi !== "" && m.pi != null ? m.pi : null, spells: m.spells, memberId: m.id, spellDC: m.spellDC, mods: memberMods(m), loot: m.loot });
         d.combatants.push(p);
       });
-      L.push(`Party assembled: ${members.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}`);
+      L.push(`Party assembled: ${fresh.map((m) => `<b>${m.name}</b>`).join(", ")}${level ? ` (level ${level})` : ""}${skipped ? ` — ${skipped} already on the board` : ""}`);
     });
+    if (skipped) pushToasts([{ kind: "good", text: `Added ${fresh.length}; ${skipped} ${skipped === 1 ? "was" : "were"} already there.` }]);
     // prefill the encounter balancer with tonight's headcount (and level when known)
-    setParty((pp) => { const np = { ...pp, size: members.length, ...(level ? { level } : {}) }; stSet("dm5e:party", np); return np; });
+    const headcount = standing.size + fresh.length;
+    setParty((pp) => { const np = { ...pp, size: headcount, ...(level ? { level } : {}) }; stSet("dm5e:party", np); return np; });
+    return fresh.length;
   };
 
   const applyBalance = (items) => {
@@ -13933,6 +13969,14 @@ export default function App() {
       )}
       {modal?.type === "party-edit" && (
         <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll} onDeleteParty={deleteParty}
+          onLoad={(p) => {
+            if (!p) return;
+            pickParty(p.id);
+            const n = addPartyNow((p.members || []).filter((m) => m.here), p.level ?? null);
+            setModal(null);
+            // mid-fight arrivals have no initiative yet — say so rather than let them sit at the bottom unnoticed
+            if (n && state.mode === "combat") pushToasts([{ kind: "good", text: `${n === 1 ? "They need" : "They need"} an initiative — tap the ⋮ row menu ▸ Set initiative.` }]);
+          }}
           screenMemberIds={state.combatants.filter((c) => c.type === "player" && c.memberId && !c.dead).map((c) => c.memberId)}
           onApply={applyPartyEditsToScreen} onClose={() => setModal(null)} />
       )}
