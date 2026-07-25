@@ -574,6 +574,19 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .look-species{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .look-species label{font-size:13px;font-weight:700;color:var(--gold);letter-spacing:.03em}
 .look-species select{flex:1;font-size:15px;padding:8px 10px;border-color:var(--gold-soft)}
+/* ♂ / ♀ / 🚫 — big enough to hit on a phone, and coloured only once chosen so the row reads as
+   "nothing recorded yet" rather than three lit-up options. */
+.sexpick{display:inline-flex;gap:4px;flex:none}
+.sexchip{min-width:40px;height:34px;font-size:18px;line-height:1;border:1px solid var(--line2);border-radius:8px;
+  background:var(--panel);cursor:pointer;opacity:.55;transition:opacity .15s,border-color .15s,background .15s}
+.sexchip:hover{opacity:.85}
+.sexchip.on{opacity:1;background:rgba(255,255,255,.05);font-weight:700}
+/* The portrait invitation. It was a small ghost button between two other small ghost buttons and got
+   overlooked; now it is a full-width card with the default face already showing what you would get. */
+.look-cta{display:flex;align-items:center;gap:10px;text-align:left;margin-top:8px;padding:8px 12px;
+  border-color:var(--gold);background:var(--gold-soft);font-size:14px;font-weight:600;color:var(--text)}
+.look-cta-art{flex:none;line-height:0;opacity:.9}
+.look-cta-sub{display:block;font-size:11px;font-weight:400;color:var(--dim);margin-top:2px}
 .look-preview{display:flex;justify-content:center;margin-bottom:4px}
 .look-racecap{text-align:center;font-size:12px;color:var(--gold);font-weight:600;margin-bottom:8px}
 .look-row{display:flex;align-items:center;gap:8px;margin:6px 0}
@@ -6449,8 +6462,52 @@ const LOOK_TEETH = [["none", "None"], ["tusks", "Tusks"], ["fangs", "Fangs"]];
 // homebrew race), fall back to the species-appropriate default so nothing regresses.
 const deriveEars = (sp) => (["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp) ? "pointed" : ["Goblin", "Kobold", "Hobgoblin"].includes(sp) ? "large" : "round");
 const deriveTeeth = (sp) => (["Orc", "Half-Orc"].includes(sp) ? "tusks" : ["Vampire", "Werewolf", "Demon"].includes(sp) ? "fangs" : "none");
-const blankLook = () => ({ on: false, notes: "", species: "Human", customRace: "", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
+const blankLook = () => ({ on: false, notes: "", species: "Human", sex: "", customRace: "", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
 const hasLook = (l) => !!(l && l.on);
+// Who they are, in one glance. "N/A" is a real answer, not a blank — constructs, oozes and the
+// deliberately unspecified all want it said out loud rather than left looking unfilled.
+const NPC_SEXES = [["m", "♂", "Male", "#6fa8dc"], ["f", "♀", "Female", "#e08cba"], ["na", "🚫", "N/A", "#9a91a8"]];
+const sexOf = (look) => NPC_SEXES.find(([k]) => k === (look && look.sex)) || null;
+
+/* Species drives the portrait defaults, so changing it used to blind-spread the new species' defaults
+   over the whole look — a DM who had picked a skin tone, eye colour and horns lost all of it to one
+   fumbled dropdown. Only fields still sitting at the OLD species' default (or the blank baseline) get
+   re-defaulted; anything deliberately chosen survives. */
+function lookWithSpecies(look, v) {
+  const from = { ...blankLook(), ...(SPECIES_DEFAULTS[look.species] || {}) };
+  const to = SPECIES_DEFAULTS[v] || {};
+  const patch = { species: v };
+  Object.keys(to).forEach((k) => { if (look[k] === undefined || look[k] === from[k]) patch[k] = to[k]; });
+  return { ...look, ...patch };
+}
+
+/* Species + sex, at the top of the NPC editor. Species used to live buried inside "Add a portrait",
+   which made it look like a drawing option — it isn't. It picks the name-roller's word bank and is
+   the first thing a DM decides about a person, so it belongs beside the name. */
+function NpcIdentityRow({ value, onChange }) {
+  const look = value || blankLook();
+  return (
+    <>
+      <div className="frow" style={{ alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+        <label style={{ minWidth: 0 }}>Species</label>
+        <select data-tutf="npcspecies" style={{ flex: 1, minWidth: 130 }} value={look.species} onChange={(e) => onChange(lookWithSpecies(look, e.target.value))}>
+          {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s === "Other" ? "Homebrew / custom…" : s}</option>)}</optgroup>)}
+        </select>
+        <span className="sexpick">
+          {NPC_SEXES.map(([k, glyph, title, color]) => (
+            <button key={k} type="button" className={`sexchip ${look.sex === k ? "on" : ""}`} title={title}
+              style={look.sex === k ? { color, borderColor: color } : { color }}
+              // tapping the chosen one again clears it — "not recorded" and "N/A" are different answers
+              onClick={() => onChange({ ...look, sex: look.sex === k ? "" : k })}>{glyph}</button>
+          ))}
+        </span>
+      </div>
+      {look.species === "Other" && (
+        <div className="frow"><input type="text" placeholder="Homebrew species name (e.g. Aetherborn)…" style={{ flex: 1 }} value={look.customRace || ""} onChange={(e) => onChange({ ...look, customRace: e.target.value })} /></div>
+      )}
+    </>
+  );
+}
 
 // A chibi face composited from SVG primitives, driven entirely by a `look` object. viewBox 0..100.
 function NpcPortrait({ look, size = 64, frame = true }) {
@@ -6575,31 +6632,14 @@ function NpcAppearance({ value, onChange }) {
   const [choosing, setChoosing] = useState(false); // race + use-default/customize picker, before a portrait exists
   const [expanded, setExpanded] = useState(false);  // full builder controls open
   const set = (patch) => onChange({ ...look, ...patch });
-  /* Switching species used to blind-spread the new species' defaults over the whole look, so a DM who
-     had picked a skin tone, eye colour and horns lost all of it the moment they fumbled the dropdown —
-     which sits right above the preview and is the easiest control here to hit by accident. Only fields
-     the DM hasn't touched (still equal to the OLD species' default, or to the blank baseline) get
-     re-defaulted; anything deliberately chosen survives the switch. */
-  const setSpecies = (v) => {
-    const from = { ...blankLook(), ...(SPECIES_DEFAULTS[look.species] || {}) };
-    const to = SPECIES_DEFAULTS[v] || {};
-    const patch = { species: v };
-    Object.keys(to).forEach((k) => { if (look[k] === undefined || look[k] === from[k]) patch[k] = to[k]; });
-    set(patch);
-  };
-  const raceName = look.species === "Other" ? (look.customRace || "Homebrew race") : look.species;
-  const speciesPicker = (
-    <>
-      <div className="look-species">
-        <label>Species</label>
-        <select className="sbook-search" value={look.species} onChange={(e) => setSpecies(e.target.value)}>
-          {LOOK_SPECIES_GROUPS.map(([grp, list]) => <optgroup key={grp} label={grp}>{list.map((s) => <option key={s} value={s}>{s === "Other" ? "Homebrew / custom…" : s}</option>)}</optgroup>)}
-        </select>
-      </div>
-      {look.species === "Other" && (
-        <input className="sbook-search" placeholder="Homebrew race name (e.g. Aetherborn)…" value={look.customRace || ""} onChange={(e) => set({ customRace: e.target.value })} style={{ width: "100%", marginBottom: 8 }} />
-      )}
-    </>
+  // Species and sex are chosen at the top of the editor now (they are facts about the person, not
+  // drawing options); the caption under the preview echoes them so the portrait still reads on its own.
+  const sx = sexOf(look);
+  const raceName = look.species === "Other" ? (look.customRace || "Homebrew species") : look.species;
+  const caption = (
+    <div className="look-racecap">
+      {raceName}{sx ? <span style={{ color: sx[3], marginLeft: 5 }} title={sx[2]}>{sx[1]}</span> : null}
+    </div>
   );
   const controls = (
     <div className="look-controls">
@@ -6619,13 +6659,16 @@ function NpcAppearance({ value, onChange }) {
       <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "8px 0 4px" }}>Appearance</div>
       <textarea className="sbook-search" rows={2} placeholder="How do they look? (build, clothing, scars, voice…)" value={look.notes || ""} onChange={(e) => set({ notes: e.target.value })} style={{ width: "100%", resize: "vertical" }} />
       {!look.on && !choosing && (
-        <button className="btn small ghost" style={{ marginTop: 6 }} onClick={() => setChoosing(true)}>🎨 Add a portrait</button>
+        // was a `btn small ghost` lost among the other small buttons — nobody found it
+        <button className="btn w100 look-cta" onClick={() => setChoosing(true)}>
+          <span className="look-cta-art"><NpcPortrait look={{ ...look, on: true }} size={40} frame={false} /></span>
+          <span>🎨 Add a portrait<br /><span className="look-cta-sub">Draw a face for them — {raceName.toLowerCase()} by default, then tweak anything</span></span>
+        </button>
       )}
       {!look.on && choosing && (
         <div className="look-build">
-          {speciesPicker}
-          <div className="look-preview"><NpcPortrait look={look} size={120} /></div>
-          <div className="look-racecap">{raceName}</div>
+          <div className="look-preview"><NpcPortrait look={{ ...look, on: true }} size={120} /></div>
+          {caption}
           <div className="frow" style={{ gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
             <button className="btn small primary" onClick={() => { set({ on: true }); setChoosing(false); }}>Use default portrait</button>
             <button className="btn small ghost" onClick={() => { set({ on: true }); setChoosing(false); setExpanded(true); }}>Customize…</button>
@@ -6635,9 +6678,8 @@ function NpcAppearance({ value, onChange }) {
       )}
       {look.on && (
         <div className="look-build">
-          {speciesPicker}
           <div className="look-preview"><NpcPortrait look={look} size={132} /></div>
-          <div className="look-racecap">{raceName}</div>
+          {caption}
           {expanded ? (<>
             {controls}
             <div className="frow" style={{ justifyContent: "space-between", marginTop: 6 }}>
@@ -6972,7 +7014,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
           {rowTab === "npcs" && hasLook(e.look) && <span style={{ flex: "none", marginRight: 4, lineHeight: 0 }}><NpcPortrait look={e.look} size={26} /></span>}
-          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{rowTab === "npcs" && sexOf(e.look) && (() => { const sx = sexOf(e.look); return <span title={sx[2]} style={{ color: sx[3], fontSize: 12, marginLeft: 4 }}>{sx[1]}</span>; })()}{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
           {rowTab === "npcs" && onAddToBoard && (onBoardIds.includes(e.id)
             ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)", flex: "none" }} title="This NPC is already on the encounter board — an entry is one person, so it gets one row. Use ⧉ to make a separate NPC for a twin or a double.">✓ on board</span>
             : <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>)}
@@ -7065,6 +7107,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
                   <button className="btn small ghost" title={nameLock ? "Name locked against the dice — tap to allow rerolling" : "Lock this name so the 🎲 can't overwrite it"} onClick={() => setNameLock((v) => !v)}>{nameLock ? "🔒" : "🔓"}</button>
                 </>)}
               </div>
+              {draft.tab === "npcs" && <NpcIdentityRow value={draft.look} onChange={(l) => setDraft({ ...draft, look: l })} />}
               <div className="frow"><input type="text" placeholder="Tag — optional (e.g. quest-giver, tavern, rumor)" style={{ flex: 1 }} value={draft.tag} onChange={(e) => setDraft({ ...draft, tag: e.target.value })} /></div>
               {draft.tab === "npcs" && (<>
                 <div className="frow" style={{ alignItems: "center" }}>
