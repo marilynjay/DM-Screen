@@ -4101,7 +4101,7 @@ function LegendaryOptions({ c, api, results, turnKey }) {
   );
 }
 
-function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
+function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn, demoPress }) {
   const [hintOpen, setHintOpen] = useState(null); // [actionIndex, hintIndex] of expanded advantage-hint chip
   const [spellOpen, setSpellOpen] = useState(null); // `${rowKey}:${spellKey}` of expanded spell chip
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions/reactions while incapacitated
@@ -4174,7 +4174,8 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
               <span style={{ fontSize: 12, color: "var(--dim)", fontFamily: "var(--mono)" }} title="Old School Mode — roll it at the table">{fmtMod(a.hit)} to hit{a.dmg ? `, ${a.dmg}${a.dtype ? ` ${a.dtype}` : ""}` : ""}</span>
             )}
             {a.kind === "atk" && !oldSchool && (
-              <button className="btn small primary" disabled={(a.rech && !a.ready) || (peek && !c.reaction) || (!peek && (atkLeft(c) <= 0 || atkNameLeft(c, a.n) <= 0))}
+              <button className={`btn small primary ${demoPress === "attack" && i === 0 ? "demo-press" : ""}`} data-tut={i === 0 ? "cardattack" : undefined}
+                disabled={(a.rech && !a.ready) || (peek && !c.reaction) || (!peek && (atkLeft(c) <= 0 || atkNameLeft(c, a.n) <= 0))}
                 title={peek ? (c.reaction ? "Off-turn attack — spends this creature's reaction" : "Reaction already used this round") : atkLeft(c) <= 0 ? "No attacks left this turn — tap +1 above to grant one (or Undo a misclick)" : atkNameLeft(c, a.n) <= 0 ? `${a.n} has no uses left this turn (Multiattack caps it) — +1 or Undo if needed` : undefined}
                 onClick={() => (peek ? api.rollOppAttack(c.uid, i) : api.rollAttack(c.uid, i))}>
                 {peek ? "⚔ Opportunity attack" : "Attack"} {fmtMod(a.hit)}
@@ -4306,7 +4307,7 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn }) {
 }
 
 const ATK_ORD = ["", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth", "Tenth"];
-function PlayerCard({ c, api, results, inCombat, onEndTurn }) {
+function PlayerCard({ c, api, results, inCombat, onEndTurn, demoPress }) {
   const hints = c.conditions.map((cd) => ({ n: cd.name, r: cd.rounds, d: condText(cd.name) || null }));
   const incapCond = (c.conditions || []).find((cd) => INCAP_CONDS.has(cd.name))?.name; // no actions while incapacitated
   return (
@@ -4374,7 +4375,7 @@ function PlayerCard({ c, api, results, inCombat, onEndTurn }) {
           <div className="lbl">Actions{c.atkCount > 0 ? ` — attacked ${c.atkCount}×` : ""}</div>
           <div className="pcactions">
             {c.atkCount < 10
-              ? <button className="btn primary" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount === 0 ? "Attack" : `${ATK_ORD[c.atkCount]} attack?`}</button>
+              ? <button className={`btn primary ${demoPress === "attack" ? "demo-press" : ""}`} data-tut="cardattack" onClick={() => api.playerAttack(c.uid)}>⚔ {c.atkCount === 0 ? "Attack" : `${ATK_ORD[c.atkCount]} attack?`}</button>
               : <button className="btn" disabled title="Ten attacks logged this turn — apply any further hits by tapping the target's HP in the roster">⚔ Apply further manually</button>}
             <button className="btn" disabled={c.hidTurn} onClick={() => api.openHide(c.uid)}>🥷 {c.hidTurn ? "Hid" : "Hide"}</button>
             <button className="btn" onClick={() => api.openCast(c.uid)}>✨ Cast a spell</button>
@@ -9709,10 +9710,10 @@ const TUT_PARTY_NAME = "Tutorial Party";
 const TUTORIAL_STEPS = [
   { key: "welcome", title: "Welcome — sit back and watch \ud83c\udf93", body: "A quick guided show. Every step explains itself first, then you tap \u201cShow me\u201d and watch it happen for real \u2014 no reading and watching at the same time. Nothing here touches your game: \u201cClear & finish\u201d at the end puts everything back." },
   { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Player / ally is for a guest or a summoned ally \u2014 it drops someone on the board without saving them.)" },
-  { key: "monsters", act: "monsters", title: "2 \u00b7 Add monsters", target: ["add", "roster"], body: "Now the foes: \uff0b Add \u25b8 Monster from bestiary. Watch me search for \u201cgoblin\u201d, pick the Goblin Warrior out of the results, and add two. That\u2019s 300+ SRD monsters with full statblocks \u2014 no book required." },
+  { key: "monsters", act: "monsters", title: "2 \u00b7 Add monsters", target: ["addbestiary", "add"], targetPlayed: ["roster"], body: "Now the foes: \uff0b Add \u25b8 Monster from bestiary. Watch me search for \u201cgoblin\u201d, pick the Goblin Warrior out of the results, and add two. That\u2019s 300+ SRD monsters with full statblocks \u2014 no book required." },
   { key: "start", act: "start", title: "3 \u00b7 Roll initiative", target: ["active", "roster"], body: "The app rolls the monsters itself. For your heroes you get this dialogue \u2014 type each initiative as the table calls it out, then Start combat. (I use fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
-  { key: "playerAttack", act: "playerAttack", title: "4 \u00b7 A hero attacks", target: ["active", "roster"], body: "Bram is up. Your players roll their own dice, so you just record what happened: tap \u2694 Attack, pick the target, say whether it hit, type the damage. Watch the goblin\u2019s HP drop in the roster." },
-  { key: "monsterAttack", act: "monsterAttack", title: "5 \u00b7 The monster strikes back", target: ["active", "roster"], body: "Now a goblin\u2019s turn \u2014 and here\u2019s the good part: the app rolls the monster\u2019s attack and applies the damage for you. No flipping through statblocks mid-fight." },
+  { key: "playerAttack", act: "playerAttack", title: "4 \u00b7 A hero attacks", target: ["cardattack", "active"], targetPlayed: ["roster"], body: "Bram is up. Your players roll their own dice, so you just record what happened: tap \u2694 Attack, pick the target, say whether it hit, type the damage. Watch the goblin\u2019s HP drop in the roster." },
+  { key: "monsterAttack", act: "monsterAttack", title: "5 \u00b7 The monster strikes back", target: ["roster"], targetPlayed: ["active", "roster"], body: "Now a goblin\u2019s turn \u2014 and here\u2019s the good part: the app rolls the monster\u2019s attack and applies the damage for you. No flipping through statblocks mid-fight." },
   { key: "oldschool", act: "more", title: "6 \u00b7 Prefer your own dice? \ud83d\udd6f", body: "Like rolling everything yourself? Open the \u22ef menu and you\u2019ll find \ud83d\udd6f Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, showing monster attacks as reference. Toggle it any time.", target: ["oldschool", "more"] },
   { key: "clear", act: "clear", title: "7 \u00b7 Wrap up", target: ["clear", "clearmenu"], body: "When a fight ends, tap Clear. \u201cEnd combat (keep party)\u201d clears the monsters and leaves your heroes standing, ready for the next one. Your saved party is untouched either way \u2014 reload it any time from the party card or \u22ef \u25b8 \ud83d\udc65 Edit parties." },
   { key: "done", title: "That\u2019s the tour! \ud83c\udf89", body: "\u201cClear & finish\u201d puts the board back exactly as it was and removes the \u201cTutorial Party\u201d I saved \u2014 or keep it all and poke around. You can reopen this any time from the \u22ef menu." },
@@ -9760,7 +9761,11 @@ function TutorialCard({ step, onBack, onNext, onSkip, onFinish, onPlay, phase, r
 // has no target (or its target isn't on screen — e.g. a button that only shows in another mode).
 function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, onPlay, phase, restoreOnly }) {
   const s = TUTORIAL_STEPS[step];
-  const targets = Array.isArray(s.target) ? s.target : s.target ? [s.target] : [];
+  /* A step can want different things lit before and after its sequence runs. Before, the spotlight
+     belongs on the control about to be pressed; after, on whatever changed. Step 5 relies on this —
+     until the goblin acts, the card sitting open is still the hero's, and dimming it is the point. */
+  const want = phase === "done" && s.targetPlayed ? s.targetPlayed : s.target;
+  const targets = Array.isArray(want) ? want : want ? [want] : [];
   const [rects, setRects] = useState([]);
   const [vp, setVp] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -9780,7 +9785,7 @@ function TutorialOverlay({ step, suppressed, onBack, onNext, onSkip, onFinish, o
     window.addEventListener("scroll", measure, true);
     window.addEventListener("resize", measure);
     return () => { clearInterval(id); window.removeEventListener("scroll", measure, true); window.removeEventListener("resize", measure); };
-  }, [step, JSON.stringify(targets)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step, phase, JSON.stringify(targets)]); // eslint-disable-line react-hooks/exhaustive-deps
   const pad = 6, r0 = rects[0];
   const arrow = r0 ? { left: Math.min(vp.w - 40, Math.max(8, r0.x + r0.w / 2 - 13)), top: r0.y + r0.h + 7 } : null;
   // while a menu/modal is open, drop the scrim entirely so it never dims what the DM is working with
@@ -12527,6 +12532,9 @@ export default function App() {
   const tutDemo = (type, patch) => setModal((m) => (m && m.type === type ? { ...m, demo: { ...m.demo, ...patch } } : m));
   const tutTop = () => { try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch { /* ignore */ } };
   const [partyDemo, setPartyDemo] = useState(null); // scripts the party card during the tour
+  // Which on-card control the tour is "pressing" right now, so a tap on a card (not a dialogue) is
+  // visible rather than the dialogue just appearing out of nowhere.
+  const [tutPress, setTutPress] = useState(null);
   const tutPartyIdRef = useRef(null);               // the party the tour saved, so finishing can remove it
 
   /* Step 1 — the party card, because this is the path that REMEMBERS a party. + Add ▸ Player / ally
@@ -12563,14 +12571,16 @@ export default function App() {
     const typed = "goblin";
     const cues = [
       [250, () => { tutTop(); setAddMenu(true); }],
-      [1600, () => { setAddMenu(false); setModal({ type: "bestiary", demo: { q: "", count: TUT_MONSTER_N } }); }],
+      // press the menu item itself, so the dialogue doesn't just appear from nowhere
+      [1500, () => setTutPress("addbestiary")],
+      [2050, () => { setTutPress(null); setAddMenu(false); setModal({ type: "bestiary", demo: { q: "", count: TUT_MONSTER_N } }); }],
     ];
     // type the search a letter at a time, so it reads as someone actually looking it up
-    typed.split("").forEach((_, i) => cues.push([2400 + i * 190, () => tutDemo("bestiary", { q: typed.slice(0, i + 1) })]));
+    typed.split("").forEach((_, i) => cues.push([2850 + i * 190, () => tutDemo("bestiary", { q: typed.slice(0, i + 1) })]));
     cues.push(
-      [4100, () => tutDemo("bestiary", { pick: TUT_MONSTER })],   // tap the Goblin Warrior result
-      [5500, () => tutDemo("bestiary", { press: "add" })],        // press Add ×2
-      [6000, () => { setModal(null); tutAddGoblins(); }],
+      [4550, () => tutDemo("bestiary", { pick: TUT_MONSTER })],   // tap the Goblin Warrior result
+      [5950, () => tutDemo("bestiary", { press: "add" })],        // press Add ×2
+      [6450, () => { setModal(null); tutAddGoblins(); }],
     );
     return cues;
   };
@@ -12600,15 +12610,17 @@ export default function App() {
     const goblin = cs.find((c) => c._demo && c.type === "monster" && !c.dead);
     if (!hero || !goblin) return [];
     return [
-      [200, () => { tutTop(); setModal({ type: "player-attack", uid: hero.uid, demo: {} }); }],
-      [1400, () => tutDemo("player-attack", { pick: goblin.uid, press: "target" })],  // choose the goblin
-      [2000, () => tutDemo("player-attack", { phase: "resolve", press: null })],       // hit or miss?
-      [3300, () => tutDemo("player-attack", { press: "hit" })],
-      [3800, () => tutDemo("player-attack", { phase: "damage", press: null })],
-      [4800, () => tutDemo("player-attack", { amt: "7" })],                            // the player's damage roll
-      [5400, () => tutDemo("player-attack", { dtype: "slashing" })],
-      [5900, () => tutDemo("player-attack", { press: "apply" })],
-      [6400, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
+      [200, () => tutTop()],
+      [900, () => setTutPress("attack")],   // ⚔ Attack on Bram's card — pressed, not skipped past
+      [1500, () => { setTutPress(null); setModal({ type: "player-attack", uid: hero.uid, demo: {} }); }],
+      [2500, () => tutDemo("player-attack", { pick: goblin.uid, press: "target" })],  // choose the goblin
+      [3100, () => tutDemo("player-attack", { phase: "resolve", press: null })],       // hit or miss?
+      [4400, () => tutDemo("player-attack", { press: "hit" })],
+      [4900, () => tutDemo("player-attack", { phase: "damage", press: null })],
+      [5900, () => tutDemo("player-attack", { amt: "7" })],                            // the player's damage roll
+      [6500, () => tutDemo("player-attack", { dtype: "slashing" })],
+      [7000, () => tutDemo("player-attack", { press: "apply" })],
+      [7500, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
     ];
   };
 
@@ -12620,8 +12632,9 @@ export default function App() {
     if (!goblin || !hero) return [];
     const ai = Math.max(0, (goblin.actions || []).findIndex((a) => a && a.hit != null));
     return [
-      [200, () => { tutTop(); next(); }], // advance the turn so a goblin is active…
-      [750, () => performAttack({ uid: goblin.uid, ai, targetUid: hero.uid })], // …then it strikes
+      [200, () => { tutTop(); next(); }],        // hand the turn to the goblin…
+      [1600, () => setTutPress("attack")],       // …let its card settle, then press its own Attack
+      [2300, () => { setTutPress(null); performAttack({ uid: goblin.uid, ai, targetUid: hero.uid }); }],
     ];
   };
 
@@ -12685,14 +12698,14 @@ export default function App() {
     return () => {
       tutStop();
       setAddMenu(false); setMoreMenu(false); setClearMenu(false);
-      setPartyDemo(null);
+      setPartyDemo(null); setTutPress(null);
       setModal((m) => (m && m.demo ? null : m)); // only ever closes a dialogue the tour itself opened
     };
   }, [tutorial]); // eslint-disable-line react-hooks/exhaustive-deps
   const endTutorial = (clear) => {
     tutStop();
     setTutorial(null);
-    setModal(null); setAddMenu(false); setMoreMenu(false); setClearMenu(false);
+    setModal(null); setAddMenu(false); setMoreMenu(false); setClearMenu(false); setTutPress(null);
     const snap = tutSnapRef.current;
     if (clear || tutHadRosterRef.current) {
       // restore the pre-tour board — their real roster, or the empty board they started from
@@ -12857,7 +12870,7 @@ export default function App() {
           <button className="btn small" data-tut="add" onClick={() => { setAddMenu(!addMenu); setClearMenu(false); setMoreMenu(false); }}>+ Add</button>
           {addMenu && (
             <div className="menu" onClick={() => setAddMenu(false)}>
-              <button onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
+              <button data-tut="addbestiary" className={tutPress === "addbestiary" ? "demo-press" : ""} onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
               <button onClick={() => setModal({ type: "player" })}>Player / ally…</button>
               <button onClick={() => setModal({ type: "notebook" })}>👤 NPC (build or add)…</button>
@@ -13049,8 +13062,8 @@ export default function App() {
             <div className={active.surprised && state.round === 1 ? "surprised-wrap" : undefined}>
               {oldSchool && active.type === "player" ? (
                 <div className="card oldschool-turn"><h3 style={{ margin: 0 }}>{active.name}'s turn</h3><button className="endturn-btn" onClick={requestNext}>⏭ End turn</button></div>
-              ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} onEndTurn={requestNext} />
-              : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} onEndTurn={requestNext} />
+              ) : active.type === "monster" ? <MonsterCard c={active} api={api} results={results} oldSchool={oldSchool} turnKey={`${state.round}:${state.activeUid}`} onEndTurn={requestNext} demoPress={tutPress} />
+              : active.type === "player" ? <PlayerCard c={active} api={api} results={results} inCombat={state.mode === "combat"} onEndTurn={requestNext} demoPress={tutPress} />
               : <EffectCard c={active} api={api} round={state.round} />}
               {active.surprised && state.round === 1 && (
                 <div className="surprised-scrim">
