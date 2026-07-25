@@ -1896,12 +1896,17 @@ function revealHidden(c, logs) {
   c.conditions = c.conditions.filter((cd) => cd.name !== "Hiding");
   logs.push(`<b>${c.name}</b> is no longer <b>Hiding</b> — attacking gives their position away.`);
 }
-/* Temp HP is a number the app can hold even for a player who tracks their own HP — the shell is not
-   their hit points. It used to refuse them outright, which hit exactly the creatures that receive
-   temp HP most: Heroism, Aid, False Life and Armor of Agathys nearly always land on the party, and
-   most DMs never type player HP in. */
+/* A player whose HP the DM hasn't entered is tracking their own hit points, full stop — temp HP is
+   part of that, so the app holds none of it. Splitting the job (their HP on their sheet, their shell
+   on the DM's phone) would leave both of them doing arithmetic against half the picture. */
 function grantTempHp(c, amt, logs) {
   if (amt <= 0) return;
+  // say so rather than no-op: a spell or item that grants temp HP still resolves, the DM just
+  // announces the number and the player writes it on their own sheet
+  if (c.hp == null) {
+    logs.push(`<b>${c.name}</b> gains <b>${amt} temp HP</b> — tell them to note it; they're tracking their own HP.`);
+    return;
+  }
   if ((c.thp || 0) >= amt) {
     logs.push(`<b>${c.name}</b> keeps existing ${c.thp} temp HP (higher than ${amt} offered — temp HP doesn't stack).`);
   } else {
@@ -1912,20 +1917,7 @@ function grantTempHp(c, amt, logs) {
 
 function applyDamage(c, amt, dtype, logs, toasts) {
   if (c.type === "player" && c.hp == null) {
-    /* The shell still absorbs first, even though the HP behind it isn't tracked here — that is the
-       whole point of temp HP, and it is the one number at the table only the DM is holding. Report
-       the split so the player knows what to actually subtract from their sheet. */
-    const shell = c.thp || 0;
-    const { finalDmg } = adjustDamage(c, amt, dtype);
-    if (shell > 0 && finalDmg > 0) {
-      const absorbed = Math.min(shell, finalDmg);
-      c.thp = shell - absorbed;
-      const through = finalDmg - absorbed;
-      logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — ${absorbed} absorbed by temp HP${c.thp ? ` (${c.thp} temp left)` : " (shell gone)"}; <b>${through}</b> through to their sheet.`);
-      toasts.push({ kind: through > 0 ? "bad" : "good", text: `${c.name}: temp HP took ${absorbed}${through > 0 ? ` — ${through} through` : " — all of it"}.` });
-    } else {
-      logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — players track their own HP.`);
-    }
+    logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — players track their own HP.`);
     if (c.concentration) {
       const dc = Math.max(10, Math.floor(amt / 2));
       toasts.push({ kind: "bad", text: `${c.name}: DC ${dc} CON save to keep concentrating on ${concLabel(c)}!` });
@@ -3306,13 +3298,6 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
           title="Healing — applied when you tap Apply" onClick={(e) => e.stopPropagation()} onChange={(e) => onEntry("heal", e.target.value)} />
       )}
 
-      {/* A player tracking their own HP has no hpbox to hang the shell off, but the shell is the app's
-          number to hold — show it here or the DM is the only one who can't see what they granted. */}
-      {!socialNpc && c.hp == null && (c.thp || 0) > 0 && c.type !== "effect" && (
-        <button className="thpchip" title={`${c.thp} temporary HP — damage comes off this first. Tap to edit.`}
-          onClick={() => api.openThp(c.uid)}>+{c.thp}</button>
-      )}
-
       {!socialNpc && effAc != null && (
         <span className="acbox" title={[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).length ? `Base AC ${c.ac} ${[c.acBoost ? `+${c.acBoost} reaction` : "", cov ? `+${cov} cover` : "", hasteAc ? `+${hasteAc} Haste` : "", slowAc ? `−${slowAc} Slow` : ""].filter(Boolean).join(" ")}` : "Armor Class"}>
           AC {effAc}{(c.acBoost || cov || slowAc || hasteAc) ? "*" : ""}
@@ -4512,7 +4497,7 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
         </div>
         {mode === "thp" && (
           <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 6 }}>
-            Doesn't stack — targets keep the higher value. Healing won't restore it. Damage comes off the shell first, so players tracking their own HP only subtract what gets through.
+            Doesn't stack — targets keep the higher value. Healing won't restore it. Damage comes off the shell before HP. Players tracking their own HP aren't offered it — they hold the whole of their HP, temp included.
           </div>
         )}
         {mode === "set" && (
@@ -4542,8 +4527,7 @@ function DamageModal({ state, presetUid, initMode, onApply, onClose }) {
           <div className="targetline" key={m.uid}>
             <input type="checkbox" checked={sel.has(m.uid)} onChange={() => toggle(sel, m.uid, setSel)} />
             <span style={{ flex: 1, opacity: m.dead ? 0.5 : 1 }}>
-              {/* a self-tracked player still shows their temp HP — the app holds the shell even when it isn't holding their HP */}
-              {m.name} {m.dead ? "(dead)" : m.hp != null ? `· ${m.hp}/${m.maxHp}${m.thp ? ` (+${m.thp})` : ""}` : `· HP on their sheet${m.thp ? ` · +${m.thp} temp` : ""}`}
+              {m.name} {m.dead ? "(dead)" : m.hp != null ? `· ${m.hp}/${m.maxHp}${m.thp ? ` (+${m.thp})` : ""}` : "· self-tracked (no temp HP tracking)"}
             </span>
             {mode === "dmg" && <label style={{ fontSize: 12, color: "var(--dim)" }}><input type="checkbox" checked={half.has(m.uid)} onChange={() => toggle(half, m.uid, setHalf)} /> ½</label>}
           </div>
