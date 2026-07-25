@@ -4994,6 +4994,9 @@ const TRAIT_LIBRARY = [
 const DIE_PICKS = [4, 6, 8, 10, 12, 20];
 /* A damage box used to be a text field you had to spell "2d6+3" into. These split it: how many dice,
    which die, and the flat bonus that gets added on — the three things a statblock actually prints. */
+// A critical hit doubles the dice, not the flat part. An attack with no dice at all — the Bat's
+// 1 damage Bite, or a homebrew "3 damage" — therefore deals exactly the same on a crit.
+const hasDice = (f) => /\d*d\d+/i.test(String(f ?? ""));
 function splitDice(f) {
   const t = String(f ?? "").replace(/\s/g, "");
   if (!t) return { n: "", d: 6, b: "", raw: null };
@@ -5178,8 +5181,13 @@ function DiceField({ v, onChange, allowNone }) {
             title="Flat bonus added to the dice" value={v.b} onChange={(e) => onChange({ ...v, b: e.target.value })} />
         </span>
       </div>
+      {/* No dice and a number in the + box is a flat-damage attack (the Bat's 1, a homebrew "3"), which
+          is easy to reach and impossible to guess at — so the readout names it when it happens, and
+          points at it when there's nothing set yet. */}
       <div className="dicesum">
-        {cur ? <>= <b>{cur}</b>{avg != null ? ` · avg ${Math.round(avg)}` : ""}</> : (allowNone ? "no damage" : "no damage yet — set a die count")}
+        {cur
+          ? <>= <b>{cur}</b>{hasDice(cur) ? (avg != null ? ` · avg ${Math.round(avg)}` : "") : " · flat, nothing rolled"}</>
+          : (allowNone ? "no damage — or leave the dice and type a flat number in +" : "no damage yet — pick dice, or type a flat number in + for an attack that always deals the same")}
       </div>
     </div>
   );
@@ -12211,9 +12219,10 @@ export default function App() {
       const parts = [];
       const dmgRoll = isHit === false ? null : manual ? valuesRoll(a.dmg, manual.dmg) : rollFormula(a.dmg);
       if (dmgRoll) {
-        const critRoll = !critHit ? null
-          : manual ? (manual.dmgCrit?.length ? valuesRoll(String(a.dmg).replace(/([+-]\d+)\s*$/, ""), manual.dmgCrit) : null)
-          : rollFormula(String(a.dmg).replace(/([+-]\d+)\s*$/, ""));
+        const critBase = String(a.dmg).replace(/([+-]\d+)\s*$/, "");
+        const critRoll = !critHit || !hasDice(critBase) ? null
+          : manual ? (manual.dmgCrit?.length ? valuesRoll(critBase, manual.dmgCrit) : null)
+          : rollFormula(critBase);
         const chip = dmgChip(dmgRoll, critRoll, a.dtype || "damage");
         chips.push(chip);
         parts.push({ amt: chip.total, dtype: a.dtype || null });
@@ -12221,7 +12230,7 @@ export default function App() {
         if (a.extra && (!extraNeedsAdv(a) || atk.adv === "adv")) {
           const ex = manual ? (manual.extra?.length ? valuesRoll(a.extra, manual.extra) : null) : rollFormula(a.extra);
           if (ex) {
-            const exCrit = !critHit ? null
+            const exCrit = !critHit || !hasDice(a.extra) ? null
               : manual ? (manual.extraCrit?.length ? valuesRoll(a.extra, manual.extraCrit) : null)
               : rollFormula(a.extra);
             const echip = dmgChip(ex, exCrit, a.extraType);
