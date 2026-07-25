@@ -432,6 +432,15 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rivchip.vul{color:var(--danger);border-color:var(--danger)}
 .rivchip .rivmark{font-family:var(--mono);margin-left:4px}
 .rivkeep{font-size:11px;color:var(--faint);display:flex;flex-wrap:wrap;gap:5px;align-items:baseline;margin-bottom:6px}
+/* the dice picker in the monster builder: count · die faces · flat bonus, with a formula readout */
+.dicefield{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
+.dicex{color:var(--faint);font-family:var(--mono);font-size:13px}
+.dicepicks{display:flex;flex-wrap:wrap;gap:3px}
+.diepick{display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 3px;border:1px solid var(--line2);
+  border-radius:8px;background:var(--panel);cursor:pointer;color:var(--faint);font-size:9px;min-width:34px}
+.diepick.on{border-color:var(--gold);background:var(--gold-soft);color:var(--gold)}
+.diepick .die .shell{stroke:currentColor}
+.dicesum{font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:2px}
 .lvlchip.on{color:var(--gold);border-color:var(--gold)}
 /* the builder's shape/edge/passage pickers are the controls a DM hits most while placing rooms;
    at the shared 11px/2px size they measured 51x22 against a 44px minimum. Scoped so the level
@@ -4783,6 +4792,7 @@ const CR_CHASSIS = [
 /* What kind of thing is it? Each role bends the table numbers the way that kind of monster bends
    them — a brute is tougher and easier to hit, a caster is squishier — and names a starting attack. */
 const CR_ROLES = [
+  { key: "none", name: "No role", icon: "▫", atkN: 1, hp: 1, ac: 0, atk: "Attack", dt: "bludgeoning", primary: "str" },
   { key: "soldier", name: "Soldier", icon: "🛡", atkN: 2, hp: 1, ac: 1, atk: "Longsword", dt: "slashing", primary: "str" },
   { key: "brute", name: "Brute", icon: "🪓", atkN: 1, hp: 1.25, ac: -2, atk: "Slam", dt: "bludgeoning", primary: "str" },
   { key: "skirmisher", name: "Skirmisher", icon: "🗡", atkN: 2, hp: 0.85, ac: 1, atk: "Shortsword", dt: "piercing", primary: "dex" },
@@ -4823,6 +4833,61 @@ const modToScore = (m) => 10 + Number(m) * 2;
    more conditions than these (Burning, Hasted…) but no creature is written as immune to them. */
 const COND_IMMUNE_PICKS = ["Blinded", "Charmed", "Deafened", "Exhaustion", "Frightened", "Grappled",
   "Incapacitated", "Paralyzed", "Petrified", "Poisoned", "Prone", "Restrained", "Stunned", "Unconscious"];
+/* Monster spellcasting is text the engine reads back: any action whose prose says "casts" and names
+   compendium spells becomes castable chips on the card, and "N/Day Each:" becomes use pips. So the
+   builder's job is to write that sentence correctly rather than to invent a new data shape. */
+const SPELL_USE_GROUPS = [["atwill", "At Will"], ["3", "3/Day Each"], ["2", "2/Day Each"], ["1", "1/Day Each"]];
+function spellcastingText(name, abil, dc, atk, picked) {
+  const parts = SPELL_USE_GROUPS.map(([u, label]) => {
+    const names = picked.filter((x) => x.uses === u)
+      .map((x) => (SPELL_REF[x.k] ? SPELL_REF[x.k].n + (x.note ? ` (${x.note})` : "") : null)).filter(Boolean);
+    return names.length ? `${label}: ${names.join(", ")}` : null;
+  }).filter(Boolean);
+  if (!parts.length) return null;
+  const who = (name || "").trim().toLowerCase() || "creature";
+  const dcN = parseInt(dc, 10), atkN = parseInt(atk, 10);
+  const paren = [isNaN(dcN) ? null : `spell save DC ${dcN}`, isNaN(atkN) ? null : `${fmtMod(atkN)} to hit with spell attacks`].filter(Boolean).join(", ");
+  return `The ${who} casts one of the following spells, using ${abil} as the spellcasting ability${paren ? ` (${paren})` : ""}: ${parts.join(" ")}`;
+}
+function parseSpellcasting(sb) {
+  const act = (sb?.actions || []).find((a) => a.kind !== "atk" && a.kind !== "save" && /spellcasting/i.test(a.n || ""));
+  if (!act) return null;
+  const d = act.d || "";
+  const picked = [];
+  const push = (list, uses) => String(list || "").split(",").forEach((raw) => {
+    // "Mage Armor (included in AC)" — the note is the DM's own, so it rides along with the spell
+    const note = (raw.match(/\(([^)]*)\)/) || [])[1] || "";
+    const k = raw.replace(/\([^)]*\)/g, "").trim().replace(/\.$/, "").toLowerCase();
+    if (SPELL_REF[k] && !picked.some((x) => x.k === k)) picked.push({ k, uses, note });
+  });
+  const aw = d.match(/At Will:\s*([^]*?)(?=\d+\/Day Each:|$)/i);
+  if (aw) push(aw[1], "atwill");
+  const re = /(\d+)\/Day Each:\s*([^]*?)(?=\d+\/Day Each:|At Will:|$)/gi;
+  let mm; while ((mm = re.exec(d))) push(mm[2], mm[1]);
+  return {
+    act, picked,
+    abil: (d.match(/using (Intelligence|Wisdom|Charisma)/i) || [])[1] || "Intelligence",
+    dc: (d.match(/spell save DC (\d+)/i) || [])[1] || "",
+    atk: (d.match(/([+-]\d+) to hit with spell attacks/i) || [])[1] || "",
+  };
+}
+const DIE_PICKS = [4, 6, 8, 10, 12, 20];
+/* A damage box used to be a text field you had to spell "2d6+3" into. These split it: how many dice,
+   which die, and the flat bonus that gets added on — the three things a statblock actually prints. */
+function splitDice(f) {
+  const t = String(f ?? "").replace(/\s/g, "");
+  if (!t) return { n: "", d: 6, b: "", raw: null };
+  if (/^\d+$/.test(t)) return { n: "", d: 6, b: t, raw: null };       // a flat number, no dice
+  const m = t.match(/^(\d*)d(\d+)([+-]\d+)?$/i);
+  if (!m) return { n: "", d: 6, b: "", raw: t };                      // something exotic — leave it as text
+  return { n: m[1] || "1", d: +m[2], b: m[3] ? String(+m[3]) : "", raw: null };
+}
+function joinDice({ n, d, b, raw }) {
+  if (raw != null) return raw;
+  const cnt = parseInt(n, 10), bon = parseInt(b, 10);
+  if (!(cnt > 0)) return isNaN(bon) || bon === 0 ? "" : String(bon);   // no dice: just the flat number
+  return `${cnt}d${d || 6}${isNaN(bon) || bon === 0 ? "" : bon > 0 ? `+${bon}` : `${bon}`}`;
+}
 const RIV_NEXT = { none: "res", res: "imm", imm: "vul", vul: "none" };
 const RIV_MARK = { res: "\u00bd", imm: "\u2298", vul: "\u00d72" };
 /* Read a statblock's three damage lists into one state per damage type. Anything not a plain damage
@@ -4932,6 +4997,55 @@ function ProseRows({ rows, onChange, what, placeholder }) {
   );
 }
 
+/* Count, die and flat bonus, with the dice drawn rather than described. Tapping a die face picks it;
+   the readout underneath shows the formula the app will roll and its average, so nothing about
+   "2d6+3" has to be typed or remembered. */
+function DiceField({ v, onChange, allowNone }) {
+  const cur = joinDice(v);
+  const avg = cur ? dmgAvg(cur) : null;
+  if (v.raw != null) {
+    return (
+      <div>
+        <span style={capStyle}>damage — unusual, edit as text</span>
+        <div className="frow" style={{ margin: 0 }}>
+          <input type="text" style={{ flex: 1, borderColor: dmgBad(v.raw) ? "var(--danger)" : undefined }}
+            value={v.raw} onChange={(e) => onChange({ ...v, raw: e.target.value })} />
+          <button className="btn small ghost" title="Swap to the dice picker (replaces this text)"
+            onClick={() => onChange({ ...splitDice(""), raw: null })}>use dice</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <span style={capStyle}>damage{allowNone ? " — leave blank for none" : ""}</span>
+      <div className="dicefield">
+        <input type="number" min={0} max={30} placeholder={allowNone ? "—" : "2"} style={{ width: 52, textAlign: "center" }}
+          title="How many dice" value={v.n} onChange={(e) => onChange({ ...v, n: e.target.value })} />
+        <span className="dicex">d</span>
+        <span className="dicepicks">
+          {DIE_PICKS.map((sides) => (
+            <button key={sides} className={`diepick ${v.d === sides ? "on" : ""}`} title={`d${sides}`}
+              onClick={() => onChange({ ...v, d: sides })}>
+              <DieFace sides={sides} val={sides} size={22} />
+              <span>d{sides}</span>
+            </button>
+          ))}
+        </span>
+        {/* the + and its box wrap together, so the sign never strands itself at the end of a line */}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span className="dicex">+</span>
+          <input type="number" placeholder="0" style={{ width: 56, textAlign: "center" }}
+            title="Flat bonus added to the dice" value={v.b} onChange={(e) => onChange({ ...v, b: e.target.value })} />
+        </span>
+      </div>
+      <div className="dicesum">
+        {cur ? <>= <b>{cur}</b>{avg != null ? ` · avg ${Math.round(avg)}` : ""}</> : (allowNone ? "no damage" : "no damage yet — set a die count")}
+      </div>
+    </div>
+  );
+}
+
 /* A labelled field caption that survives wrapping. The attack row used to be five bare boxes that
    wrapped mid-row on a phone, and because they ship prefilled their placeholders were never visible —
    so "4" and "1d6+2" sat there with nothing saying which was to-hit and which was damage. */
@@ -4965,27 +5079,37 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
   const [cimm, setCimm] = useState(() => (src?.condImmune || []).filter((v) => COND_IMMUNE_PICKS.includes(v)));
   const [cimmKeep, setCimmKeep] = useState(() => (src?.condImmune || []).filter((v) => !COND_IMMUNE_PICKS.includes(v)));
   const [acts, setActs] = useState(() => {
-    const rows = (src?.actions || []).filter((a) => a.kind === "atk").map((a) => ({ orig: a, n: a.n, hit: a.hit ?? 0, dmg: a.dmg || "", dtype: a.dtype || "slashing" }));
+    const rows = (src?.actions || []).filter((a) => a.kind === "atk").map((a) => ({ orig: a, n: a.n, hit: a.hit ?? 0, dice: splitDice(a.dmg), dtype: a.dtype || "slashing" }));
     // a from-scratch monster gets a named attack, because an unnamed row is silently thrown away
-    return rows.length ? rows : [{ n: "Attack", hit: 4, dmg: "1d6+2", dtype: "slashing" }];
+    return rows.length ? rows : [{ n: "Attack", hit: 4, dice: splitDice("1d6+2"), dtype: "slashing" }];
   });
-  const [svActs, setSvActs] = useState(() => (src?.actions || []).filter((a) => a.kind === "save").map(saveRowFrom));
+  const [svActs, setSvActs] = useState(() => (src?.actions || []).filter((a) => a.kind === "save").map((a) => {
+    const r = saveRowFrom(a); return { ...r, dice: splitDice(r.dmg) };
+  }));
   const [traits, setTraits] = useState(() => (src?.traits || []).map((t) => ({ ...t })));
   const [bonus, setBonus] = useState(() => (src?.bonus || []).map((t) => ({ ...t })));
   const [reactions, setReactions] = useState(() => (src?.reactions || []).map((t) => ({ ...t })));
   const [legOpts, setLegOpts] = useState(() => (src?.legendary?.options || []).map((t) => ({ ...t })));
+  // spellcasting: parsed back out of the creature's own Spellcasting prose when we recognise it
+  const spInit = useMemo(() => parseSpellcasting(src), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const spTaken = spInit && spInit.picked.length ? spInit.act : null;
+  const [spAbil, setSpAbil] = useState(spInit?.abil || "Intelligence");
+  const [spDC, setSpDC] = useState(spInit?.dc || "");
+  const [spAtk, setSpAtk] = useState(spInit?.atk || "");
+  const [spells, setSpells] = useState(spInit?.picked || []);
+  const [spellQ, setSpellQ] = useState("");
   const [multiText, setMultiText] = useState(src?.multi || "");
   const [multiTouched, setMultiTouched] = useState(!!src?.multi);
   const [saveToo, setSaveToo] = useState(true);
   const [rollHp, setRollHp] = useState(false);
-  const [role, setRole] = useState("soldier");
+  const [role, setRole] = useState("none");
   const [open, setOpen] = useState({ def: true, off: true });
 
   const num = (v, d = 0) => { const n = parseInt(v, 10); return isNaN(n) ? d : n; };
   const set = (k, v) => setF({ ...f, [k]: v });
   const setAct = (i, k, v) => setActs(acts.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
   const setSv = (i, k, v) => setSvActs(svActs.map((a, j) => (j === i ? { ...a, [k]: v } : a)));
-  const otherActs = (src?.actions || []).filter((a) => a.kind !== "atk" && a.kind !== "save");
+  const otherActs = (src?.actions || []).filter((a) => a.kind !== "atk" && a.kind !== "save" && a !== spTaken);
   const modOf = (k) => (abilMode === "score" ? scoreToMod(num(abil[k], 10)) : num(abil[k]));
   const genMulti = (n, nm) => `The ${(nm || f.name).trim().toLowerCase() || "creature"} makes ${n} attacks.`;
   const setAtkN = (v) => {
@@ -5006,27 +5130,30 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
     if (!chassis) return;
     setF({ ...f, ac: chassis.ac, hp: chassis.hp, hpF: "", atkN: chassis.atkN });
     setAbil(Object.fromEntries(ABIL_KEYS.map((k) => [k, String(abilMode === "score" ? modToScore(chassis.mods[k]) : chassis.mods[k])])));
-    setActs([{ n: chassis.atkName, hit: chassis.hit, dmg: chassis.dmg, dtype: chassis.dtype }]);
+    setActs([{ n: chassis.atkName, hit: chassis.hit, dice: splitDice(chassis.dmg), dtype: chassis.dtype }]);
     if (!multiTouched) setMultiText(chassis.atkN > 1 ? genMulti(chassis.atkN) : "");
     setSvActs(svActs.map((r) => ({ ...r, dc: chassis.dc })));
   };
 
-  const atkErrs = acts.some((a) => dmgBad(a.dmg)) || svActs.some((r) => dmgBad(r.dmg));
+  const spellText = spellcastingText(f.name, spAbil, spDC, spAtk, spells);
+  const rivSummary = DTYPES.filter((t) => riv[t] !== "none").map((t) => `${t} ${RIV_MARK[riv[t]]}`).join(" · ");
+  const atkErrs = acts.some((a) => dmgBad(joinDice(a.dice))) || svActs.some((r) => dmgBad(joinDice(r.dice)));
   const hpFErr = f.hpF.trim().length > 0 && !rollFormula(f.hpF.trim());
-  const unnamedAtk = acts.some((a) => !a.n.trim() && (String(a.dmg).trim() || num(a.hit) !== 0));
+  const unnamedAtk = acts.some((a) => !a.n.trim() && (joinDice(a.dice) || num(a.hit) !== 0));
   const clash = !editing && saveToo && f.name.trim()
     && existingNames.some((n) => n.toLowerCase() === f.name.trim().toLowerCase());
   const blocked = !f.name.trim() || atkErrs || hpFErr;
 
   const buildSb = () => {
     const name = f.name.trim();
-    const atkActions = acts.filter((a) => a.n.trim()).map((a) => ({ ...(a.orig || {}), n: a.n.trim(), kind: "atk", hit: num(a.hit), dmg: a.dmg, dtype: a.dtype }));
+    const atkActions = acts.filter((a) => a.n.trim()).map((a) => ({ ...(a.orig || {}), n: a.n.trim(), kind: "atk", hit: num(a.hit), dmg: joinDice(a.dice), dtype: a.dtype }));
     const saveActions = svActs.filter((r) => r.n.trim()).map((r) => {
       const dc = num(r.dc, 13);
       const a = { ...(r.orig || {}), n: r.n.trim(), kind: "save", save: { ability: r.ability, dc } };
-      if (r.dmg.trim()) { a.dmg = r.dmg.trim(); a.dtype = r.dtype; } else { delete a.dmg; delete a.dtype; }
+      const sdmg = joinDice(r.dice);
+      if (sdmg) { a.dmg = sdmg; a.dtype = r.dtype; } else { delete a.dmg; delete a.dtype; }
       if (r.rech) a.rech = r.orig?.rech || 5; else delete a.rech;
-      if (!r.orig) a.d = synthSaveText(r, dc);
+      if (!r.orig) a.d = synthSaveText({ ...r, dmg: sdmg }, dc);
       return a;
     });
     const n = Math.max(1, Math.min(6, num(f.atkN, 1)));
@@ -5039,7 +5166,8 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
       vuln: [...DTYPES.filter((t) => riv[t] === "vul"), ...rivKeep.filter((x) => x.k === "vuln").map((x) => x.v)],
       condImmune: [...cimm, ...cimmKeep],
       traits: named(traits), bonus: named(bonus), reactions: named(reactions),
-      actions: [...atkActions, ...saveActions, ...otherActs],
+      actions: [...atkActions, ...saveActions, ...otherActs,
+        ...(spellText ? [{ n: "Spellcasting", kind: "text", d: spellText }] : [])],
       multi: n > 1 ? (multiText.trim() || genMulti(n)) : null,
     };
     if (f.spd.trim()) sb.spd = f.spd.trim(); else delete sb.spd;
@@ -5097,9 +5225,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
         </button>
 
         {sect("def", "Defences", [`AC ${num(f.ac, 10)}`, `HP ${Math.max(1, num(f.hp, 1))}`,
-          DTYPES.filter((t) => riv[t] === "res").length ? `${DTYPES.filter((t) => riv[t] === "res").length} resist` : null,
-          DTYPES.filter((t) => riv[t] === "imm").length ? `${DTYPES.filter((t) => riv[t] === "imm").length} immune` : null,
-          DTYPES.filter((t) => riv[t] === "vul").length ? `${DTYPES.filter((t) => riv[t] === "vul").length} vulnerable` : null,
+          rivSummary ? `${DTYPES.filter((t) => riv[t] !== "none").length} damage` : null,
           cimm.length ? `${cimm.length} cond. immune` : null].filter(Boolean).join(" · "), (<>
           <div className="grid2">
             <div className="frow"><label>AC</label><input type="number" value={f.ac} onChange={(e) => set("ac", e.target.value)} /></div>
@@ -5137,10 +5263,11 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               </label>
             ))}
           </div>
-          {/* One chip per damage type instead of three lists to spell out. Tapping cycles, so a type
-              can only be resistant OR immune OR vulnerable, and there is nothing to typo. */}
-          <div style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 2px" }}>
-            Damage — tap to cycle <span style={{ color: "var(--ok)" }}>½ resistant</span> · <span style={{ color: "var(--gold)" }}>⊘ immune</span> · <span style={{ color: "var(--danger)" }}>×2 vulnerable</span>
+          {/* Thirteen damage chips and fourteen condition chips are a lot of screen for something most
+              creatures barely use, so each hides behind its own header with what's set written on it. */}
+          {sect("dmg", "Damage resistances", rivSummary || "none set", (<>
+          <div style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>
+            Tap to cycle <span style={{ color: "var(--ok)" }}>½ resistant</span> · <span style={{ color: "var(--gold)" }}>⊘ immune</span> · <span style={{ color: "var(--danger)" }}>×2 vulnerable</span>
           </div>
           <div className="rivgrid">
             {DTYPES.map((t) => {
@@ -5163,9 +5290,9 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               ))}
             </div>
           )}
-          <div style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px" }} title="The app refuses to apply these conditions to it">
-            Condition immunities
-          </div>
+          </>))}
+          {sect("cond", "Condition immunities", cimm.length ? cimm.join(", ") : "none set", (<>
+          <div style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>The app refuses to apply these to it.</div>
           <div className="rivgrid">
             {COND_IMMUNE_PICKS.map((cn) => {
               const on = cimm.includes(cn);
@@ -5186,6 +5313,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               ))}
             </div>
           )}
+          </>))}
         </>))}
 
         {sect("off", "Attacks & abilities", `${acts.filter((a) => a.n.trim()).length} attack${acts.filter((a) => a.n.trim()).length === 1 ? "" : "s"}${svActs.length ? ` · ${svActs.length} save` : ""}`, (<>
@@ -5195,27 +5323,27 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               <input type="text" value={multiText} onChange={(e) => { setMultiText(e.target.value); setMultiTouched(true); }} /></div>
           )}
           {acts.map((a, i) => (
-            <div className="frow" key={i} style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
-              <Capped cap="attack" width="100%">
-                <input type="text" placeholder="Claw" autoComplete="off" spellCheck={false} style={{ width: "100%" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
-              </Capped>
-              <Capped cap="to hit" width={70}>
-                <input type="number" style={{ width: "100%" }} value={a.hit} onChange={(e) => setAct(i, "hit", e.target.value)} />
-              </Capped>
-              <Capped cap={dmgBad(a.dmg) ? "damage ⚠" : `damage${dmgAvg(a.dmg) != null ? ` · avg ${Math.round(dmgAvg(a.dmg))}` : ""}`} width={100}>
-                <input type="text" placeholder="2d6+3" autoComplete="off" spellCheck={false}
-                  style={{ width: "100%", borderColor: dmgBad(a.dmg) ? "var(--danger)" : undefined }}
-                  value={a.dmg} onChange={(e) => setAct(i, "dmg", e.target.value)} />
-              </Capped>
-              <Capped cap="type">
-                <select style={{ width: "100%" }} value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
-                  {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-                </select>
-              </Capped>
-              <button className="btn small ghost" title="Remove attack" onClick={() => setActs(acts.filter((_, j) => j !== i))}>✕</button>
+            <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
+              <div className="frow" style={{ margin: 0 }}>
+                <Capped cap="attack">
+                  <input type="text" placeholder="Claw" autoComplete="off" spellCheck={false} style={{ width: "100%" }} value={a.n} onChange={(e) => setAct(i, "n", e.target.value)} />
+                </Capped>
+                <button className="btn small ghost" title="Remove attack" style={{ alignSelf: "flex-end" }} onClick={() => setActs(acts.filter((_, j) => j !== i))}>✕</button>
+              </div>
+              <div className="frow" style={{ flexWrap: "wrap", alignItems: "flex-end", marginBottom: 0 }}>
+                <Capped cap="+ to hit" width={78}>
+                  <input type="number" style={{ width: "100%" }} value={a.hit} onChange={(e) => setAct(i, "hit", e.target.value)} />
+                </Capped>
+                <Capped cap="damage type">
+                  <select style={{ width: "100%" }} value={a.dtype} onChange={(e) => setAct(i, "dtype", e.target.value)}>
+                    {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+                  </select>
+                </Capped>
+              </div>
+              <DiceField v={a.dice} onChange={(v) => setAct(i, "dice", v)} />
             </div>
           ))}
-          <button className="btn small ghost" onClick={() => setActs([...acts, { n: "", hit: 4, dmg: "1d6+2", dtype: "slashing" }])}>+ another attack</button>
+          <button className="btn small ghost" onClick={() => setActs([...acts, { n: "", hit: 4, dice: splitDice("1d6+2"), dtype: "slashing" }])}>+ another attack</button>
           {unnamedAtk && <div className="trait" style={{ color: "var(--gold)", fontSize: 11 }}>An attack with no name is dropped — give it one and it'll be on the card.</div>}
           <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 4px" }}>Save abilities — breath weapons, auras, stings</div>
           {svActs.map((r, i) => (
@@ -5231,17 +5359,13 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
                     {ABILS.map((a2) => (<option key={a2}>{a2}</option>))}
                   </select>
                 </Capped>
-                <Capped cap={dmgBad(r.dmg) ? "damage ⚠" : `damage${dmgAvg(r.dmg) != null ? ` · avg ${Math.round(dmgAvg(r.dmg))}` : ""}`} width={92}>
-                  <input type="text" placeholder="4d6 (blank = none)" autoComplete="off" spellCheck={false}
-                    style={{ width: "100%", borderColor: dmgBad(r.dmg) ? "var(--danger)" : undefined }}
-                    value={r.dmg} onChange={(e) => setSv(i, "dmg", e.target.value)} />
-                </Capped>
-                <Capped cap="type">
+                <Capped cap="damage type">
                   <select style={{ width: "100%" }} value={r.dtype} onChange={(e) => setSv(i, "dtype", e.target.value)}>
                     {DTYPES.map((t) => (<option key={t}>{t}</option>))}
                   </select>
                 </Capped>
               </div>
+              <DiceField v={r.dice} onChange={(v) => setSv(i, "dice", v)} allowNone />
               <div className="frow" style={{ flexWrap: "wrap" }}>
                 <select value={r.cond} onChange={(e) => setSv(i, "cond", e.target.value)}>
                   <option value="">no condition on fail</option>
@@ -5252,7 +5376,61 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               </div>
             </div>
           ))}
-          <button className="btn small ghost" onClick={() => setSvActs([...svActs, { n: "", ability: "DEX", dc: chassis ? chassis.dc : 13, dmg: "", dtype: "fire", half: true, cond: "", rech: false }])}>+ save ability</button>
+          <button className="btn small ghost" onClick={() => setSvActs([...svActs, { n: "", ability: "DEX", dc: chassis ? chassis.dc : 13, dmg: "", dice: splitDice(""), dtype: "fire", half: true, cond: "", rech: false }])}>+ save ability</button>
+        </>))}
+
+        {sect("spell", "Spellcasting", spells.length ? `${spells.length} spell${spells.length === 1 ? "" : "s"} · DC ${spDC || "—"}` : "none", (<>
+          <div className="trait" style={{ fontSize: 11, color: "var(--faint)" }}>
+            Picked spells become a Spellcasting action, so the card offers each one to cast and tracks its uses for the day.
+          </div>
+          {spInit && !spTaken && (
+            <div className="trait" style={{ fontSize: 11, color: "var(--gold)" }}>
+              This creature's own Spellcasting text is kept as written — nothing here replaces it.
+            </div>
+          )}
+          <div className="grid2">
+            <div className="frow"><label>Ability</label>
+              <select value={spAbil} onChange={(e) => setSpAbil(e.target.value)}>
+                {["Intelligence", "Wisdom", "Charisma"].map((a2) => <option key={a2}>{a2}</option>)}
+              </select></div>
+            <div className="frow"><label title="Save DC for the spells that call for one">Spell DC</label>
+              <input type="number" placeholder={chassis ? String(chassis.dc) : "13"} value={spDC} onChange={(e) => setSpDC(e.target.value)} /></div>
+          </div>
+          <div className="frow"><label title="Only needed for spells that make an attack roll">Spell attack</label>
+            <input type="number" placeholder="—" value={spAtk} onChange={(e) => setSpAtk(e.target.value)} /></div>
+          <div className="frow"><label>Find a spell</label>
+            <input type="text" placeholder="fireball…" autoComplete="off" spellCheck={false} value={spellQ} onChange={(e) => setSpellQ(e.target.value)} /></div>
+          {spellQ.trim().length > 1 && (
+            <div className="rivgrid">
+              {Object.keys(SPELL_REF)
+                .filter((k) => SPELL_REF[k].n.toLowerCase().includes(spellQ.trim().toLowerCase()) && !spells.some((x) => x.k === k))
+                .sort((a2, b2) => SPELL_REF[a2].n.localeCompare(SPELL_REF[b2].n)).slice(0, 12)
+                .map((k) => (
+                  <button key={k} className="rivchip" title={SPELL_REF[k].m}
+                    onClick={() => { setSpells([...spells, { k, uses: "1" }]); setSpellQ(""); if (!spDC && chassis) setSpDC(String(chassis.dc)); }}>
+                    + {SPELL_REF[k].n}
+                  </button>
+                ))}
+              {!Object.keys(SPELL_REF).some((k) => SPELL_REF[k].n.toLowerCase().includes(spellQ.trim().toLowerCase())) && (
+                <span style={{ fontSize: 11, color: "var(--faint)" }}>Nothing in the compendium matches that.</span>
+              )}
+            </div>
+          )}
+          {spells.map((x, i) => (
+            <div className="frow" key={x.k} style={{ alignItems: "center" }}>
+              <span style={{ flex: 1, minWidth: 0 }}>✦ {SPELL_REF[x.k] ? SPELL_REF[x.k].n : x.k}
+                {x.note ? <span style={{ color: "var(--gold)", fontSize: 11 }}> ({x.note})</span> : null}
+                <span style={{ color: "var(--faint)", fontSize: 11 }}> · {SPELL_REF[x.k] ? (String(SPELL_REF[x.k].m).match(/^(Cantrip|Level \d+)/) || [SPELL_REF[x.k].m])[0] : ""}</span>
+              </span>
+              <select value={x.uses} onChange={(e) => setSpells(spells.map((y, j) => (j === i ? { ...y, uses: e.target.value } : y)))}>
+                {SPELL_USE_GROUPS.map(([u, label]) => <option key={u} value={u}>{label}</option>)}
+              </select>
+              <button className="btn small ghost" title="Remove this spell" onClick={() => setSpells(spells.filter((_, j) => j !== i))}>✕</button>
+            </div>
+          ))}
+          {spellText && (
+            <div className="trait" style={{ fontSize: 11, color: "var(--faint)", fontFamily: "var(--mono)" }}>{spellText}</div>
+          )}
         </>))}
 
         {sect("traits", "Traits", traits.length ? `${traits.length}` : "Pack Tactics, Regeneration…", (<>
