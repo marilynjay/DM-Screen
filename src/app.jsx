@@ -503,7 +503,12 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rline .menu-anchor > button{padding:0 7px;font-size:16px;line-height:1.3}
 .row:last-child{border-bottom:none}
 .row.active{background:var(--gold-soft);box-shadow:inset 3px 0 0 var(--gold)}
-.row.dead > *:not(.lootico){opacity:.42}
+/* A dead row reads as dimmed and struck through — but its ⋮ menu has to stay legible, because Revive,
+   loot the body and Remove from combat all live in there. This used to dim the whole row subtree, and
+   opacity on an ancestor can't be undone by a child (they multiply), so the dim skips the menu instead
+   of trying to brighten it back. The ⋮ trigger still fades with the row; only the open menu is exempt. */
+.row.dead .rline > *:not(.menu-anchor){opacity:.42}
+.row.dead .menu-anchor > button{opacity:.42}
 .row.dead .nm{text-decoration:line-through}
 .row.dead .lootico{opacity:1;filter:drop-shadow(0 0 4px rgba(217,164,65,.7))}
 .initmark{font-family:var(--mono);font-size:13px;font-weight:600;width:30px;text-align:center;
