@@ -2664,12 +2664,14 @@ const DIE_SHAPES = {
                  ["21.5,17.5", "18.6,15.6"], ["2.5,17.5", "5.4,15.6"], ["12,23", "12,19.5"]] },
 };
 
-function DieFace({ sides, val, flick, cls, dropped, size, rolling }) {
+function DieFace({ sides, val, flick, cls, dropped, size, rolling, tumble }) {
   const sh = DIE_SHAPES[sides] || DIE_SHAPES[6];
   const shown = flick != null ? ((val * 7 + flick * 13) % sides) + 1 : val;
   const px = size || 30;
   return (
-    <svg className={`die ${dropped ? "dropped" : ""} ${cls || "plain"} ${rolling ? "rolling" : ""}`} viewBox="0 0 24 24" width={px} height={px * 0.95} aria-hidden="true">
+    <svg className={`die ${dropped ? "dropped" : ""} ${cls || "plain"} ${rolling ? "rolling" : ""}`}
+      style={tumble ? { animationDuration: `${tumble}s` } : undefined}
+      viewBox="0 0 24 24" width={px} height={px * 0.95} aria-hidden="true">
       {sh.rect
         ? <rect className="shell" x="3.5" y="3.5" width="17" height="17" rx="2.5" strokeWidth="1.3" />
         : <polygon className="shell" points={sh.pts} strokeWidth="1.3" />}
@@ -2684,22 +2686,26 @@ function DieFace({ sides, val, flick, cls, dropped, size, rolling }) {
 }
 
 /* one synchronized flicker + tumble for a whole roll — no slot-machine chaos.
-   The number lands as the die's rotation settles (~.95s animation). */
+   The number lands as the die's rotation settles. The tumble is scaled to the chosen reveal speed,
+   because a fixed .95s spin means the total and the verdict land while the die is still showing
+   random faces — at 0.2s beats the die would still be lying about the number it rolled. */
 function DiceGroup({ dice, size, delayMs = 0 }) {
+  const tumble = Math.min(0.95, Math.max(0.3, ANIM.beat * 1.2));
+  const k = tumble / 0.95; // the flicker schedule rides along, so the face settles with the spin
   const [flick, setFlick] = useState(ANIM.on ? 0 : null);
   const [rolling, setRolling] = useState(ANIM.on && delayMs === 0);
   useEffect(() => {
     if (!ANIM.on) return undefined;
     const ts = [setTimeout(() => setRolling(true), delayMs),
-                setTimeout(() => setFlick(1), delayMs + 150), setTimeout(() => setFlick(2), delayMs + 330),
-                setTimeout(() => setFlick(3), delayMs + 520), setTimeout(() => setFlick(null), delayMs + 720),
-                setTimeout(() => setRolling(false), delayMs + 1000)]; // outlives the .95s tumble so the class never cuts it short
+                setTimeout(() => setFlick(1), delayMs + 150 * k), setTimeout(() => setFlick(2), delayMs + 330 * k),
+                setTimeout(() => setFlick(3), delayMs + 520 * k), setTimeout(() => setFlick(null), delayMs + 720 * k),
+                setTimeout(() => setRolling(false), delayMs + tumble * 1000 + 50)]; // outlives the tumble so the class never cuts it short
     return () => ts.forEach(clearTimeout);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       {dice.map((d, i) => (
-        <DieFace key={i} sides={d.s} val={d.v} flick={flick} cls={d.cls} dropped={d.dropped} size={size} rolling={rolling} />
+        <DieFace key={i} sides={d.s} val={d.v} flick={flick} cls={d.cls} dropped={d.dropped} size={size} rolling={rolling} tumble={tumble} />
       ))}
     </>
   );
@@ -2709,8 +2715,8 @@ function DiceGroup({ dice, size, delayMs = 0 }) {
    then the total, then verdict/damage chips — one element per beat.
    ANIM is module-level so the render-time helpers below can read it; App assigns
    it from the persisted animation-speed setting during render, before children. */
-const ANIM_SPEEDS = { fast: 0.5, medium: 1.5, slow: 2.3 };
-const ANIM = { beat: ANIM_SPEEDS.medium, on: true };
+const ANIM_SPEEDS = { xfast: 0.2, fast: 0.5, medium: 1.5, slow: 2.3 };
+const ANIM = { beat: ANIM_SPEEDS.fast, on: true };
 const MANUAL = { on: false }; // DM rolls physical dice for monster attacks; App assigns from the setting
 const OLDSCHOOL = { on: false }; // Old School Mode: the app never rolls for monsters — pure HP tracker; App assigns from the setting
 const TIES = { mode: "players" }; // how to break initiative ties: players | dex | monsters | ask (App assigns from the setting)
@@ -10680,7 +10686,7 @@ export default function App() {
   const [restoreBanner, setRestoreBanner] = useState(null);
   const [myBestiary, setMyBestiary] = useState([]);
   const [myItems, setMyItems] = useState([]);
-  const [animSpeed, setAnimSpeedState] = useState("medium");
+  const [animSpeed, setAnimSpeedState] = useState("fast"); // most DMs want the result, not the show
   const setAnimSpeed = (v) => { setAnimSpeedState(v); stSet("dm5e:animSpeed", v); };
   const [manualDice, setManualDiceState] = useState(false);
   const setManualDice = (v) => { setManualDiceState(v); stSet("dm5e:manualDice", v ? 1 : 0); };
@@ -10755,7 +10761,7 @@ export default function App() {
   }, [edition]);
   // assign during render so components created in this same pass read the fresh values
   EDITION.v = edition;
-  ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.medium;
+  ANIM.beat = ANIM_SPEEDS[animSpeed] ?? ANIM_SPEEDS.fast;
   ANIM.on = animSpeed !== "off";
   MANUAL.on = manualDice;
   OLDSCHOOL.on = oldSchool;
@@ -13794,7 +13800,8 @@ export default function App() {
             <div className="trait" style={{ marginBottom: 8 }}>
               How roll results reveal: the die tumbles, then the modifier, total, hit/miss, and damage drop in one at a time.
             </div>
-            {[["fast", "Fast", "0.5s between elements"],
+            {[["xfast", "Extra fast", "0.2s between elements — barely a beat"],
+              ["fast", "Fast", "0.5s between elements — the default"],
               ["medium", "Medium", "1.5s between elements"],
               ["slow", "Slow", "2.3s between elements"],
               ["off", "Off", "No dice tumble — everything appears instantly"]].map(([k, label, hint]) => (
