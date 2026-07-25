@@ -622,6 +622,25 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .look-swatches{display:flex;flex-wrap:wrap;gap:5px}
 .look-sw{width:24px;height:24px;flex:none;border-radius:6px;border:2px solid transparent;cursor:pointer;padding:0}
 .look-sw.on{border-color:#fff;box-shadow:0 0 0 1px var(--gold)}
+/* the "+" at the end of every colour row: a rainbow until a custom colour is chosen, then
+   the colour itself. The native picker is the whole swatch, just invisible. */
+.look-sw-any{position:relative;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;
+  font-size:14px;line-height:1;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);
+  background-image:conic-gradient(#d94e42,#c9a227,#3f9a4e,#2f7bc4,#7048a8,#d94e42)}
+.look-sw-any input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;cursor:pointer}
+/* grouped builder rows */
+.look-grp{border:1px solid var(--line);border-radius:8px;margin:6px 0;overflow:hidden}
+.look-grp.open{border-color:var(--line2)}
+.look-grp-hd{display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:var(--raised);
+  border:0;padding:7px 10px;min-height:38px;cursor:pointer;color:var(--text);font-size:13px}
+.look-grp-car{color:var(--gold);font-size:11px;flex:none}
+.look-grp-t{font-weight:600;flex:none}
+.look-grp-sub{color:var(--faint);font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.look-grp-body{padding:6px 10px 9px}
+/* framing a picked photo */
+.look-crop{display:flex;flex-direction:column;align-items:center;gap:6px}
+.look-crop-box{position:relative;overflow:hidden;border-radius:10px;border:1px solid var(--gold-soft);
+  background:#15121b;touch-action:none;cursor:grab;max-width:100%}
 .look-chips{display:flex;flex-wrap:wrap;gap:4px}
 .look-chip{font-size:12px;border:1px solid var(--line2);border-radius:999px;background:var(--panel);color:var(--text);padding:3px 9px;cursor:pointer}
 .look-chip.on{border-color:var(--gold);background:var(--gold-soft)}
@@ -6000,7 +6019,8 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
     a.href = url; a.download = `combatkeeper-backup-${obj.exported.slice(0, 10)}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
-    setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${(obj.items || []).length} item${(obj.items || []).length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}.`);
+    const nImg = Object.keys(obj.images || {}).length;
+    setBkMsg(`Backup saved: ${obj.bestiary.length} bestiary monster${obj.bestiary.length === 1 ? "" : "s"}, ${(obj.items || []).length} item${(obj.items || []).length === 1 ? "" : "s"}, ${Object.keys(obj.slots).length} encounter${Object.keys(obj.slots).length === 1 ? "" : "s"}, ${Object.keys(obj.groups).length} group${Object.keys(obj.groups).length === 1 ? "" : "s"}${nImg ? `, ${nImg} NPC photo${nImg === 1 ? "" : "s"}` : ""}.`);
   };
   const restoreFromFile = async (e) => {
     const file = e.target.files?.[0];
@@ -6010,7 +6030,7 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
       const obj = JSON.parse(await file.text());
       if (obj.app !== "dm5e") throw new Error("Not a Combatkeeper backup file.");
       const r = await onImportAll(obj);
-      setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.items || 0} items, ${r.slots} encounters, ${r.groups} groups (merged into what's here).`);
+      setBkMsg(`Restored: ${r.bestiary} bestiary, ${r.items || 0} items, ${r.slots} encounters, ${r.groups} groups${r.images ? `, ${r.images} NPC photo${r.images === 1 ? "" : "s"}` : ""} (merged into what's here).`);
       refresh();
     } catch (err) { setBkMsg(`Restore failed: ${err.message}`); }
   };
@@ -6096,16 +6116,17 @@ function SlotsModal({ hasEnemies, initialShowBk, focus, onSave, onLoad, onDelete
                 placeholder="Export fills this box — copy it out. Or paste a backup here and Import." value={bkText} onChange={(e) => setBkText(e.target.value)} />
               <div className="frow" style={{ marginTop: 6 }}>
                 <button className="btn small" onClick={async () => {
-                  const obj = await onExportAll();
+                  // text route deliberately leaves NPC photos out — see exportAll
+                  const obj = await onExportAll(false);
                   setBkText(JSON.stringify(obj));
-                  setBkMsg(`Exported ${obj.bestiary.length} bestiary, ${Object.keys(obj.slots).length} encounters, ${Object.keys(obj.groups).length} groups. Copy the text!`);
+                  setBkMsg(`Exported ${obj.bestiary.length} bestiary, ${Object.keys(obj.slots).length} encounters, ${Object.keys(obj.groups).length} groups. Copy the text! NPC photos are left out here — too big to copy by hand, so use “Save backup file” if you want them.`);
                 }}>Export as text</button>
                 <button className="btn small primary" disabled={!bkText.trim()} onClick={async () => {
                   try {
                     const obj = JSON.parse(bkText);
                     if (obj.app !== "dm5e") throw new Error("Not a Combatkeeper backup.");
                     const r = await onImportAll(obj);
-                    setBkMsg(`Imported: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups.`);
+                    setBkMsg(`Imported: ${r.bestiary} bestiary, ${r.slots} encounters, ${r.groups} groups${r.images ? `, ${r.images} NPC photo${r.images === 1 ? "" : "s"}` : ""}.`);
                     setBkText(""); refresh();
                   } catch (e) { setBkMsg(`Import failed: ${e.message}`); }
                 }}>Import</button>
@@ -7377,11 +7398,46 @@ const HAIR_COLORS = ["#1c140f", "#3a2418", "#5a3b22", "#8a5a2b", "#c98f3a", "#e6
 const EYE_COLORS = ["#4a2c14", "#6b4a26", "#3f6a3a", "#2f7c8c", "#2f5aa8", "#6a6a72", "#8a3030", "#7048a8", "#c9a227", "#d94e42"];
 const LOOK_EARS = [["round", "Round"], ["pointed", "Pointed"], ["large", "Large"]];
 const LOOK_TEETH = [["none", "None"], ["tusks", "Tusks"], ["fangs", "Fangs"]];
+const HORN_COLORS = ["#e4d8bd", "#cbb894", "#9a8360", "#6b5a44", "#2f2a26", "#d9d2c5", "#c9a227", "#8a3030", "#3f4a5a", "#7048a8"];
+const SCLERA_COLORS = ["#ffffff", "#f3ece0", "#e8d7b8", "#f0c9c9", "#c9cfd6", "#8f9aa6", "#4a4450", "#161018", "#2a4a2a", "#3a2030"];
+const CLOTH_COLORS = ["#3b3444", "#2b2f3d", "#4b3a2b", "#5a2b2b", "#2b4a3a", "#28405c", "#4a2b52", "#6b6250", "#8a8f98", "#1b1722", "#7a5a2b", "#b03b2b"];
+const MARK_COLORS = ["#8a3030", "#b03b2b", "#1c140f", "#2f5aa8", "#3f9a4e", "#c9a227", "#7048a8", "#efeff3", "#2f7c8c", "#d94e42"];
+/* The mouth and brows carried a single hardcoded smile, so a lich, a grieving widow and a
+   tavern keeper all beamed identically. Each expression sets the mouth and how the brows
+   tilt: `bIn`/`bOut` raise the inner/outer end of each brow, `skew` lifts one brow only. */
+const LOOK_EXPR = [
+  ["neutral", "Neutral", { mouth: "M43 72 Q50 74.5 57 72", bIn: 0, bOut: 0, skew: 0 }],
+  ["warm", "Warm", { mouth: "M43 71 Q50 76.5 57 71", bIn: 0.5, bOut: 1, skew: 0 }],
+  ["grim", "Grim", { mouth: "M43.5 73 Q50 72.2 56.5 73", bIn: -1.5, bOut: -0.5, skew: 0 }],
+  ["angry", "Angry", { mouth: "M43 75 Q50 69.5 57 75", bIn: -3.5, bOut: 1.5, skew: 0 }],
+  ["sad", "Sad", { mouth: "M43 75 Q50 71 57 75", bIn: 3, bOut: -1.5, skew: 0 }],
+  ["smug", "Smug", { mouth: "M43 73.5 Q50 73.5 57 70", bIn: 0, bOut: 0, skew: 3 }],
+];
+const exprOf = (k) => (LOOK_EXPR.find(([v]) => v === k) || LOOK_EXPR[1])[2];
+/* Face shapes put the chin in different places, but the features sat at fixed heights — a
+   long face got a vast blank chin, an angular one crowded. Everything below the hairline
+   shifts by this much so each shape stays in proportion. */
+const FACE_SHIFT = { round: 0, oval: 0.5, long: 3, square: 0.5, heart: -0.5, angular: 0.5 };
+// Multi-select; each is drawn over the finished face. Sides are as you look at the portrait.
+const LOOK_MARKS = [["scar", "Scar"], ["patch", "Eye patch"], ["warpaint", "War paint"], ["tattoo", "Tattoo"], ["freckles", "Freckles"]];
+const usesMarkColor = (m) => (m || []).some((k) => k === "warpaint" || k === "tattoo");
 // Ears/teeth used to be hard-wired to species; now they're editable fields. When unset (older data or a
 // homebrew race), fall back to the species-appropriate default so nothing regresses.
 const deriveEars = (sp) => (["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp) ? "pointed" : ["Goblin", "Kobold", "Hobgoblin"].includes(sp) ? "large" : "round");
 const deriveTeeth = (sp) => (["Orc", "Half-Orc"].includes(sp) ? "tusks" : ["Vampire", "Werewolf", "Demon"].includes(sp) ? "fangs" : "none");
-const blankLook = () => ({ on: false, notes: "", species: "Human", sex: "", customRace: "", face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none" });
+const blankLook = () => ({
+  on: false, notes: "", species: "Human", sex: "", customRace: "",
+  face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none",
+  sclera: SCLERA_COLORS[0], hornColor: HORN_COLORS[0], cloth: CLOTH_COLORS[0], expr: "warm", marks: [], markColor: MARK_COLORS[0],
+  eyeSplit: false, eyesR: "", scleraR: "", img: "",
+});
+/* Iris and sclera are one choice for both eyes until the DM asks for two. When `eyeSplit`
+   is off the right-hand fields are ignored entirely, so turning it off restores a matched
+   pair without losing what was picked. Sides are as you look at the portrait. */
+const eyeSideOf = (L, right) => ({
+  iris: (right && L.eyeSplit && L.eyesR) || L.eyes || EYE_COLORS[0],
+  sclera: (right && L.eyeSplit && L.scleraR) || L.sclera || SCLERA_COLORS[0],
+});
 const hasLook = (l) => !!(l && l.on);
 // Who they are, in one glance. "N/A" is a real answer, not a blank — constructs, oozes and the
 // deliberately unspecified all want it said out loud rather than left looking unfilled.
@@ -7496,12 +7552,98 @@ const HORN_ART = Object.fromEntries(Object.entries(HORN_STYLES).map(([k, s]) => 
   return [k, { fill: body.fill, edge: body.edge, shade: shade.fill, ridges: s.ridges.map((t) => seg(body.at(t))) }];
 }));
 
+/* ── NPC photos ─────────────────────────────────────────────────────────────────
+   A DM often has a particular picture in mind, so a look can carry one instead of the
+   drawn face. Two rules shape the whole design:
+
+   What gets stored is never what was picked. A phone photo is several MB and the entire
+   browser store is about five, so the file is drawn to a canvas, cropped square, shrunk
+   to 320px and re-encoded — a couple of tens of KB. The original is dropped on the floor,
+   which is also why re-cropping means picking the file again rather than nudging a saved
+   original around.
+
+   And photos live under their own keys rather than inline on the party. Party saves happen
+   constantly and must not drag image data through every one of them. That makes reads async,
+   so a module-level cache keeps list thumbnails from flashing blank. */
+const PORTRAIT_PX = 320;
+const imgKey = (id) => `dm5e:img:${id}`;
+const IMG_CACHE = new Map();
+const IMG_PENDING = new Map();
+async function imgLoad(id) {
+  if (!id) return null;
+  if (IMG_CACHE.has(id)) return IMG_CACHE.get(id);
+  if (IMG_PENDING.has(id)) return IMG_PENDING.get(id);
+  const p = stGet(imgKey(id)).then((v) => {
+    const url = typeof v === "string" && v.startsWith("data:") ? v : null;
+    IMG_CACHE.set(id, url); IMG_PENDING.delete(id); return url;
+  });
+  IMG_PENDING.set(id, p);
+  return p;
+}
+async function imgSave(id, dataUrl) { const ok = await stSet(imgKey(id), dataUrl); if (ok) IMG_CACHE.set(id, dataUrl); return ok; }
+async function imgDrop(id) { if (!id) return; IMG_CACHE.delete(id); await stDel(imgKey(id)); }
+// Pull every photo a party's NPCs use into the cache up front, so thumbnails draw on first paint.
+function imgWarm(parties) {
+  const ids = new Set();
+  (parties || []).forEach((p) => (p.notebook?.npcs || p.npcs || []).forEach((n) => { if (n?.look?.img) ids.add(n.look.img); }));
+  ids.forEach((id) => { imgLoad(id); });
+}
+function useLookImage(look) {
+  const id = (look && look.img) || "";
+  const [url, setUrl] = useState(() => (id ? IMG_CACHE.get(id) || null : null));
+  useEffect(() => {
+    if (!id) { setUrl(null); return undefined; }
+    if (IMG_CACHE.has(id)) { setUrl(IMG_CACHE.get(id)); return undefined; }
+    let live = true;
+    imgLoad(id).then((u) => { if (live) setUrl(u || null); });
+    return () => { live = false; };
+  }, [id]);
+  return url;
+}
+// Decoding is where an unsupported format shows up (an iPhone .heic opens on Safari but
+// nowhere else), so the caller gets a plain failure it can explain.
+function decodeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const im = new Image();
+    im.onload = () => resolve({ im, release: () => URL.revokeObjectURL(url), url });
+    im.onerror = () => { URL.revokeObjectURL(url); reject(new Error("decode")); };
+    im.src = url;
+  });
+}
+/* crop: { z, nx, ny } — zoom, then pan as a fraction (-1..1) of the slack at that zoom, so
+   the same numbers describe the on-screen preview and the baked canvas. */
+function cropRect(nw, nh, crop, px) {
+  const k = Math.max(px / nw, px / nh) * (crop.z || 1);
+  const dw = nw * k, dh = nh * k;
+  return {
+    dw, dh,
+    dx: (px - dw) / 2 + ((crop.nx || 0) * Math.max(0, dw - px)) / 2,
+    dy: (px - dh) / 2 + ((crop.ny || 0) * Math.max(0, dh - px)) / 2,
+  };
+}
+function bakePortrait(im, crop, px = PORTRAIT_PX) {
+  const cv = document.createElement("canvas");
+  cv.width = px; cv.height = px;
+  const g = cv.getContext("2d");
+  g.fillStyle = "#15121b"; g.fillRect(0, 0, px, px);
+  const r = cropRect(im.naturalWidth || im.width, im.naturalHeight || im.height, crop, px);
+  g.drawImage(im, r.dx, r.dy, r.dw, r.dh);
+  const webp = cv.toDataURL("image/webp", 0.82); // markedly smaller than JPEG at this size
+  return webp.startsWith("data:image/webp") ? webp : cv.toDataURL("image/jpeg", 0.85);
+}
+
 // A chibi face composited from SVG primitives, driven entirely by a `look` object. viewBox 0..100.
 function NpcPortrait({ look, size = 64, frame = true }) {
   const L = look || {};
+  const photo = useLookImage(L);
   const skin = L.skin || SKIN_TONES[1];
   const hairC = L.hairColor || HAIR_COLORS[2];
-  const eyeC = L.eyes || EYE_COLORS[0];
+  const clothC = L.cloth || CLOTH_COLORS[0];
+  const hornC = L.hornColor || HORN_COLORS[0];
+  const markC = L.markColor || MARK_COLORS[0];
+  const marks = Array.isArray(L.marks) ? L.marks : [];
+  const EX = exprOf(L.expr);
   const line = "rgba(0,0,0,.28)";
   const sk = { fill: skin, stroke: line, strokeWidth: 1.4 };
   const sp = L.species;
@@ -7510,6 +7652,14 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const tusks = teeth === "tusks";
   const fangs = teeth === "fangs";
   const plate = sp === "Construct" || sp === "Warforged"; // Warforged kept as a back-compat alias for any saved NPC
+  /* Species flourishes: derived, never stored, so picking a species changes the drawing
+     without overwriting anything the DM chose. Only Construct had one of these before. */
+  const scaled = ["Dragonborn", "Dragonkin", "Lizardfolk", "Kobold"].includes(sp);
+  const slitPupil = scaled || sp === "Devil" || sp === "Demon";
+  const glowEyes = ["Lich", "Ghost", "Ghoul"].includes(sp);
+  const spectral = sp === "Ghost";
+  // features sit at fixed heights, so shift them together to suit the chin the face shape gives
+  const dy = FACE_SHIFT[L.face] || 0;
   const face = (() => {
     switch (L.face) {
       case "oval": return <ellipse cx="50" cy="53" rx="25" ry="31" {...sk} />;
@@ -7525,15 +7675,28 @@ function NpcPortrait({ look, size = 64, frame = true }) {
     : earStyle === "pointed"
       ? <path d={`M${cx} 47 L${cx + s * 8} 44 L${cx + s * 3} 62 Z`} {...sk} />
       : <ellipse cx={cx + s * 2} cy="55" rx="4.5" ry="6.5" {...sk} />;
-  const eye = (cx) => (
-    <g>
-      <ellipse cx={cx} cy="55" rx="7" ry="8" fill="#fff" stroke="rgba(0,0,0,.22)" strokeWidth="1" />
-      <circle cx={cx} cy="56" r="4.5" fill={eyeC} />
-      <circle cx={cx} cy="56" r="2.1" fill="#161018" />
-      <circle cx={cx - 1.5} cy="53.6" r="1.5" fill="#fff" />
-    </g>
-  );
-  const brow = (x1, x2, up) => <path d={`M${x1} ${45 - up} Q${(x1 + x2) / 2} ${41 - up} ${x2} ${45 - up}`} stroke={hairC} strokeWidth="2.4" fill="none" strokeLinecap="round" />;
+  const eye = (cx, right) => {
+    const { iris, sclera } = eyeSideOf(L, right);
+    return (
+      <g>
+        {glowEyes && <circle cx={cx} cy="56" r="10" fill={iris} opacity="0.3" />}
+        <ellipse cx={cx} cy="55" rx="7" ry="8" fill={sclera} stroke="rgba(0,0,0,.22)" strokeWidth="1" />
+        <circle cx={cx} cy="56" r="4.5" fill={iris} />
+        {slitPupil
+          ? <ellipse cx={cx} cy="56" rx="1.3" ry="4" fill="#161018" />
+          : <circle cx={cx} cy="56" r="2.1" fill="#161018" />}
+        <circle cx={cx - 1.5} cy="53.6" r="1.5" fill="#fff" opacity="0.9" />
+      </g>
+    );
+  };
+  /* Brow ends move independently: that is what carries the expression. `side` is -1 for the
+     left of the portrait, +1 for the right; the inner end is the one nearer the nose. */
+  const brow = (side) => {
+    const xo = 50 + side * 19, xi = 50 + side * 5;
+    const lift = EX.skew && side > 0 ? EX.skew : 0; // smug raises one brow only
+    const yo = 45 - EX.bOut - lift, yi = 45 - EX.bIn - lift;
+    return <path d={`M${xo} ${yo} Q${(xo + xi) / 2} ${(yo + yi) / 2 - 4} ${xi} ${yi}`} stroke={hairC} strokeWidth="2.4" fill="none" strokeLinecap="round" />;
+  };
   const beard = (() => {
     switch (L.beard) {
       case "stubble": return <path d="M28 60 Q30 80 50 84 Q70 80 72 60 Q66 74 50 76 Q34 74 28 60 Z" fill={hairC} opacity="0.28" />;
@@ -7560,7 +7723,9 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       case "mohawk": return <g fill={hairC}><path d="M44 28 Q45 8 50 7 Q55 8 56 28 L56 33 L44 33 Z" /></g>;
       case "curly": return <g fill={hairC}><circle cx="30" cy="34" r="9" /><circle cx="42" cy="26" r="10" /><circle cx="55" cy="25" r="10" /><circle cx="68" cy="32" r="9" /><circle cx="26" cy="44" r="7" /><circle cx="74" cy="44" r="7" /></g>;
       case "bun": return <g fill={hairC}><circle cx="50" cy="16" r="8.5" /><path d="M26 44 Q26 24 50 23 Q74 24 74 44 Q74 32 50 31 Q26 32 26 44 Z" /></g>;
-      case "hood": return <path d="M15 54 Q13 20 50 15 Q87 20 85 54 Q85 40 73 34 L74 42 Q72 29 50 27 Q28 29 26 42 L27 34 Q15 40 15 54 Z" fill="#4b4553" stroke="rgba(0,0,0,.3)" strokeWidth="1" />;
+      // a hood is a garment, so it takes the clothing colour — it used to be hardcoded, which
+      // made the hair-colour swatch look broken for anyone wearing one
+      case "hood": return <path d="M15 54 Q13 20 50 15 Q87 20 85 54 Q85 40 73 34 L74 42 Q72 29 50 27 Q28 29 26 42 L27 34 Q15 40 15 54 Z" fill={clothC} stroke="rgba(0,0,0,.3)" strokeWidth="1" />;
       case "long":
       case "ponytail":
       case "braids":
@@ -7573,46 +7738,150 @@ function NpcPortrait({ look, size = 64, frame = true }) {
     if (!art) return null;
     const one = (
       <g>
-        <path d={art.fill} fill="#e4d8bd" />
-        <path d={art.shade} fill="rgba(90,66,40,.22)" />
-        {art.ridges.map((d, i) => <path key={i} d={d} stroke="rgba(90,66,40,.34)" strokeWidth="1" fill="none" strokeLinecap="round" />)}
+        <path d={art.fill} fill={hornC} />
+        <path d={art.shade} fill="rgba(0,0,0,.16)" />
+        {art.ridges.map((d, i) => <path key={i} d={d} stroke="rgba(0,0,0,.24)" strokeWidth="1" fill="none" strokeLinecap="round" />)}
         <path d={art.edge} fill="none" stroke="rgba(0,0,0,.32)" strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" />
       </g>
     );
     return <g>{one}<g transform="translate(100,0) scale(-1,1)">{one}</g></g>;
   })();
-  return (
-    <svg viewBox="0 0 100 100" width={size} height={size} style={frame ? { borderRadius: 10, background: "radial-gradient(circle at 50% 35%,#2a2632,#15121b)", display: "block" } : { display: "block" }}>
+  // scar and tattoo sit on the portrait's left cheek, the patch on its right, so they never fight
+  const has = (k) => marks.includes(k);
+  const bust = (
+    <>
       {/* shoulders + neck give it a bust silhouette */}
-      <path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" fill="#3b3444" />
+      <path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" fill={clothC} />
       <rect x="43" y="72" width="14" height="14" rx="4" fill={skin} stroke={line} strokeWidth="1" />
-      {ear(22, -1)}{ear(78, 1)}
+      <g transform={`translate(0,${dy})`}>{ear(22, -1)}{ear(78, 1)}</g>
       {hairBack}
       {face}
+      {scaled && <g stroke="rgba(0,0,0,.2)" strokeWidth="0.9" fill="none">
+        <path d="M36 36 Q40 33 44 36" /><path d="M56 36 Q60 33 64 36" /><path d="M31 62 Q34 60 37 63" /><path d="M63 63 Q66 60 69 62" /><path d="M42 30 Q50 27 58 30" />
+      </g>}
       {plate && <g stroke="rgba(0,0,0,.28)" strokeWidth="1" fill="none"><line x1="50" y1="30" x2="50" y2="69" /><path d="M31 41 Q50 36 69 41" /><rect x="34" y="30" width="32" height="7" rx="2" fill="rgba(255,255,255,.14)" stroke="none" /></g>}
-      {brow(31, 45, 0)}{brow(55, 69, 0)}
-      {eye(38)}{eye(62)}
-      <path d="M50 58 L48 65 Q50 67 52 65" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" fill="none" strokeLinecap="round" />
-      <path d="M43 71 Q50 76 57 71" stroke="#7a3f3f" strokeWidth="2" fill="none" strokeLinecap="round" />
-      {beard}
-      {tusks && <g fill="#f2ead6" stroke="rgba(0,0,0,.25)" strokeWidth="0.6"><path d="M41 75 L43.5 66 L46 74 Z" /><path d="M59 75 L56.5 66 L54 74 Z" /></g>}
-      {fangs && <g fill="#fff" stroke="rgba(0,0,0,.2)" strokeWidth="0.5"><path d="M46 70 L47.5 75 L49 70 Z" /><path d="M51 70 L52.5 75 L54 70 Z" /></g>}
+      <g transform={`translate(0,${dy})`}>
+        {has("freckles") && <g fill={markC} opacity="0.4">
+          {[[34, 62], [38, 65], [42, 63], [58, 63], [62, 65], [66, 62], [36, 58], [64, 58]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.1" />)}
+        </g>}
+        {/* a band across the eyes (the eyes draw over it) plus a stroke down each cheek —
+            it used to sit up on the brows, which read as a headband rather than paint */}
+        {has("warpaint") && <g fill={markC} opacity="0.72">
+          <path d="M26 50 Q50 45.5 74 50 L74 56.5 Q50 52 26 56.5 Z" />
+          <path d="M30.5 61 L34.5 61 L33.5 70.5 L31.5 70.5 Z" opacity="0.8" />
+          <path d="M65.5 61 L69.5 61 L68.5 70.5 L66.5 70.5 Z" opacity="0.8" />
+        </g>}
+        {brow(-1)}{brow(1)}
+        {eye(38, false)}{eye(62, true)}
+        <path d="M50 58 L48 65 Q50 67 52 65" stroke="rgba(0,0,0,.3)" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+        <path d={EX.mouth} stroke="#7a3f3f" strokeWidth="2" fill="none" strokeLinecap="round" />
+        {beard}
+        {tusks && <g fill="#f2ead6" stroke="rgba(0,0,0,.25)" strokeWidth="0.6"><path d="M41 75 L43.5 66 L46 74 Z" /><path d="M59 75 L56.5 66 L54 74 Z" /></g>}
+        {fangs && <g fill="#fff" stroke="rgba(0,0,0,.2)" strokeWidth="0.5"><path d="M46 70 L47.5 75 L49 70 Z" /><path d="M51 70 L52.5 75 L54 70 Z" /></g>}
+        {has("tattoo") && <g stroke={markC} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.8">
+          <path d="M30 66 L34 60 L30 55" /><path d="M33 67 L37 62" />
+        </g>}
+        {has("scar") && <g stroke="rgba(150,70,60,.85)" strokeWidth="1.5" fill="none" strokeLinecap="round">
+          <path d="M35 43 L31 64" /><path d="M32.2 49 L37 50.5" /><path d="M31.4 57 L36 58" />
+        </g>}
+        {has("patch") && <g>
+          <path d="M47 44.5 Q66 40.5 79.5 49" stroke="#241f2b" strokeWidth="2.6" fill="none" strokeLinecap="round" />
+          <rect x="54" y="47.5" width="16" height="15" rx="3.5" fill="#241f2b" stroke="rgba(0,0,0,.5)" strokeWidth="1" />
+        </g>}
+      </g>
       {hairFront}
       {horns}
+    </>
+  );
+  const bg = "radial-gradient(circle at 50% 35%,#2a2632,#15121b)";
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} style={frame ? { borderRadius: 10, background: bg, display: "block" } : { display: "block" }}>
+      {/* A photo replaces the drawing but never erases it: clear the photo and the face is
+          exactly as it was. `slice` crops to fill so the frame matches every other portrait. */}
+      {photo
+        ? <image href={photo} x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" />
+        : (spectral ? <g opacity="0.62">{bust}</g> : bust)}
     </svg>
   );
 }
 
-// swatch + chip helpers for the appearance builder
-function LookSwatches({ colors, value, onPick }) {
-  return <div className="look-swatches">{colors.map((c) => (
-    <button key={c} type="button" className={`look-sw ${value === c ? "on" : ""}`} style={{ background: c }} onClick={() => onPick(c)} />
-  ))}</div>;
+/* swatch + chip helpers for the appearance builder. Every colour row ends in a "+" that
+   opens the device colour picker — the palettes are a shortcut, not the limit, and a DM
+   matching a specific character shouldn't have to settle for the nearest chip. */
+function LookSwatches({ colors, value, onPick, custom = true }) {
+  const isCustom = !!value && !colors.includes(value);
+  return (
+    <div className="look-swatches">
+      {colors.map((c) => (
+        <button key={c} type="button" className={`look-sw ${value === c ? "on" : ""}`} style={{ background: c }} title={c} onClick={() => onPick(c)} />
+      ))}
+      {custom && (
+        <label className={`look-sw look-sw-any ${isCustom ? "on" : ""}`} title="Any colour you like"
+          style={isCustom ? { background: value, backgroundImage: "none" } : undefined}>
+          {!isCustom && <span aria-hidden="true">+</span>}
+          <input type="color" value={/^#[0-9a-f]{6}$/i.test(value || "") ? value : "#888888"} onChange={(e) => onPick(e.target.value)} />
+        </label>
+      )}
+    </div>
+  );
 }
 function LookChips({ options, value, onPick }) {
   return <div className="look-chips">{options.map(([v, lbl]) => (
     <button key={v} type="button" className={`look-chip ${value === v ? "on" : ""}`} onClick={() => onPick(v)}>{lbl}</button>
   ))}</div>;
+}
+// Same chips, but any number can be lit at once (scars, war paint and a patch can coexist).
+function LookMultiChips({ options, value, onToggle }) {
+  const on = Array.isArray(value) ? value : [];
+  return <div className="look-chips">{options.map(([v, lbl]) => (
+    <button key={v} type="button" className={`look-chip ${on.includes(v) ? "on" : ""}`} onClick={() => onToggle(v)}>{on.includes(v) ? `✓ ${lbl}` : lbl}</button>
+  ))}</div>;
+}
+/* The builder outgrew one flat list, so the rows are grouped and each group remembers a
+   summary of what is inside it — on a phone you can see the whole shape of the thing
+   without scrolling past forty swatches to find the horns. */
+function LookGroup({ title, sub, open, onToggle, children }) {
+  return (
+    <div className={`look-grp ${open ? "open" : ""}`}>
+      <button type="button" className="look-grp-hd" onClick={onToggle}>
+        <span className="look-grp-car">{open ? "▾" : "▸"}</span>
+        <span className="look-grp-t">{title}</span>
+        {sub ? <span className="look-grp-sub">{sub}</span> : null}
+      </button>
+      {open && <div className="look-grp-body">{children}</div>}
+    </div>
+  );
+}
+const rndOf = (a) => a[Math.floor(Math.random() * a.length)];
+/* Rolls the drawing only. Species, sex, name and notes are facts about the person, and a
+   photo would hide the result, so all of those are left alone. */
+const rollLook = (L) => ({
+  ...L,
+  face: rndOf(LOOK_FACES)[0], ears: rndOf(LOOK_EARS)[0], skin: rndOf(SKIN_TONES),
+  hair: rndOf(LOOK_HAIR)[0], hairColor: rndOf(HAIR_COLORS),
+  eyes: rndOf(EYE_COLORS), sclera: Math.random() < 0.75 ? SCLERA_COLORS[0] : rndOf(SCLERA_COLORS),
+  eyeSplit: false, eyesR: "", scleraR: "",
+  beard: rndOf(LOOK_BEARD)[0], teeth: rndOf(LOOK_TEETH)[0],
+  horns: Math.random() < 0.7 ? "none" : rndOf(LOOK_HORNS.slice(1))[0], hornColor: rndOf(HORN_COLORS),
+  cloth: rndOf(CLOTH_COLORS), expr: rndOf(LOOK_EXPR)[0],
+  marks: Math.random() < 0.6 ? [] : [rndOf(LOOK_MARKS)[0]], markColor: rndOf(MARK_COLORS),
+});
+/* Copy a face from one NPC and paste it onto another — the fields that describe the drawing,
+   not who the person is. Held in a module variable so it survives closing one editor and
+   opening the next. */
+const LOOK_DRAW_KEYS = ["face", "ears", "skin", "hair", "hairColor", "eyes", "sclera", "eyeSplit", "eyesR", "scleraR",
+  "beard", "teeth", "horns", "hornColor", "cloth", "expr", "marks", "markColor", "img"];
+let LOOK_CLIP = null;
+const copyLook = (L) => { LOOK_CLIP = {}; LOOK_DRAW_KEYS.forEach((k) => { if (L[k] !== undefined) LOOK_CLIP[k] = L[k]; }); };
+/* A pasted photo is duplicated rather than shared: two NPCs pointing at one stored image
+   means removing the photo from either one blanks both. */
+async function pastedLook(clip) {
+  const next = { ...clip, marks: Array.isArray(clip.marks) ? [...clip.marks] : [] };
+  if (clip.img) {
+    const src = await imgLoad(clip.img);
+    if (src) { const id = newUid(); next.img = (await imgSave(id, src)) ? id : ""; } else next.img = "";
+  }
+  return next;
 }
 
 // The appearance section shown in the NPC editor: free-text notes + an opt-in chibi portrait. Flow:
@@ -7621,7 +7890,58 @@ function NpcAppearance({ value, onChange }) {
   const look = value || blankLook();
   const [choosing, setChoosing] = useState(false); // race + use-default/customize picker, before a portrait exists
   const [expanded, setExpanded] = useState(false);  // full builder controls open
+  // face/eyes/hair start open — the rest would just be forty swatches between you and the horns
+  const [open, setOpen] = useState({ photo: false, face: true, eyes: true, hair: true, horns: false, expr: false, cloth: false });
+  const [advEyes, setAdvEyes] = useState(false);
+  const [crop, setCrop] = useState(null); // { im, url, release, z, nx, ny } while framing a picked photo
+  const [imgMsg, setImgMsg] = useState("");
+  const [clipReady, setClipReady] = useState(!!LOOK_CLIP);
+  const fileRef = useRef(null);
+  const boxRef = useRef(null);
+  const dragRef = useRef(null);
   const set = (patch) => onChange({ ...look, ...patch });
+  const flip = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const CROP_PX = 210;
+
+  const pickFile = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImgMsg("");
+    try {
+      const { im, release, url } = await decodeImageFile(file);
+      setCrop({ im, url, release, z: 1, nx: 0, ny: 0 });
+    } catch {
+      // the common case is an iPhone .heic, which only decodes on Safari
+      setImgMsg("This device can't read that image. iPhone .heic files only open on Safari — a JPEG or PNG works everywhere.");
+    }
+  };
+  const cancelCrop = () => { if (crop) crop.release(); setCrop(null); };
+  const useCrop = async () => {
+    if (!crop) return;
+    const data = bakePortrait(crop.im, crop);
+    const id = look.img || newUid();
+    const ok = await imgSave(id, data);
+    crop.release();
+    setCrop(null);
+    if (ok) { set({ img: id, on: true }); setImgMsg(""); }
+    else setImgMsg("Couldn't save the photo — this browser's storage is full. Free some space and try again.");
+  };
+  const dropPhoto = async () => { const id = look.img; set({ img: "" }); await imgDrop(id); };
+  // pan in the crop frame: a drag moves the picture by a fraction of the slack at this zoom
+  const onCropDown = (e) => {
+    if (!crop) return;
+    const r = cropRect(crop.im.naturalWidth, crop.im.naturalHeight, crop, CROP_PX);
+    dragRef.current = { x: e.clientX, y: e.clientY, nx: crop.nx, ny: crop.ny, sx: Math.max(1, r.dw - CROP_PX), sy: Math.max(1, r.dh - CROP_PX) };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onCropMove = (e) => {
+    const d = dragRef.current;
+    if (!d || !crop) return;
+    const clamp = (n) => Math.max(-1, Math.min(1, n));
+    setCrop((c) => (c ? { ...c, nx: clamp(d.nx + (2 * (e.clientX - d.x)) / d.sx), ny: clamp(d.ny + (2 * (e.clientY - d.y)) / d.sy) } : c));
+  };
+  const onCropUp = () => { dragRef.current = null; };
   // Species and sex are chosen at the top of the editor now (they are facts about the person, not
   // drawing options); the caption under the preview echoes them so the portrait still reads on its own.
   const sx = sexOf(look);
@@ -7631,17 +7951,101 @@ function NpcAppearance({ value, onChange }) {
       {raceName}{sx ? <span style={{ color: sx[3], marginLeft: 5 }} title={sx[2]}>{sx[1]}</span> : null}
     </div>
   );
+  const lbl = (list, v) => (list.find(([k]) => k === v) || ["", "—"])[1];
+  const marks = Array.isArray(look.marks) ? look.marks : [];
+  const cr = crop ? cropRect(crop.im.naturalWidth, crop.im.naturalHeight, crop, CROP_PX) : null;
+  const photoBlock = (
+    <LookGroup title="Photo" sub={look.img ? "using a photo" : "off — drawn face"} open={open.photo} onToggle={() => flip("photo")}>
+      {crop ? (
+        <div className="look-crop">
+          <div className="look-crop-box" ref={boxRef} style={{ width: CROP_PX, height: CROP_PX }}
+            onPointerDown={onCropDown} onPointerMove={onCropMove} onPointerUp={onCropUp} onPointerCancel={onCropUp}>
+            <img src={crop.url} alt="" draggable={false}
+              style={{ position: "absolute", width: cr.dw, height: cr.dh, left: cr.dx, top: cr.dy, userSelect: "none" }} />
+          </div>
+          <div className="look-row"><span>Zoom</span>
+            <input type="range" min="1" max="3.2" step="0.02" value={crop.z} style={{ flex: 1 }}
+              onChange={(e) => setCrop((c) => ({ ...c, z: Number(e.target.value) }))} />
+          </div>
+          <div className="trait">Drag the picture to move it. Whatever is inside the square is what gets kept.</div>
+          <div className="frow" style={{ gap: 8, marginTop: 6 }}>
+            <button className="btn small primary" onClick={useCrop}>✓ Use this</button>
+            <button className="btn small ghost" onClick={cancelCrop}>Cancel</button>
+          </div>
+        </div>
+      ) : (<>
+        <button className="btn small w100" onClick={() => fileRef.current && fileRef.current.click()}>
+          {look.img ? "🖼 Replace photo…" : "🖼 Use a photo instead…"}
+        </button>
+        {look.img && <button className="btn small ghost warn w100" style={{ marginTop: 6 }} onClick={dropPhoto}>Remove photo — go back to the drawn face</button>}
+        <div className="trait" style={{ marginTop: 6 }}>
+          {look.img
+            ? "Your photo is what shows. Remove it and the drawn face comes back exactly as you left it."
+            : "Stays on this device — nothing is ever uploaded. Cropped square and shrunk to 320px, so it costs about 25KB rather than several megabytes."}
+        </div>
+        {look.img && <div className="trait">Only the cropped 320px version is kept, so changing the framing means picking the file again.</div>}
+      </>)}
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/*" style={{ display: "none" }} onChange={pickFile} />
+      {imgMsg && <div style={{ fontSize: 12, color: "var(--danger)", marginTop: 6 }}>{imgMsg}</div>}
+    </LookGroup>
+  );
   const controls = (
     <div className="look-controls">
-      <div className="look-row col"><span>Face</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
-      <div className="look-row col"><span>Ears</span><LookChips options={LOOK_EARS} value={look.ears || deriveEars(look.species)} onPick={(v) => set({ ears: v })} /></div>
-      <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
-      <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
-      <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
-      <div className="look-row col"><span>Eyes</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
-      <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
-      <div className="look-row col"><span>Horns</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
-      <div className="look-row col"><span>Teeth</span><LookChips options={LOOK_TEETH} value={look.teeth || deriveTeeth(look.species)} onPick={(v) => set({ teeth: v })} /></div>
+      <div className="frow" style={{ gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+        <button className="btn small" title="Roll a random face — species, sex and notes are left alone" onClick={() => onChange(rollLook(look))}>🎲 Surprise me</button>
+        <button className="btn small ghost" onClick={() => { copyLook(look); setClipReady(true); }}>Copy look</button>
+        <button className="btn small ghost" disabled={!clipReady} title={clipReady ? "Paste the copied face onto this NPC" : "Copy a look from another NPC first"}
+          onClick={async () => { if (LOOK_CLIP) onChange({ ...look, ...(await pastedLook(LOOK_CLIP)) }); }}>Paste look</button>
+      </div>
+      {photoBlock}
+      <LookGroup title="Face & skin" sub={`${lbl(LOOK_FACES, look.face)} · ${lbl(LOOK_EARS, look.ears || deriveEars(look.species))}`} open={open.face} onToggle={() => flip("face")}>
+        <div className="look-row col"><span>Face shape</span><LookChips options={LOOK_FACES} value={look.face} onPick={(v) => set({ face: v })} /></div>
+        <div className="look-row col"><span>Ears</span><LookChips options={LOOK_EARS} value={look.ears || deriveEars(look.species)} onPick={(v) => set({ ears: v })} /></div>
+        <div className="look-row col"><span>Skin</span><LookSwatches colors={SKIN_TONES} value={look.skin} onPick={(c) => set({ skin: c })} /></div>
+        <div className="look-row col"><span>Teeth</span><LookChips options={LOOK_TEETH} value={look.teeth || deriveTeeth(look.species)} onPick={(v) => set({ teeth: v })} /></div>
+      </LookGroup>
+      <LookGroup title="Eyes" sub={look.eyeSplit ? "two different eyes" : "matched pair"} open={open.eyes} onToggle={() => flip("eyes")}>
+        <div className="look-row col"><span>{look.eyeSplit ? "Iris — left eye" : "Iris"}</span><LookSwatches colors={EYE_COLORS} value={look.eyes} onPick={(c) => set({ eyes: c })} /></div>
+        <div className="look-row col"><span>{look.eyeSplit ? "White — left eye" : "White of the eye"}</span><LookSwatches colors={SCLERA_COLORS} value={look.sclera || SCLERA_COLORS[0]} onPick={(c) => set({ sclera: c })} /></div>
+        {/* Both eyes move together unless asked otherwise — one odd eye is a deliberate choice,
+            not something a DM should have to keep re-matching by hand. */}
+        <button className="btn tiny ghost" style={{ marginTop: 4 }} onClick={() => { setAdvEyes(!advEyes || !look.eyeSplit); if (look.eyeSplit) set({ eyeSplit: false }); }}>
+          {look.eyeSplit ? "◂ Back to one pair of eyes" : "Each eye separately… ▸"}
+        </button>
+        {(advEyes || look.eyeSplit) && !look.eyeSplit && (
+          <div style={{ marginTop: 6 }}>
+            <div className="trait">Give them mismatched eyes — heterochromia, a blinded eye, one that glows.</div>
+            <button className="btn tiny primary" style={{ marginTop: 4 }} onClick={() => set({ eyeSplit: true, eyesR: look.eyes, scleraR: look.sclera || SCLERA_COLORS[0] })}>Turn on separate eyes</button>
+          </div>
+        )}
+        {look.eyeSplit && (<>
+          <div className="look-row col" style={{ marginTop: 8 }}><span>Iris — right eye</span><LookSwatches colors={EYE_COLORS} value={look.eyesR || look.eyes} onPick={(c) => set({ eyesR: c })} /></div>
+          <div className="look-row col"><span>White — right eye</span><LookSwatches colors={SCLERA_COLORS} value={look.scleraR || look.sclera || SCLERA_COLORS[0]} onPick={(c) => set({ scleraR: c })} /></div>
+          <div className="trait">Left and right are as you look at the portrait.</div>
+        </>)}
+      </LookGroup>
+      <LookGroup title="Hair" sub={`${lbl(LOOK_HAIR, look.hair)} · ${lbl(LOOK_BEARD, look.beard)}`} open={open.hair} onToggle={() => flip("hair")}>
+        <div className="look-row col"><span>Hair style</span><LookChips options={LOOK_HAIR} value={look.hair} onPick={(v) => set({ hair: v })} /></div>
+        <div className="look-row col"><span>Hair colour</span><LookSwatches colors={HAIR_COLORS} value={look.hairColor} onPick={(c) => set({ hairColor: c })} /></div>
+        <div className="look-row col"><span>Facial hair</span><LookChips options={LOOK_BEARD} value={look.beard} onPick={(v) => set({ beard: v })} /></div>
+        {look.hair === "hood" && <div className="trait">A hood takes the clothing colour, further down.</div>}
+      </LookGroup>
+      <LookGroup title="Horns" sub={lbl(LOOK_HORNS, look.horns)} open={open.horns} onToggle={() => flip("horns")}>
+        <div className="look-row col"><span>Shape</span><LookChips options={LOOK_HORNS} value={look.horns} onPick={(v) => set({ horns: v })} /></div>
+        {look.horns !== "none" && <div className="look-row col"><span>Horn colour</span><LookSwatches colors={HORN_COLORS} value={look.hornColor || HORN_COLORS[0]} onPick={(c) => set({ hornColor: c })} /></div>}
+      </LookGroup>
+      <LookGroup title="Expression & markings" sub={`${lbl(LOOK_EXPR, look.expr || "warm")}${marks.length ? ` · ${marks.length} marking${marks.length === 1 ? "" : "s"}` : ""}`} open={open.expr} onToggle={() => flip("expr")}>
+        <div className="look-row col"><span>Expression</span><LookChips options={LOOK_EXPR.map(([k, l]) => [k, l])} value={look.expr || "warm"} onPick={(v) => set({ expr: v })} /></div>
+        <div className="look-row col"><span>Markings</span>
+          <LookMultiChips options={LOOK_MARKS} value={marks} onToggle={(v) => set({ marks: marks.includes(v) ? marks.filter((m) => m !== v) : [...marks, v] })} />
+        </div>
+        {(usesMarkColor(marks) || marks.includes("freckles")) &&
+          <div className="look-row col"><span>Marking colour</span><LookSwatches colors={MARK_COLORS} value={look.markColor || MARK_COLORS[0]} onPick={(c) => set({ markColor: c })} /></div>}
+      </LookGroup>
+      <LookGroup title="Clothing" sub="shoulders, and any hood" open={open.cloth} onToggle={() => flip("cloth")}>
+        <div className="look-row col"><span>Colour</span><LookSwatches colors={CLOTH_COLORS} value={look.cloth || CLOTH_COLORS[0]} onPick={(c) => set({ cloth: c })} /></div>
+        <div className="trait">Does most of the work telling NPCs apart in the roster, where the portrait is tiny.</div>
+      </LookGroup>
     </div>
   );
   return (
@@ -7652,7 +8056,7 @@ function NpcAppearance({ value, onChange }) {
         // was a `btn small ghost` lost among the other small buttons — nobody found it
         <button className="btn w100 look-cta" onClick={() => setChoosing(true)}>
           <span className="look-cta-art"><NpcPortrait look={{ ...look, on: true }} size={40} frame={false} /></span>
-          <span>🎨 Add a portrait<br /><span className="look-cta-sub">Draw a face for them — {raceName.toLowerCase()} by default, then tweak anything</span></span>
+          <span>🎨 Add a portrait<br /><span className="look-cta-sub">Draw a face for them — {raceName.toLowerCase()} by default, then tweak anything, or use your own photo</span></span>
         </button>
       )}
       {!look.on && choosing && (
@@ -7662,6 +8066,7 @@ function NpcAppearance({ value, onChange }) {
           <div className="frow" style={{ gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
             <button className="btn small primary" onClick={() => { set({ on: true }); setChoosing(false); }}>Use default portrait</button>
             <button className="btn small ghost" onClick={() => { set({ on: true }); setChoosing(false); setExpanded(true); }}>Customize…</button>
+            <button className="btn small ghost" onClick={() => { set({ on: true }); setChoosing(false); setExpanded(true); setOpen((o) => ({ ...o, photo: true })); }}>Use a photo…</button>
             <button className="btn small ghost" onClick={() => setChoosing(false)}>Cancel</button>
           </div>
         </div>
@@ -7936,12 +8341,17 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
   /* Copy an NPC into a brand-new entry, then open it for editing. An entry is one person, so this is
      how you make the evil twin: their own row, their own HP, their own standing with the party. The
      copy starts with no approval history and not deceased — it hasn't met anyone yet. */
-  const duplicateNpc = (e) => {
+  const duplicateNpc = async (e) => {
     const copy = JSON.parse(JSON.stringify(e));
     copy.id = newUid();
     copy.name = `${(e.name || "NPC").trim()} (twin)`;
     delete copy.approval; delete copy.deceased;
     (copy.sections || []).forEach((sc) => { sc.id = newUid(); });
+    // the twin gets its own copy of any photo — sharing one means removing it from either blanks both
+    if (copy.look && copy.look.img) {
+      const src = await imgLoad(copy.look.img);
+      if (src) { const id = newUid(); copy.look.img = (await imgSave(id, src)) ? id : ""; } else copy.look.img = "";
+    }
     commitTab("npcs", [...get("npcs"), copy]);
     startEdit(copy, "npcs");
   };
@@ -8010,7 +8420,9 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
             : <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>)}
           {rowTab === "npcs" && <button className="btn small ghost" title="Duplicate — a separate NPC with the same look and stats, for a twin, a double, or a whole family" onClick={() => duplicateNpc(e)}>⧉</button>}
           <button className="btn small ghost" title="Edit" onClick={() => startEdit(e, rowTab)}>✎</button>
-          <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)) })}>✕</button>
+          {/* deleting the entry also releases its photo, or the stored image would sit there
+              eating a share of a 5MB budget with nothing left pointing at it */}
+          <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => { commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)); if (e.look && e.look.img) imgDrop(e.look.img); } })}>✕</button>
         </div>
         {isOpen && readSecs(secs)}
       </div>
@@ -11816,6 +12228,10 @@ export default function App() {
     if (!id) return;
     const gone = partiesRef.current.find((p) => p.id === id);
     const rest = partiesRef.current.filter((p) => p.id !== id);
+    // release the NPC photos this party owned, unless another party's NPC points at the same one
+    const kept = new Set();
+    rest.forEach((p) => ((p.notebook || {}).npcs || []).forEach((n) => { if (n?.look?.img) kept.add(n.look.img); }));
+    ((gone || {}).notebook || {}).npcs?.forEach((n) => { const im = n?.look?.img; if (im && !kept.has(im)) imgDrop(im); });
     savePartiesAll(rest, resolvePartyId(rest, livePartyId() === id ? null : livePartyId()));
     pushToasts([{ kind: "good", text: `Deleted ${((gone || {}).name || "").trim() || "the party"}.` }]);
   };
@@ -12127,6 +12543,7 @@ export default function App() {
         }),
       }));
       setPartiesState(withIds);
+      imgWarm(withIds); // pull NPC photos into memory now, so list thumbnails draw on first paint
       if (migrated) stSet("dm5e:parties", withIds); // stabilize member ids so spellbooks stay linked across sessions
       const ap = await stGet("dm5e:activeParty");
       if (ap) setActivePartyIdState(ap);
@@ -14200,22 +14617,35 @@ export default function App() {
     saveDungeons(dungeonsRef.current.map((d) => (d.id === dungeonPlayId
       ? { ...d, rooms: { ...d.rooms, [roomKey]: { ...(d.rooms[roomKey] || {}), ...patch } } } : d)));
   };
-  const exportAll = async () => {
+  /* `withImages` is false for the copy/paste-as-text route: a few hundred KB of base64 is
+     not something anyone can select out of a textarea, so that path carries everything
+     except the NPC photos and says so. The downloaded file carries them. */
+  const exportAll = async (withImages = true) => {
     const slotKeys = await stList("dm5e:slot:");
     const groupKeys = await stList("dm5e:group:");
     const slots = {}, groups = {};
     for (const k of slotKeys) slots[k.replace("dm5e:slot:", "")] = await stGet(k);
     for (const k of groupKeys) groups[k.replace("dm5e:group:", "")] = await stGet(k);
+    const images = {};
+    if (withImages) {
+      const ids = new Set();
+      (partiesRef.current || []).forEach((p) => ((p.notebook || {}).npcs || []).forEach((n) => { if (n?.look?.img) ids.add(n.look.img); }));
+      for (const id of ids) { const data = await imgLoad(id); if (data) images[id] = data; }
+    }
     const now = Date.now(); // producing an export counts as a backup — quiets the periodic reminder
     setBkStamps((s) => ({ ...(s || { first: now }), last: now }));
     stSet("dm5e:lastBackup", now);
-    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, parties: partiesRef.current, dungeons: dungeonsRef.current, slots, groups };
+    return { app: "dm5e", version: 1, exported: new Date().toISOString(), bestiary: bestRef.current, items: itemsRef.current, party: partyRef.current, parties: partiesRef.current, dungeons: dungeonsRef.current, slots, groups, images };
   };
   const importAll = async (obj) => {
     // whoever restores a backup already knows about backups — never show them the nudge
     backupSeenRef.current = true;
     stSet("dm5e:backupNoticeSeen", 1);
-    const r = { bestiary: 0, items: 0, slots: 0, groups: 0 };
+    const r = { bestiary: 0, items: 0, slots: 0, groups: 0, images: 0 };
+    // photos first: an NPC restored before its picture would draw the chibi face until reload
+    for (const [id, data] of Object.entries(obj.images || {})) {
+      if (typeof data === "string" && data.startsWith("data:") && (await imgSave(id, data))) r.images++;
+    }
     if (Array.isArray(obj.bestiary) && obj.bestiary.length) { const { added, updated } = upsertBestiary(obj.bestiary); r.bestiary = added + updated; }
     if (Array.isArray(obj.items) && obj.items.length) r.items = upsertItems(obj.items);
     for (const [k, v] of Object.entries(obj.slots || {})) { if (v) { await stSet(`dm5e:slot:${k}`, v); r.slots++; } }
