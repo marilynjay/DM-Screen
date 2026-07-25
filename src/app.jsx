@@ -7920,11 +7920,15 @@ function NpcAppearance({ value, onChange }) {
   const useCrop = async () => {
     if (!crop) return;
     const data = bakePortrait(crop.im, crop);
-    const id = look.img || newUid();
+    /* Every save mints a fresh id and releases the old one. Reusing the id would leave the
+       cache — and so every portrait on screen — holding the picture it already had, since
+       nothing about the look changed to tell them to look again. */
+    const prev = look.img;
+    const id = newUid();
     const ok = await imgSave(id, data);
     crop.release();
     setCrop(null);
-    if (ok) { set({ img: id, on: true }); setImgMsg(""); }
+    if (ok) { set({ img: id, on: true }); setImgMsg(""); if (prev && prev !== id) imgDrop(prev); }
     else setImgMsg("Couldn't save the photo — this browser's storage is full. Free some space and try again.");
   };
   const dropPhoto = async () => { const id = look.img; set({ img: "" }); await imgDrop(id); };
@@ -7938,8 +7942,10 @@ function NpcAppearance({ value, onChange }) {
   const onCropMove = (e) => {
     const d = dragRef.current;
     if (!d || !crop) return;
+    // read the coordinates now — the updater below runs later, and the event is not ours to keep
+    const mx = e.clientX, my = e.clientY;
     const clamp = (n) => Math.max(-1, Math.min(1, n));
-    setCrop((c) => (c ? { ...c, nx: clamp(d.nx + (2 * (e.clientX - d.x)) / d.sx), ny: clamp(d.ny + (2 * (e.clientY - d.y)) / d.sy) } : c));
+    setCrop((c) => (c ? { ...c, nx: clamp(d.nx + (2 * (mx - d.x)) / d.sx), ny: clamp(d.ny + (2 * (my - d.y)) / d.sy) } : c));
   };
   const onCropUp = () => { dragRef.current = null; };
   // Species and sex are chosen at the top of the editor now (they are facts about the person, not
