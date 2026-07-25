@@ -13253,6 +13253,13 @@ export default function App() {
 
   const modalC = modal?.uid ? state.combatants.find((x) => x.uid === modal.uid) : null;
 
+  /* Balancing is a before-the-fight job: it rewrites monster HP and counts to hit a difficulty, which
+     is not a thing to do to a fight already in progress. So the offer is withdrawn during combat and
+     comes back when combat ends. The enemy check matches what the balancer actually reads — a monster
+     switched to the party's side is not something it can weigh. */
+  const canBalance = state.mode !== "combat"
+    && state.combatants.some((c) => c.type === "monster" && c.side === "enemy" && !c.dead);
+
   /* ================= render ================= */
   if (pmOn) return <PlayerModeBoard onExit={() => setPmOn(false)} />;
   return (
@@ -13325,7 +13332,7 @@ export default function App() {
         </span>
         <span className="hdr-wide">
           <button className="btn small ghost" onClick={toggleLog}>Log</button>
-          {state.combatants.some((c) => c.type === "monster" && !c.dead) && (
+          {canBalance && (
             <button className="btn small ghost" title="Balance encounter to your party" onClick={() => setModal({ type: "balance" })}>⚖</button>
           )}
           <button className="btn small ghost" onClick={() => setModal({ type: "slots" })}>Saves</button>
@@ -13376,9 +13383,7 @@ export default function App() {
                 state.combatants.some((c) => c.side === "ally" && !c.dead) && (
                   <button key="gc" onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
                 ),
-                state.combatants.some((c) => c.type === "monster" && !c.dead) && (
-                  <button key="bal" onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
-                ),
+                canBalance && <button key="bal" onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>,
               ]),
               sec("Look it up", [
                 <button key="best" onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>,
