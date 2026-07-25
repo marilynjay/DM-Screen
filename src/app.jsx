@@ -2316,6 +2316,42 @@ function legSaveRef(o) {
   };
 }
 
+/* Passive Perception: tracked for players, estimated the standard way for anything else, so a
+   monster can roll Stealth against the party (or against another monster) without new data entry. */
+const passivePerc = (c) => (c && c.pp != null ? Number(c.pp) : 10 + ((c && c.mods && c.mods.wis) || 0));
+/* legSaveRef reads the 2024 statblock's "Dexterity Saving Throw: DC 18" shape. Homebrew and older
+   wording says "DC 13 Dexterity saving throw", so accept both before deciding a row has no save. */
+function saveRefLoose(o) {
+  const hit = legSaveRef(o);
+  if (hit) return hit;
+  const d = (o && o.d) || "";
+  const m = d.match(/DC (\d+) (Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma) saving throw/i);
+  if (!m) return null;
+  const dm = d.match(/(\d+d\d+(?:\s*[+-]\s*\d+)?)\s+(\w+) damage/i);
+  return {
+    ab: m[2].slice(0, 3).toLowerCase(), dc: +m[1],
+    dmg: dm ? dm[1].replace(/\s/g, "") : "", dtype: dm ? dm[2].toLowerCase() : "",
+    half: /half as much damage|Success:\s*Half/i.test(d), single: singleTargetText(d),
+    rpt: /repeats the save|repeat the saving throw/i.test(d),
+    ...(spellCondFrom(d, "") || {}),
+  };
+}
+/* What can the app actually do with a bonus action? Its rows used to be pure prose, so a goblin's
+   Nimble Escape and a behir's Swallow read the same as "the vampire shape-shifts" — nothing to press.
+   Spells were already picked out of the text by SpellBits; these are the rest. */
+function bonusHooks(c, b) {
+  const d = (b && b.d) || "";
+  const out = {};
+  if (/\bHide\b/.test(d) && /\baction\b/i.test(d)) out.hide = true;
+  const sv = saveRefLoose(b);
+  if (sv) out.save = sv;
+  const atks = legAttackRefs(c, b);
+  if (atks.length) out.atks = atks;
+  // a bonus action that turns the creature itself Invisible (Will-o'-Wisp's Vanish) — no save involved
+  if (!sv && /have the Invisible condition/i.test(d)) out.selfCond = { name: "Invisible", conc: /Concentration/i.test(d) };
+  return out;
+}
+
 function legAttackRefs(c, o) {
   const out = [];
   (c.actions || []).forEach((a, ai) => {
@@ -4417,9 +4453,45 @@ function MonsterCard({ c, api, results, peek, turnKey, oldSchool, onEndTurn, dem
       {c.bonus?.length > 0 && (
         <div className="sect">
           <div className="lbl">Bonus Actions</div>
-          {c.bonus.map((b, i) => (
-            <div className="trait" key={i}><b>{b.n}.</b> <UsePips c={c} k={"b" + i} api={api} turnOnly={peek} /> {b.d} <SpellBits turnKey={typeof turnKey === "undefined" ? null : turnKey} text={(b.n || "") + ". " + (b.d || "")} rowKey={"b" + i} open={spellOpen} setOpen={setSpellOpen} c={c} api={api} /></div>
-          ))}
+          {c.bonus.map((b, i) => {
+            // spells in the text are already chips via SpellBits; these are the other mechanical bits
+            const hk = peek ? {} : bonusHooks(c, b);
+            return (
+            <div className="trait" key={i}><b>{b.n}.</b> <UsePips c={c} k={"b" + i} api={api} turnOnly={peek} /> {b.d} <SpellBits turnKey={typeof turnKey === "undefined" ? null : turnKey} text={(b.n || "") + ". " + (b.d || "")} rowKey={"b" + i} open={spellOpen} setOpen={setSpellOpen} c={c} api={api} />
+              {hk.hide && (
+                <button className="btn small primary" style={{ marginLeft: 6 }} disabled={c.hidTurn}
+                  title={c.hidTurn ? "Already tried to hide this turn" : "Roll its Dexterity (Stealth) against the best passive Perception on the other side"}
+                  onClick={() => api.openHide(c.uid)}>🥷 {c.hidTurn ? "Hid" : "Hide"}</button>
+              )}
+              {hk.save && (
+                <button className="btn small primary" style={{ marginLeft: 6 }} disabled={b.rech && !b.ready}
+                  title="Roll this save for the targets and apply the damage"
+                  onClick={() => api.openGroupSave({ name: `${c.name} — ${b.n}`, ability: hk.save.ab, dc: hk.save.dc,
+                    dmg: hk.save.dmg, dtype: hk.save.dtype, half: hk.save.half, single: hk.save.single, rpt: hk.save.rpt,
+                    cond: hk.save.cond || null, condR: hk.save.condR ?? null, casterUid: c.uid, noDmg: !hk.save.dmg })}>
+                  ⭗ Roll — DC {hk.save.dc} {hk.save.ab.toUpperCase()}{hk.save.dmg ? ` · ${hk.save.dmg}` : ""}
+                </button>
+              )}
+              {(hk.atks || []).map((ar) => (
+                <button key={ar.ai} className="btn small primary" style={{ marginLeft: 6 }}
+                  title={`Roll ${ar.name} — this bonus action includes it`}
+                  onClick={() => api.rollAttack(c.uid, ar.ai)}>⚔ Roll {ar.name}</button>
+              ))}
+              {hk.selfCond && (
+                <button className="btn small primary" style={{ marginLeft: 6 }}
+                  title={`Apply ${hk.selfCond.name} to ${c.name}`}
+                  onClick={() => api.selfCondition(c.uid, hk.selfCond.name, hk.selfCond.conc ? b.n : null)}>
+                  🫥 Turn {hk.selfCond.name}
+                </button>
+              )}
+              {results[`${c.uid}:hide`] && hk.hide && (
+                <span className="results">
+                  <ResultChips chips={results[`${c.uid}:hide`]} />
+                </span>
+              )}
+            </div>
+            );
+          })}
         </div>
       )}
 
@@ -9055,20 +9127,50 @@ function SpellbookModal({ c, api, onClose }) {
   );
 }
 
-function HideCheckModal({ c, api, onClose }) {
+function HideCheckModal({ c, state, api, rolled, onClose }) {
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
+  // players roll their own dice, so they get asked; the app rolls for everything else
+  const mine = c.type !== "player";
+  const watchers = ((state && state.combatants) || []).filter((x) => x.uid !== c.uid && !x.dead
+    && x.type !== "effect" && x.type !== "object" && x.side !== c.side && x.side !== "effect");
+  const dc = watchers.length ? Math.max(...watchers.map(passivePerc)) : 10;
+  const seer = watchers.slice().sort((a, b) => passivePerc(b) - passivePerc(a))[0];
   return (
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>🥷 {c.name} hides</h3>
-        <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>
-          Did their Dexterity (Stealth) check beat the passive Perception of anyone who could notice them?
-        </div>
-        <div className="frow" style={{ justifyContent: "flex-end" }}>
-          <button className="btn" onClick={() => { if (armed()) { api.hide(c.uid, false); onClose(); } }}>✗ Spotted</button>
-          <button className="btn primary" onClick={() => { if (armed()) { api.hide(c.uid, true); onClose(); } }}>✓ Hidden</button>
-        </div>
+        {mine ? (<>
+          <div className="trait" style={{ fontSize: 13, marginBottom: 10 }}>
+            Dexterity (Stealth) {fmtMod((c.mods && c.mods.dex) || 0)} against the best passive Perception
+            watching — <b>{dc}</b>{seer ? ` (${seer.name})` : watchers.length ? "" : " (nobody's looking — 10)"}.
+          </div>
+          {rolled ? (<>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", margin: "10px 0" }}>
+              <DiceGroup dice={rolled.dice} size={46} />
+              <span style={{ fontSize: 28, fontWeight: 700 }}>= {rolled.badge.total}</span>
+              <span className={`verdict ${rolled.badge.ok ? "good" : "bad"}`}>{rolled.badge.ok ? "HIDDEN" : "SPOTTED"}</span>
+            </div>
+            <div className="ad">Recorded in the log{rolled.badge.ok ? " — the Hiding condition is on them" : ""}.</div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn primary" onClick={onClose}>Done</button>
+            </div>
+          </>) : (
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn" onClick={onClose}>Cancel</button>
+              <button className="btn primary" onClick={() => { if (armed()) api.rollHide(c.uid); }}>🎲 Roll Stealth</button>
+            </div>
+          )}
+        </>) : (<>
+          <div className="trait" style={{ fontSize: 13, marginBottom: 12 }}>
+            Did their Dexterity (Stealth) check beat the passive Perception of anyone who could notice them?
+            {watchers.length ? <> The best watching is <b>{dc}</b>{seer ? ` (${seer.name})` : ""}.</> : null}
+          </div>
+          <div className="frow" style={{ justifyContent: "flex-end" }}>
+            <button className="btn" onClick={() => { if (armed()) { api.hide(c.uid, false); onClose(); } }}>✗ Spotted</button>
+            <button className="btn primary" onClick={() => { if (armed()) { api.hide(c.uid, true); onClose(); } }}>✓ Hidden</button>
+          </div>
+        </>)}
       </div>
     </div>
   );
@@ -12464,6 +12566,47 @@ export default function App() {
       setModal({ type: "player-attack", uid, spellAtk: true, dtype: dtype || "", spellName: name });
     },
     openHide: (uid) => setModal({ type: "hide-check", uid }),
+    /* The app rolls for monsters, so a monster taking the Hide action gets its Dexterity (Stealth)
+       check rolled here and compared with the best passive Perception on the other side. */
+    rollHide: (uid) => mutate((d, L, T) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      const watchers = d.combatants.filter((x) => x.uid !== uid && !x.dead && x.type !== "effect" && x.type !== "object"
+        && x.side !== c.side && x.side !== "effect");
+      const dc = watchers.length ? Math.max(...watchers.map(passivePerc)) : 10;
+      const seer = watchers.slice().sort((a, b) => passivePerc(b) - passivePerc(a))[0];
+      const mod = (c.mods && c.mods.dex) || 0;
+      const r = d20(mod, ownAdv(c));
+      const ok = r.total >= dc;
+      c.hidTurn = true;
+      if (ok && !c.conditions.some((cd) => cd.name === "Hiding")) c.conditions.push({ name: "Hiding", rounds: null });
+      L.push(`🥷 <b>${c.name}</b> Hide — DEX (Stealth) ${r.text} vs passive Perception <b>${dc}</b>`
+        + `${seer ? ` (${seer.name})` : ""} — <b>${ok ? "HIDDEN" : "SPOTTED"}</b>`
+        + `${ok ? " — attacks against them have DIS; their attacks have ADV." : ""}`);
+      T.push({ kind: ok ? "good" : "bad", text: ok ? `${c.name} is hidden (${r.total} vs ${dc}).` : `${c.name} is spotted (${r.total} vs ${dc}).` });
+      const both = r.adv !== "none";
+      const dice = both
+        ? [{ s: 20, v: r.a, cls: r.a === 20 ? "critd" : r.a === 1 ? "fumbled" : "plain", dropped: r.a !== r.nat },
+           { s: 20, v: r.b, cls: r.b === 20 ? "critd" : r.b === 1 ? "fumbled" : "plain", dropped: r.b !== r.nat && r.a === r.nat }]
+        : [{ s: 20, v: r.nat, cls: r.crit ? "critd" : r.fumble ? "fumbled" : "plain" }];
+      const chip = { id: Math.random(), dice, dieSize: 30, k: ok ? "sgood" : "sbad",
+        t: ` DEX (Stealth) ${fmtMod(mod)} = ${r.total} vs passive Perception ${dc} — ${ok ? "HIDDEN" : "SPOTTED"}`,
+        badge: { ab: "STEALTH", total: r.total, ok, kind: "check" }, mod, dc };
+      setTimeout(() => {
+        setResults((res) => ({ ...res, [`${uid}:hide`]: [chip] }));
+        setModal((mm) => (mm && mm.type === "hide-check" && mm.uid === uid ? { ...mm, rolled: chip } : mm));
+      }, 0);
+    }),
+    // a bonus action that buffs the creature itself (Vanish → Invisible, holding Concentration).
+    // conc is the ability's own name, so the roster reads "◈ Vanish" rather than "◈ Invisible".
+    selfCondition: (uid, name, conc) => mutate((d, L) => {
+      const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
+      if ((c.condImmune || []).some((x) => String(x).toLowerCase().startsWith(name.toLowerCase()))) {
+        L.push(`<b>${c.name}</b> is immune to <b>${name}</b> — nothing applied.`); return;
+      }
+      if (!c.conditions.some((cd) => cd.name === name)) c.conditions.push({ name, rounds: null });
+      if (conc) c.concentration = conc;
+      L.push(`<b>${c.name}</b> gains <b>${name}</b>${conc ? ` — Concentration on <b>${conc}</b>` : ""}.`);
+    }),
     hide: (uid, success) => mutate((d, L) => {
       const c = d.combatants.find((x) => x.uid === uid); if (!c) return;
       c.hidTurn = true; // Hide is an action — once per turn (attempting counts, hit or miss)
@@ -15187,7 +15330,7 @@ export default function App() {
           demo={modal.demo} onSave={() => setModal({ type: "group-save" })} />
       )}
       {modal?.type === "hide-check" && modalC && (
-        <HideCheckModal c={modalC} api={api} onClose={() => setModal(null)} />
+        <HideCheckModal c={modalC} state={state} api={api} rolled={modal.rolled} onClose={() => setModal(null)} />
       )}
       {modal?.type === "magic-missile" && modalC && (
         <MagicMissileModal c={modalC} state={state} api={api} onClose={() => setModal(null)} />
