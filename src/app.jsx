@@ -13073,8 +13073,8 @@ export default function App() {
   const menuCues = (which) => [[300, () => {
     tutTop();
     setMoreMenu(which === "more"); setClearMenu(which === "clear"); setAddMenu(false);
-    // Old School Mode now lives behind ⋯ → More, so expand that too or the spotlight has nothing to land on.
-    setMainMore(which === "more");
+    // step 6 spotlights Old School Mode, which sits at the foot of ⋯ — the folded tail only gets in the way
+    setMainMore(false);
   }]];
 
   const cuesFor = (act) => {
@@ -13367,16 +13367,18 @@ export default function App() {
                so the list stops running off the bottom of a phone. Headings come from arrays so a
                group with nothing live (no allies on the board, say) drops its own heading too. */
             const sec = (label, items) => { const live = items.filter(Boolean); return live.length ? { label, live } : null; };
+            /* Nothing under "At this table" can do anything without creatures to aim it at — group save
+               reads the same list — so on an empty board the whole section stays away. */
+            const onBoard = state.combatants.some((c) => !c.dead && c.type !== "effect" && c.type !== "object");
             const groups = [
               sec("At this table", [
-                <button key="gs" onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>,
+                onBoard && <button key="gs" onClick={() => setModal({ type: "group-save" })}>⭗ Group save / AoE…</button>,
                 state.combatants.some((c) => c.side === "ally" && !c.dead) && (
                   <button key="gc" onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
                 ),
                 state.combatants.some((c) => c.type === "monster" && !c.dead) && (
                   <button key="bal" onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>
                 ),
-                <button key="log" onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>,
               ]),
               sec("Look it up", [
                 <button key="best" onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>,
@@ -13392,8 +13394,9 @@ export default function App() {
               ]),
             ].filter(Boolean);
             const tail = [
+              <button key="log" onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>,
               <button key="anim" onClick={() => setModal({ type: "anim" })}>🎲 Dice &amp; animations…</button>,
-              <button key="os" data-tut="oldschool" onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>,
+              <button key="pm" onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>,
               <button key="ties" onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>,
               <button key="ed" onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>,
               <button key="tut" disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>,
@@ -13412,9 +13415,9 @@ export default function App() {
                   {mainMore ? "▾" : "▸"} More…
                 </button>
                 {mainMore && tail}
-                {/* Player Mode hands the phone to the table, so it sits alone at the foot where a
-                    destructive-ish, one-way action belongs — not inside a heading. */}
-                <button onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>
+                {/* Old School Mode changes how every roll in the app is made, and a DM who works that
+                    way reaches for it constantly — it stays out here at the foot, one tap deep. */}
+                <button data-tut="oldschool" onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               </div>
             );
           })()}
