@@ -7345,7 +7345,7 @@ const rollNpcName = (species, avoid, sex) => {
 };
 const LOOK_FACES = [["round", "Round"], ["oval", "Oval"], ["square", "Square"], ["long", "Long"], ["heart", "Heart"], ["angular", "Angular"]];
 const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["swept", "Swept"], ["long", "Long"], ["ponytail", "Ponytail"], ["bun", "Bun"], ["curly", "Curly"], ["mohawk", "Mohawk"], ["braids", "Braids"], ["hood", "Hooded"]];
-const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"]];
+const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"], ["gazelle", "Gazelle"], ["bull", "Bull"]];
 const LOOK_BEARD = [["none", "None"], ["stubble", "Stubble"], ["moustache", "Moustache"], ["goatee", "Goatee"], ["full", "Full"]];
 const SKIN_TONES = ["#f4d9bd", "#e8c19c", "#d8a878", "#c68a5e", "#a86b43", "#7c4a2d", "#553320", "#8fbf6a", "#6fa84e", "#7db0cf", "#b7a6d6", "#cf8a8a", "#a9b0ba", "#d9cdbf"];
 const HAIR_COLORS = ["#1c140f", "#3a2418", "#5a3b22", "#8a5a2b", "#c98f3a", "#e6c766", "#d9d2c5", "#adb0b8", "#efeff3", "#b03b2b", "#7048a8", "#2f7bc4", "#3f9a4e"];
@@ -7402,6 +7402,74 @@ function NpcIdentityRow({ value, onChange }) {
     </>
   );
 }
+
+/* ── Horn geometry ──────────────────────────────────────────────────────────────
+   Horns used to be a constant-width, round-capped stroke, which reads as a noodle laid
+   on the head rather than bone growing out of it. A real horn is a tapered ribbon: thick
+   where it leaves the skull, a point (or a blunt stub) at the tip. So each style is
+   authored as a centreline plus a base width and the outline is generated — sample the
+   centreline, offset it by half the local width to either side, and close the two edges.
+   Ridge lines across the ribbon and a shade sliver down one edge do the rest.
+
+   Every style is authored for the RIGHT side of the face and mirrored about x=50, so the
+   pair always matches. The base cross-section is filled but NOT stroked, so the horn
+   meets the head instead of showing a hard line where it was glued on. */
+const hornSpline = (pts, steps = 10) => {
+  const p = [pts[0], ...pts, pts[pts.length - 1]]; // duplicate ends so the curve reaches them
+  const out = [];
+  for (let i = 0; i + 3 < p.length; i++) {
+    const [a, b, c, d] = [p[i], p[i + 1], p[i + 2], p[i + 3]];
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps, t2 = t * t, t3 = t2 * t;
+      const at = (j) => 0.5 * (2 * b[j] + (c[j] - a[j]) * t + (2 * a[j] - 5 * b[j] + 4 * c[j] - d[j]) * t2 + (-a[j] + 3 * b[j] - 3 * c[j] + d[j]) * t3);
+      out.push([at(0), at(1)]);
+    }
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+};
+/* `w0`→`w1` is the taper, `ease` biases where it happens (>1 keeps the horn thick longer
+   then narrows fast, like real bone), `off` slides the whole ribbon sideways for the shade. */
+function hornRibbon(pts, w0, w1, ease = 1, off = 0) {
+  const s = hornSpline(pts);
+  const n = s.length - 1;
+  const A = [], B = [], cross = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const p0 = s[Math.max(0, i - 1)], p1 = s[Math.min(n, i + 1)];
+    let dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len; // unit normal to the centreline
+    const w = (w0 + (w1 - w0) * Math.pow(t, ease)) / 2;
+    const cx = s[i][0] + nx * off * w0, cy = s[i][1] + ny * off * w0;
+    A.push([cx + nx * w, cy + ny * w]);
+    B.push([cx - nx * w, cy - ny * w]);
+    cross.push([[cx + nx * w * 0.78, cy + ny * w * 0.78], [cx - nx * w * 0.78, cy - ny * w * 0.78]]);
+  }
+  const f = (p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+  // one edge out to the tip, across it, and the other edge back — closing segment = the base
+  const open = `M${f(A[0])}` + A.slice(1).map((p) => `L${f(p)}`).join("") + B.slice().reverse().map((p) => `L${f(p)}`).join("");
+  return { fill: `${open}Z`, edge: open, at: (t) => cross[Math.round(t * n)] };
+}
+const HORN_STYLES = {
+  small:    { pts: [[59, 29], [61.5, 23], [63.5, 16.5]], w: 8.5, tip: 0, ease: 1.15, ridges: [] },
+  straight: { pts: [[58, 29.5], [63, 20], [68, 9.5], [70.5, 3]], w: 10, tip: 0, ease: 1.25, ridges: [0.3, 0.5, 0.7] },
+  curved:   { pts: [[57, 29.5], [63, 21], [71, 17], [74.5, 8], [72.5, 2.5]], w: 11, tip: 0, ease: 1.15, ridges: [0.26, 0.42, 0.58, 0.74] },
+  // back over the temple, down past the ear and forward again — the classic 3/4 curl.
+  // Bases sit off-centre on purpose: a pair rooted at the crown fuses into one pale bridge.
+  ram:      { pts: [[60, 28.5], [71, 25.5], [80.5, 30], [83.5, 41], [77, 48.5], [71.5, 44]], w: 11.5, tip: 1, ease: 1, ridges: [0.16, 0.3, 0.44, 0.58, 0.72, 0.86] },
+  // long, slim and near-vertical, with the heavy annulations gazelle horns are known for
+  gazelle:  { pts: [[59, 29.5], [61.5, 20], [64, 10], [65, 1]], w: 8.5, tip: 0, ease: 2, ridges: [0.12, 0.23, 0.34, 0.45, 0.56, 0.67, 0.78, 0.88] },
+  // heavy and low off the side of the skull, out then hooking up to a blunt tip
+  bull:     { pts: [[58, 35], [68.5, 34], [78, 31], [82.5, 23.5], [81.5, 17]], w: 12, tip: 2.6, ease: 1.05, ridges: [0.32, 0.5, 0.68] },
+};
+// Precomputed at load: the styles never change, so no portrait pays to re-derive them.
+const HORN_ART = Object.fromEntries(Object.entries(HORN_STYLES).map(([k, s]) => {
+  const body = hornRibbon(s.pts, s.w, s.tip, s.ease);
+  const shade = hornRibbon(s.pts, s.w * 0.44, s.tip * 0.44, s.ease, 0.27);
+  const seg = (p) => `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)}L${p[1][0].toFixed(1)} ${p[1][1].toFixed(1)}`;
+  return [k, { fill: body.fill, edge: body.edge, shade: shade.fill, ridges: s.ridges.map((t) => seg(body.at(t))) }];
+}));
 
 // A chibi face composited from SVG primitives, driven entirely by a `look` object. viewBox 0..100.
 function NpcPortrait({ look, size = 64, frame = true }) {
@@ -7476,14 +7544,17 @@ function NpcPortrait({ look, size = 64, frame = true }) {
     }
   })();
   const horns = (() => {
-    const hc = "#e4d8bd", hs = "rgba(0,0,0,.3)";
-    switch (L.horns) {
-      case "small": return <g fill={hc} stroke={hs} strokeWidth="1"><path d="M34 26 L30 12 L40 24 Z" /><path d="M66 26 L70 12 L60 24 Z" /></g>;
-      case "straight": return <g fill={hc} stroke={hs} strokeWidth="1"><path d="M35 27 L27 6 L41 25 Z" /><path d="M65 27 L73 6 L59 25 Z" /></g>;
-      case "curved": return <g fill="none" stroke={hc} strokeWidth="5" strokeLinecap="round"><path d="M35 26 Q20 16 22 4" /><path d="M65 26 Q80 16 78 4" /></g>;
-      case "ram": return <g fill="none" stroke={hc} strokeWidth="5" strokeLinecap="round"><path d="M34 28 Q16 26 18 40 Q19 48 27 46" /><path d="M66 28 Q84 26 82 40 Q81 48 73 46" /></g>;
-      default: return null;
-    }
+    const art = HORN_ART[L.horns];
+    if (!art) return null;
+    const one = (
+      <g>
+        <path d={art.fill} fill="#e4d8bd" />
+        <path d={art.shade} fill="rgba(90,66,40,.22)" />
+        {art.ridges.map((d, i) => <path key={i} d={d} stroke="rgba(90,66,40,.34)" strokeWidth="1" fill="none" strokeLinecap="round" />)}
+        <path d={art.edge} fill="none" stroke="rgba(0,0,0,.32)" strokeWidth="1.1" strokeLinejoin="round" strokeLinecap="round" />
+      </g>
+    );
+    return <g>{one}<g transform="translate(100,0) scale(-1,1)">{one}</g></g>;
   })();
   return (
     <svg viewBox="0 0 100 100" width={size} height={size} style={frame ? { borderRadius: 10, background: "radial-gradient(circle at 50% 35%,#2a2632,#15121b)", display: "block" } : { display: "block" }}>
