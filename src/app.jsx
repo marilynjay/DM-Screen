@@ -677,6 +677,12 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
    wrong path — the caveat has to be visible at the moment of choosing, not inside the dialog */
 .menu-sub{display:block;font-size:11px;color:var(--faint);font-weight:400;margin-top:1px;white-space:normal}
 .menu button.warn{color:var(--danger)}
+/* Section headings inside a long row menu. Tiny, gold and non-interactive — they organise the scroll
+   without becoming another thing to tap by mistake. */
+.menu-sec{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--gold);opacity:.75;
+  padding:7px 12px 2px;border-top:1px solid var(--line);margin-top:2px}
+.menu-sec:first-child{border-top:0;margin-top:0}
+.menu button.menu-more{color:var(--dim);font-size:12px;border-top:1px solid var(--line);margin-top:2px}
 
 /* main column */
 .main{max-width:860px;margin:0 auto;padding:12px 14px;display:flex;flex-direction:column;gap:12px}
@@ -3072,11 +3078,12 @@ function DmgFx({ type }) {
 // Roster name-highlight colours — distinct hues a DM can assign to tell same-named monsters apart.
 const ROSTER_COLORS = ["#c0392b", "#cf6a1a", "#c9a227", "#3f9a4e", "#1f9e94", "#2f76c4", "#5a4fd0", "#9b4dc7", "#c0398a", "#7f8c8d"];
 
-function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry, npcApproval }) {
+function Row({ c, active, api, saveBadge, flash, hold, fx, inCombat, oldSchoolHp, entry, onEntry, npcApproval }) {
   // Reveal-sync mask: display pre-hit values until the roll animation announces
   // the damage, so the roster doesn't spoil the result. Game state is already real.
   if (hold) c = { ...c, hp: hold.hp, thp: hold.thp, dead: hold.dead, unconscious: hold.unconscious, stable: hold.stable };
   const [menu, setMenu] = useState(false);
+  const [menuMore, setMenuMore] = useState(false); // the rare tail, expanded in place
   const menuRef = useRef(null);
   const prevHp = useRef(c.hp);
   const [pulse, setPulse] = useState(null);
@@ -3220,41 +3227,77 @@ function Row({ c, active, isTop, isBottom, api, saveBadge, flash, hold, fx, inCo
       )}
       <span className="menu-anchor" ref={menuRef}>
         <button className="btn small ghost" onClick={() => setMenu(!menu)}>⋮</button>
-        {menu && (
-          <div className="menu" onClick={() => setMenu(false)}>
-            {c.type === "monster" && <button onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>}
-            {c.hp != null && c.type !== "effect" && <button onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>}
-            <button onClick={() => api.rename(c.uid)}>Rename…</button>
-            {c.type !== "effect" && <button onClick={() => api.openColors()}>🎨 Colour combatants…</button>}
-            {c.type !== "effect" && <button onClick={() => api.openDefenses(c.uid)}>Edit defenses…</button>}
-            {c.type === "monster" && <button onClick={() => api.openAddAttack(c.uid)}>Add attack…</button>}
-            {c.type === "monster" && atkMaxOf(c) > 0 && <button onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>}
-            {c.type !== "effect" && <button onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openAdv(c.uid)}>Advantage…</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.setConc(c.uid)}>Set concentration…</button>}
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openReactions(c.uid)}>Reactions…</button>}
-            {c.type === "player" && <button onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>}
-            {c.type === "player" && <button onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>}
-            <button onClick={() => api.addCondition(c.uid)}>Add condition…</button>
-            {c.type !== "effect" && c.type !== "object" && <button onClick={() => api.openGrapple(c.uid)}>🤼 Grapple / Shove…</button>}
-            {c.type !== "object" && <button onClick={() => api.setInit(c.uid)}>Set initiative…</button>}
-            {!isTop && <button onClick={() => api.nudge(c.uid, +1)}>Move up (init +1)</button>}
-            {!isBottom && <button onClick={() => api.nudge(c.uid, -1)}>Move down (init −1)</button>}
-            {c.type === "monster" && <button onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>}
-            {c.type === "monster" && !c.npc && <button onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>}
-            {c.npc && <button onClick={() => api.openSocialRoll(c.uid)}>🎭 Social roll…</button>}
-            {c.npc && <button onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>}
-            {c.npc ? (<>
-              {c.side !== "neutral" && <button onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>}
-              {c.side !== "ally" && <button onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>}
-              {c.side !== "enemy" && <button onClick={() => api.setDisposition(c.uid, "enemy")}>Make enemy</button>}
-            </>) : (c.type !== "effect" && c.type !== "object" && <button onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>)}
-            {c.type === "monster" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark dead</button>}
-            {c.type === "object" && !c.dead && <button className="warn" onClick={() => api.kill(c.uid)}>Mark destroyed</button>}
-            {(c.dead || c.unconscious) && <button onClick={() => api.revive(c.uid)}>Revive (1 HP)</button>}
-            <button className="warn" onClick={() => api.remove(c.uid)}>Remove from combat</button>
-          </div>
-        )}
+        {menu && (() => {
+          /* Grouped, because a monster NPC could reach 20-odd items in one flat scroll. What you reach
+             for during a turn sits on top with no header; everything else lives under a heading, and
+             the genuinely rare tail hides behind one in-place "More" so it costs a tap instead of a
+             scroll. Sections are built as arrays so a group with nothing to show drops its own header —
+             an Effect row would otherwise be all headings and no items. */
+          const body = c.type !== "effect", solid = body && c.type !== "object";
+          const sec = (label, items) => { const live = items.filter(Boolean); return live.length ? { label, live } : null; };
+          const groups = [
+            sec(null, [
+              c.hp != null && body && <button key="dmg" onClick={() => api.openDamage(c.uid)}>Damage / heal…</button>,
+              <button key="cond" onClick={() => api.addCondition(c.uid)}>Add condition…</button>,
+              c.type === "monster" && <button key="save" onClick={() => api.openSaveRoll(c.uid)}>Roll save / ability…</button>,
+              solid && <button key="adv" onClick={() => api.openAdv(c.uid)}>Advantage…</button>,
+              solid && <button key="grap" onClick={() => api.openGrapple(c.uid)}>🤼 Grapple / Shove…</button>,
+              body && <button key="loot" onClick={() => api.openLoot(c.uid)}>{c.type === "player" ? "🎒 Bag / items…" : "💰 Give loot…"}</button>,
+              /* Revive only exists while a creature is down, so filing it under "More" would make it two
+                 taps deep every single time it applied — and a downed creature's menu is mostly opened
+                 to bring them back. It rides on top whenever it is offered at all. */
+              (c.dead || c.unconscious) && <button key="rev" onClick={() => api.revive(c.uid)}>❤ Revive (1 HP)</button>,
+            ]),
+            sec("This creature", [
+              <button key="ren" onClick={() => api.rename(c.uid)}>Rename…</button>,
+              body && <button key="edit" onClick={() => api.openDefenses(c.uid)}>Edit creature…</button>,
+              c.type === "player" && <button key="char" onClick={() => api.openCharacter(c.uid)}>🎭 Character…</button>,
+              c.type === "player" && <button key="book" onClick={() => api.openSpellbook(c.uid)}>📖 Spellbook…</button>,
+            ]),
+            sec("Turn order", [
+              c.type !== "object" && <button key="init" onClick={() => api.setInit(c.uid)}>Set initiative…</button>,
+            ]),
+            sec("Sides", c.npc ? [
+              c.side !== "neutral" && <button key="n" onClick={() => api.setDisposition(c.uid, "neutral")}>Make neutral</button>,
+              c.side !== "ally" && <button key="a" onClick={() => api.setDisposition(c.uid, "ally")}>Make ally</button>,
+              c.side !== "enemy" && <button key="e" onClick={() => api.setDisposition(c.uid, "enemy")}>Make enemy</button>,
+            ] : [
+              solid && <button key="sw" onClick={() => api.switchSide(c.uid)}>{c.side === "ally" ? "Make enemy" : "Make ally"}</button>,
+            ]),
+            sec("Keep", [
+              c.type === "monster" && <button key="best" onClick={() => api.saveToBestiary(c.uid)}>Save to my bestiary</button>,
+              c.type === "monster" && !c.npc && <button key="asnpc" onClick={() => api.saveCombatantAsNpc(c.uid)}>👤 Save as NPC</button>,
+              c.npc && <button key="nb" onClick={() => api.editNpcInNotebook(c.uid)}>📓 Edit in Notebook…</button>,
+              c.npc && <button key="soc" onClick={() => api.openSocialRoll(c.uid)}>🎭 Social roll…</button>,
+            ]),
+          ].filter(Boolean);
+          const tail = [
+            solid && <button key="react" onClick={() => api.openReactions(c.uid)}>Reactions…</button>,
+            solid && <button key="conc" onClick={() => api.setConc(c.uid)}>Set concentration…</button>,
+            body && <button key="col" onClick={() => api.openColors()}>🎨 Colour combatants…</button>,
+            c.type === "monster" && atkMaxOf(c) > 0 && <button key="+atk" onClick={() => api.grantAttack(c.uid)}>Grant +1 attack this turn</button>,
+            c.type === "monster" && !c.dead && <button key="kill" className="warn" onClick={() => api.kill(c.uid)}>Mark dead</button>,
+            c.type === "object" && !c.dead && <button key="destroy" className="warn" onClick={() => api.kill(c.uid)}>Mark destroyed</button>,
+          ].filter(Boolean);
+          return (
+            <div className="menu" onClick={() => { setMenu(false); setMenuMore(false); }}>
+              {groups.map((g, i) => (
+                <React.Fragment key={g.label || `top${i}`}>
+                  {g.label && <div className="menu-sec">{g.label}</div>}
+                  {g.live}
+                </React.Fragment>
+              ))}
+              {tail.length > 0 && (<>
+                {/* the container closes the menu on any click, so this one has to keep its tap */}
+                <button className="menu-more" onClick={(e) => { e.stopPropagation(); setMenuMore((v) => !v); }}>
+                  {menuMore ? "▾" : "▸"} More…
+                </button>
+                {menuMore && tail}
+              </>)}
+              <button className="warn" onClick={() => api.remove(c.uid)}>Remove from combat</button>
+            </div>
+          );
+        })()}
       </span>
       </div>
 
@@ -6042,22 +6085,37 @@ function AbilBoostModal({ c, promptScore, onApply, onRemove, onClose }) {
   );
 }
 
-function DefensesModal({ c, onSave, onClose }) {
+/* One "Edit creature" dialogue rather than separate Defenses and Add attack menu entries — they are
+   the same errand (this creature's numbers are wrong / incomplete) and cost two menu lines. */
+function DefensesModal({ c, onSave, onAddAttack, onClose }) {
   const [res, setRes] = useState((c.resist || []).join(", "));
   const [imm, setImm] = useState((c.immune || []).join(", "));
   const [vul, setVul] = useState((c.vuln || []).join(", "));
   const csv = (s) => s.split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const save = () => onSave(csv(res), csv(imm), csv(vul));
+  const atks = (c.actions || []).filter((a) => a.kind === "atk");
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Defenses — {c.name}</h3>
+        <h3>Edit {c.name}</h3>
+        <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "2px 0 4px" }}>Defenses</div>
         <div className="frow"><label>Resistances</label><input type="text" placeholder="fire, cold, slashing…" value={res} onChange={(e) => setRes(e.target.value)} autoFocus /></div>
         <div className="frow"><label>Immunities</label><input type="text" placeholder="poison, necrotic…" value={imm} onChange={(e) => setImm(e.target.value)} /></div>
         <div className="frow"><label>Vulnerabilities</label><input type="text" placeholder="bludgeoning…" value={vul} onChange={(e) => setVul(e.target.value)} /></div>
         <div className="trait" style={{ marginBottom: 8 }}>Comma-separated damage types. Applied automatically to typed damage: resist ½ · immune 0 · vulnerable ×2.</div>
+        {onAddAttack && (<>
+          <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", margin: "10px 0 4px" }}>Attacks</div>
+          <div className="trait" style={{ fontSize: 12, marginBottom: 6 }}>
+            {atks.length ? atks.map((a) => a.n).join(" · ") : "None yet."}
+          </div>
+          {/* Commit the boxes above on the way through: this hands off to another dialogue, and losing
+              three typed damage types to a tap on "Add an attack" would be its own small betrayal. */}
+          <button className="btn w100 small" style={{ width: "100%", textAlign: "left", marginBottom: 8 }}
+            onClick={() => { save(); onAddAttack(); }}>＋ Add an attack…</button>
+        </>)}
         <div className="frow" style={{ justifyContent: "flex-end" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" onClick={() => onSave(csv(res), csv(imm), csv(vul))}>Save</button>
+          <button className="btn primary" onClick={save}>Save</button>
         </div>
       </div>
     </div>
@@ -12087,7 +12145,6 @@ export default function App() {
     openColors: () => setModal({ type: "colors" }),
     setInit: (uid) => setModal({ type: "init-prompt", uid }),
     setDex: (uid) => setModal({ type: "dex-prompt", uid }),
-    nudge: (uid, dir) => mutate((d) => { const c = d.combatants.find((x) => x.uid === uid); if (c) c.init += dir; }),
     kill: (uid) => mutate((d, L, T) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { c.dead = true; c.hp = 0; c.concentration = null; L.push(`<b>${c.name}</b> marked dead.`); } }),
     revive: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { c.dead = false; c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false; if (c.hp === 0) c.hp = 1; L.push(`<b>${c.name}</b> is back up (${c.hp} HP).`); } }),
     remove: (uid) => mutate((d, L) => { const c = d.combatants.find((x) => x.uid === uid); if (c) { L.push(`<b>${c.name}</b> removed.`); d.combatants = d.combatants.filter((x) => x.uid !== uid); } }),
@@ -13344,7 +13401,7 @@ export default function App() {
           </div>
           <div className={`rail ${railOpen ? "" : "collapsed"}`} data-tut="roster">
             {order.map((c, i) => (
-              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} isTop={i === 0} isBottom={i === order.length - 1} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} npcApproval={c.npc && c.npcId ? npcApprovalAgg((activeRoster?.notebook?.npcs || []).find((n) => n.id === c.npcId) || {}) : null} />
+              <Row key={c.uid} flash={rowFlash && rowFlash.uid === c.uid ? rowFlash : null} saveBadge={results[`${c.uid}:save`]?.[0]?.badge} c={c} hold={hpHoldsRef.current[c.uid]} fx={rowFxs[c.uid]} active={c.uid === state.activeUid && state.mode === "combat"} inCombat={state.mode === "combat"} api={api} oldSchoolHp={oldSchool && state.mode === "combat"} entry={hpEntry[c.uid]} onEntry={(f, v) => setEntry(c.uid, f, v)} npcApproval={c.npc && c.npcId ? npcApprovalAgg((activeRoster?.notebook?.npcs || []).find((n) => n.id === c.npcId) || {}) : null} />
             ))}
           </div>
           {dockedNpcId && activeRoster?.notebook && (
@@ -13722,6 +13779,7 @@ export default function App() {
       )}
       {modal?.type === "defenses" && modalC && (
         <DefensesModal c={modalC} onClose={() => setModal(null)}
+          onAddAttack={modalC.type === "monster" ? () => setModal({ type: "addattack", uid: modal.uid }) : undefined}
           onSave={(resist, immune, vuln) => {
             mutate((d, L) => {
               const c = d.combatants.find((x) => x.uid === modal.uid); if (!c) return;
