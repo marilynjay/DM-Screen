@@ -5705,12 +5705,13 @@ const partyLabel = (p, i) => (p.name && String(p.name).trim()) || (p.teamName &&
    party button, which expands into a list with one-tap Load and an edit link
    that prefills the grid. Adding from a blank grid creates a NEW remembered
    party; adding after "edit" updates that one. */
-function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
+function PartySetupCard({ parties, onPick, onAdd, onSave, onDeleteParty, demo }) {
   const [rows, setRows] = useState([{ ...PARTY_BLANK_ROW }]);
   const [level, setLevel] = useState("");
   const [teamName, setTeamName] = useState("");
   const [loadOpen, setLoadOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [delId, setDelId] = useState(null);   // party pending a delete confirmation
   /* Guided tour: the tour types into this card for real, because this is the path that *remembers* a
      party for next session — + Add ▸ Guest player only drops someone on tonight's board. */
   const demoName = demo?.teamName, demoLevel = demo?.level, demoFill = demo?.fill, demoLoad = demo?.loadOpen;
@@ -5752,6 +5753,8 @@ function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
               </span>
               <button className="btn small ghost" onClick={() => beginEdit(p)}>edit</button>
               <button className="btn small primary" disabled={!p.members.some((m) => m.here)} onClick={() => { onPick(p.id); onAdd(p.members.filter((m) => m.here), p.level ?? null); }}>Load</button>
+              {/* a party saved by mistake needs binning from where you find it, not only from ⋯ */}
+              {onDeleteParty && <button className="btn small ghost warn" title={`Delete the ${partyLabel(p, i)} party`} onClick={() => setDelId(p.id)}>✕</button>}
             </div>
           ))}
         </div>
@@ -5766,6 +5769,12 @@ function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
         {editingParty ? <button className="btn" onClick={resetBlank}>Cancel edit</button> : null}
         <button className={`btn primary ${demo?.press === "add" ? "demo-press" : ""}`} disabled={!going.length} onClick={add}>Add party{going.length ? ` (${going.length})` : ""}</button>
       </div>
+      {delId && (() => {
+        const p = parties.find((x) => x.id === delId);
+        const lbl = p ? partyLabel(p, parties.indexOf(p)) : "this party";
+        return <ConfirmModal text={`Delete the ${lbl} party? Its saved members, notebook and shared loot go with it. Anyone already on tonight's board stays there.`}
+          confirmLabel="Delete party" onYes={() => { onDeleteParty(delId); setDelId(null); }} onClose={() => setDelId(null)} />;
+      })()}
     </div>
   );
 }
@@ -5774,7 +5783,7 @@ function PartySetupCard({ parties, onPick, onAdd, onSave, demo }) {
    new HP, roster changes, team names, whole new tables. Never touches whoever
    is currently in the fight. Edits are local until Save; empty parties (no
    named members) are discarded on save. */
-function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds, onApply }) {
+function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onClose, screenMemberIds, onApply }) {
   const toDraft = (p) => ({ id: p.id, teamName: p.name ?? "", level: p.level ?? "", rows: partyRowsFrom(p) });
   const newDraft = () => ({ id: newUid(), teamName: "", level: "", rows: partyRowsFrom(null) });
   const [st, setSt] = useState(() => {
@@ -5787,11 +5796,19 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
   const d = st.list.find((x) => x.id === st.sel);
   const upd = (patch) => setSt((s) => ({ ...s, list: s.list.map((x) => (x.id === s.sel ? { ...x, ...patch } : x)) }));
   const addParty = () => setSt((s) => { const nd = newDraft(); return { list: [...s.list, nd], sel: nd.id }; });
-  const deleteParty = () => setSt((s) => {
-    const list = s.list.filter((x) => x.id !== s.sel);
-    if (!list.length) list.push(newDraft());
-    return { list, sel: list[0].id };
-  });
+  /* Delete has to land immediately. It used to only drop the party from this dialogue's draft list —
+     the chip vanished, so it read as done, and then Cancel or a stray tap on the backdrop brought the
+     party straight back. Nobody re-reads "when you save" after confirming a delete. Unsaved edits to
+     the OTHER parties are untouched; they still go out on Save. */
+  const deleteParty = () => {
+    const id = st.sel;
+    setSt((s) => {
+      const list = s.list.filter((x) => x.id !== id);
+      if (!list.length) list.push(newDraft());
+      return { list, sel: list[0].id };
+    });
+    if (onDeleteParty) onDeleteParty(id);
+  };
   const anyNamed = st.list.some((x) => x.rows.some((r) => r.name.trim()));
   // how many members being edited are the same players currently on screen (linked by row id)
   const liveSet = new Set(screenMemberIds || []);
@@ -5800,7 +5817,7 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
     const clean = st.list
       .map((x) => ({ id: x.id, ...partyRosterOf(x.teamName, x.level, x.rows) }))
       .filter((p) => p.members.length);
-    onSaveAll(clean, clean.some((p) => p.id === st.sel) ? st.sel : (clean[0]?.id ?? null));
+    onSaveAll(clean, clean.some((p) => p.id === st.sel) ? st.sel : (clean[0]?.id ?? null));  // clean comes from the draft list, so a deleted party can't come back
     if (applyLive && liveCount && onApply) onApply(clean); // onApply owns the modal transition (heal prompt or close)
     else onClose();
   };
@@ -5831,7 +5848,7 @@ function PartyEditModal({ parties, activeId, onSaveAll, onClose, screenMemberIds
         </div>
       </div>
       {confirmDel && (
-        <ConfirmModal text={`Delete ${curLabel ? `the “${curLabel}” party` : "this party"}? This removes it from your saved parties when you save.`} confirmLabel="Delete party"
+        <ConfirmModal text={`Delete ${curLabel ? `the “${curLabel}” party` : "this party"}? Its saved members, notebook and shared loot go with it — right away, not when you save. Anyone already on tonight's board stays there.`} confirmLabel="Delete party"
           onYes={() => { deleteParty(); setConfirmDel(false); }} onClose={() => setConfirmDel(false)} />
       )}
     </div>
@@ -10774,6 +10791,16 @@ export default function App() {
     setActivePartyIdState(activeId); stSet("dm5e:activeParty", activeId);
   };
   const pickParty = (id) => { setActivePartyIdState(id); stSet("dm5e:activeParty", id); };
+  /* Bin a saved party for good, from wherever the DM found it. Combatants already on the board keep
+     playing — they just stop being linked to a stored member — so a mis-saved party can be cleared
+     mid-session without disturbing the fight. */
+  const deleteParty = (id) => {
+    if (!id) return;
+    const gone = partiesRef.current.find((p) => p.id === id);
+    const rest = partiesRef.current.filter((p) => p.id !== id);
+    savePartiesAll(rest, resolvePartyId(rest, livePartyId() === id ? null : livePartyId()));
+    pushToasts([{ kind: "good", text: `Deleted ${((gone || {}).name || "").trim() || "the party"}.` }]);
+  };
   // Apply edited party members onto the matching players already on screen (opt-in from Edit parties).
   // Syncs reference fields + max HP, then — if anyone ends up below their (possibly new) max — offers a
   // heal-to-full choice via a follow-up popup.
@@ -13370,7 +13397,7 @@ export default function App() {
         )}
 
         {state.mode === "setup" && partyBoot && !state.combatants.some((c) => c.type === "player") && (
-          <div data-tut="party"><PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} demo={partyDemo} /></div>
+          <div data-tut="party"><PartySetupCard parties={parties} onPick={pickParty} onAdd={addPartyNow} onSave={savePartyRoster} onDeleteParty={deleteParty} demo={partyDemo} /></div>
         )}
 
         {legendaryWatch.map((c) => (
@@ -13853,7 +13880,7 @@ export default function App() {
           onApply={applyBalance} />
       )}
       {modal?.type === "party-edit" && (
-        <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll}
+        <PartyEditModal parties={parties} activeId={activeRoster?.id ?? null} onSaveAll={savePartiesAll} onDeleteParty={deleteParty}
           screenMemberIds={state.combatants.filter((c) => c.type === "player" && c.memberId && !c.dead).map((c) => c.memberId)}
           onApply={applyPartyEditsToScreen} onClose={() => setModal(null)} />
       )}
