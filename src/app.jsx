@@ -315,6 +315,9 @@ input[type=number]{width:64px}
 .hdr .spacer{flex:1}
 .btn{border:1px solid var(--line2);border-radius:7px;padding:6px 12px;background:var(--panel);
   transition:border-color .15s,background .15s;white-space:nowrap}
+/* A full-width button has no width left to grow into, so nowrap just pushed its text off the side of
+   the dialog — the settings screens put a sentence of explanation under each label. Wrap those. */
+.btn.w100{white-space:normal;line-height:1.35}
 .btn:hover{border-color:var(--gold)}
 .btn.primary{background:var(--gold);color:#241d0e;font-weight:600;border-color:var(--gold)}
 .btn.primary:hover{background:#e5b657}
@@ -5041,7 +5044,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
           <div className="mlist">
             {mine.map((b) => (
               <span key={b.name} style={{ position: "relative" }}>
-                <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
+                <button className={`btn w100 ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                   {b.name}<br /><span className="cr">{b.cr ? `CR ${b.cr} · ` : ""}AC {b.ac} · {b.hp} HP</span>
                 </button>
                 <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -5061,7 +5064,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
             <div className="mlist">
               {builtIn.map((b) => (
                 <span key={b.name} style={{ position: "relative" }}>
-                  <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
+                  <button className={`btn w100 ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                     {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                   </button>
                   <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -5085,7 +5088,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
               const open = openCats.has(key);
               return (
                 <div key={key}>
-                  <button className="btn small" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(open ? { borderColor: "var(--gold)" } : {}) }}
+                  <button className="btn w100 small" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(open ? { borderColor: "var(--gold)" } : {}) }}
                     onClick={() => { const n = new Set(openCats); n.has(key) ? n.delete(key) : n.add(key); setOpenCats(n); }}>
                     {open ? "▾" : "▸"} {label} <span className="cr">({members.length})</span>
                   </button>
@@ -5093,7 +5096,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
                     <div className="mlist" style={{ marginBottom: 6 }}>
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
                         <span key={b.name} style={{ position: "relative" }}>
-                          <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
+                          <button className={`btn w100 ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                             {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                           </button>
                           <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -5442,7 +5445,7 @@ function InitTieSettingsModal({ mode, onSet, onClose }) {
         <h3>⚑ Initiative ties</h3>
         <div className="trait" style={{ fontSize: 12, color: "var(--faint)", marginBottom: 8 }}>How to break a tied initiative. Monster-vs-monster ties always fall back to higher DEX. You can still hand-order any tie at combat start.</div>
         {opts.map(([v, label, hint]) => (
-          <button key={v} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(mode === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
+          <button key={v} className="btn w100" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(mode === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
             {mode === v ? "● " : "○ "}{label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
           </button>
         ))}
@@ -5467,7 +5470,7 @@ function EditionModal({ edition, ready, expandedOn, onSet, onClose }) {
           Switch the whole compendium between editions. Monsters, spells, and edition-specific rules handling all change together. Your saved parties, encounters, and custom monsters are kept.
         </div>
         {opts.map(([v, label, hint]) => (
-          <button key={v} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(edition === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
+          <button key={v} className="btn w100" style={{ width: "100%", textAlign: "left", margin: "3px 0", ...(edition === v ? { borderColor: "var(--gold)", background: "var(--gold-soft)" } : {}) }} onClick={() => onSet(v)}>
             {edition === v ? "● " : "○ "}{label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
           </button>
         ))}
@@ -5517,7 +5520,7 @@ function GrappleModal({ attacker, combatants, edition, oldSchool, onResolve, onC
               ? `2014: opposed check — ${attacker.name}'s Athletics (STR +${pb} prof.) vs the target's Athletics or Acrobatics (its better of STR/DEX). Higher wins; a tie changes nothing.`
               : `2024: the target rolls a STR or DEX save (its better) against DC ${dc} (8 + PB ${pb} + STR ${fmtMod(attacker.mods?.str ?? 0)}).`}
           </div>
-          {!oldSchool && <button className="btn primary" style={{ width: "100%" }} onClick={() => go("auto")}>🎲 Roll it</button>}
+          {!oldSchool && <button className="btn w100 primary" style={{ width: "100%" }} onClick={() => go("auto")}>🎲 Roll it</button>}
           <div className="frow" style={{ gap: 6, marginTop: 8, justifyContent: oldSchool ? "stretch" : "space-between" }}>
             <button className="btn" style={{ flex: 1 }} onClick={() => go("success")}>✓ It succeeds</button>
             <button className="btn" style={{ flex: 1 }} onClick={() => go("fail")}>✗ It fails</button>
@@ -5947,11 +5950,11 @@ function AbilBoostModal({ c, promptScore, onApply, onRemove, onClose }) {
           ))}
         </div>
         <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>What does the item do?</div>
-        <button className={`btn ${mode === "set" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("set")}>
+        <button className={`btn w100 ${mode === "set" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("set")}>
           Set the score to a fixed value{mode === "set" ? " ✓" : ""}<br />
           <span style={{ fontSize: 11, color: mode === "set" ? "inherit" : "var(--faint)" }}>Belt of Giant Strength → STR 25, Amulet of Health → CON 19…</span>
         </button>
-        <button className={`btn ${mode === "add" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("add")}>
+        <button className={`btn w100 ${mode === "add" ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setMode("add")}>
           +X to the score{mode === "add" ? " ✓" : ""}<br />
           <span style={{ fontSize: 11, color: mode === "add" ? "inherit" : "var(--faint)" }}>Manual of Gainful Exercise (+2 STR), Tome of Understanding…</span>
         </button>
@@ -6198,12 +6201,12 @@ function ItemBuilder({ initial, onSaveItem, onAbilBoost, onClose }) {
         <div>
           <div className="trait" style={{ marginBottom: 6 }}>What kind of item is it?</div>
           {ITEM_KINDS.map(([k, label, hint]) => (
-            <button key={k} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setF("kind", k)}>
+            <button key={k} className="btn w100" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => setF("kind", k)}>
               {label}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{hint}</span>
             </button>
           ))}
           {onAbilBoost && (
-            <button className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => onAbilBoost()}>
+            <button className="btn w100" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => onAbilBoost()}>
               💪 Ability item<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>Raises an ability score — Belt of Giant Strength, Manual of Gainful Exercise…</span>
             </button>
           )}
@@ -7306,7 +7309,7 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], hasParty
             {scrollQ.trim().length < 2 ? <div className="trait" style={{ fontSize: 12 }}>Type at least 2 letters…</div>
               : scrollMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No spells match “{scrollQ.trim()}”.</div>
               : <div className="mlist" style={{ marginTop: 4 }}>{scrollMatches.map((k) => (
-                  <button key={k} className="btn" style={{ width: "100%" }} onClick={() => addScroll(k)}>
+                  <button key={k} className="btn w100" style={{ width: "100%" }} onClick={() => addScroll(k)}>
                     Scroll of {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
                   </button>))}</div>}
           </div>
@@ -7649,7 +7652,7 @@ function PlayerAttackModal({ c, state, api, onSave, spellAtk, presetDtype, spell
             <div className="trait" style={{ fontSize: 12.5, color: "var(--faint)", marginBottom: 10 }}>
               For a fireball, a breath-like effect, or anything the targets roll a saving throw against — set the DC, damage, and who's caught, and the app rolls each monster's save (players get marked ✓/✗).
             </div>
-            <button className="btn primary" style={{ width: "100%" }} onClick={onSave}>Set up AoE / save →</button>
+            <button className="btn w100 primary" style={{ width: "100%" }} onClick={onSave}>Set up AoE / save →</button>
           </div>
         )}
         {tab === "single" && phase === "pick" && (
@@ -7804,7 +7807,7 @@ function PlayerCastModal({ c, api, fromItem, initialPick, lockPick, onBack, onCl
             {browsing
               ? (matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>{searching ? `No spells match “${q.trim()}”.` : `No spells start with ${letter}.`}</div>
                 : <div className="mlist">{matches.map((k) => (
-                    <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
+                    <button key={k} className="btn w100" style={{ width: "100%" }} onClick={() => { if (armed()) setPick(k); }}>
                       {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
                     </button>))}</div>)
               : (c.spells || []).filter((k) => SPELL_REF[k]).length ? (
@@ -8147,7 +8150,7 @@ function SpellbookModal({ c, api, onClose }) {
         {q.trim().length >= 2 && (
           matches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No new matches for “{q.trim()}”.</div>
           : <div className="mlist">{matches.map((k) => (
-              <button key={k} className="btn" style={{ width: "100%" }} onClick={() => { api.learnSpell(c.uid, k); setQ(""); }}>
+              <button key={k} className="btn w100" style={{ width: "100%" }} onClick={() => { api.learnSpell(c.uid, k); setQ(""); }}>
                 ＋ {SPELL_REF[k].n}<br /><span className="cr">{SPELL_REF[k].m}</span>
               </button>))}</div>
         )}
@@ -8795,6 +8798,14 @@ function hasLoot(r) { return !!(r && Array.isArray(r.loot) && r.loot.length); }
 // A room's human label (its name, else short display name, else empty).
 function roomLabelText(r) { return ((r && r.title) || "").trim() || ((r && r.dname) || "").trim() || ""; }
 
+// Which saved party an id actually points at, falling back to the first one. The stored id can go
+// stale (deleting the active party clears it), and reading it two different ways is how edits get
+// shown against one party and saved to none.
+function resolvePartyId(list, id) {
+  const ps = list || [];
+  return ps.some((p) => p.id === id) ? id : (ps.length ? ps[0].id : null);
+}
+
 /* ── Running a dungeon ────────────────────────────────────────────────────────
    Playing a dungeon writes straight onto the saved map — there is no separate
    run copy. That keeps a session simple (close the app mid-crawl, come back,
@@ -9210,7 +9221,7 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
               {monQ.trim().length < 1 ? <div className="trait" style={{ fontSize: 12 }}>Type to search the bestiary…</div>
                 : monMatches.length === 0 ? <div className="trait" style={{ fontSize: 12 }}>No monsters match “{monQ.trim()}”.</div>
                 : <div className="mlist" style={{ marginTop: 4 }}>{monMatches.map((m) => (
-                    <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left" }} onClick={() => addMon(m.name)}>
+                    <button key={m.name} className="btn w100" style={{ width: "100%", textAlign: "left" }} onClick={() => addMon(m.name)}>
                       {m.name}{m.cr != null && m.cr !== "" ? <span className="cr"> CR {m.cr}</span> : null}
                     </button>))}</div>}
             </div>
@@ -9288,13 +9299,13 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
                 {lootMine.length > 0 && (<>
                   <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "2px 0", letterSpacing: ".1em", textTransform: "uppercase" }}>Your custom items</div>
                   {lootMine.map((it, i) => (
-                    <button key={"mine:" + it.n + i} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
+                    <button key={"mine:" + it.n + i} className="btn w100" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
                       {it.n}<span className="cr"> {rarityLabel(it)} · custom</span>
                     </button>))}
                   {lootTab !== "mine" && lootSrd.length > 0 && <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "6px 0 2px", letterSpacing: ".1em", textTransform: "uppercase" }}>SRD catalogue</div>}
                 </>)}
                 {lootTab !== "mine" && lootSrd.map((it, i) => (
-                  <button key={it.n + i} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
+                  <button key={it.n + i} className="btn w100" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addLoot(it)}>
                     {it.n}{it.rarity ? <span className="cr"> {rarityLabel(it)}</span> : null}
                   </button>))}
                 {lootMine.length === 0 && (lootTab === "mine" || lootSrd.length === 0) && (
@@ -10223,7 +10234,7 @@ function PlayerModeBoard({ onExit }) {
               </div>
               <div style={{ maxHeight: 220, overflowY: "auto" }}>
                 {searchResults.map((m) => (
-                  <button key={m.name} className="btn" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addNamedEnemy(m.name)}>{m.name}</button>
+                  <button key={m.name} className="btn w100" style={{ width: "100%", textAlign: "left", marginBottom: 2 }} onClick={() => addNamedEnemy(m.name)}>{m.name}</button>
                 ))}
                 {searchResults.length === 0 && <div className="trait" style={{ fontSize: 12 }}>Type a name or pick a category. (Only names show — no stats.)</div>}
               </div>
@@ -10332,7 +10343,7 @@ function PlayerModeBoard({ onExit }) {
             <h3>Which character are you?</h3>
             <div className="trait" style={{ fontSize: 12, marginBottom: 10, color: "var(--faint)" }}>Your character always shows its HP. Your teammates stay name-only until you turn on “Track the whole party’s HP”.</div>
             {board.allies.map((a) => (
-              <button key={a.id} className={`btn ${a.me ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", marginBottom: 6 }} onClick={() => { setMe(a.id); setAskMe(false); }}>{a.name || "Unnamed"}</button>
+              <button key={a.id} className={`btn w100 ${a.me ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", marginBottom: 6 }} onClick={() => { setMe(a.id); setAskMe(false); }}>{a.name || "Unnamed"}</button>
             ))}
             <div className="frow" style={{ justifyContent: "flex-end", marginTop: 4 }}>
               <button className="btn ghost" onClick={() => setAskMe(false)}>I’m not in this party</button>
@@ -10575,7 +10586,15 @@ export default function App() {
   const [parties, setPartiesState] = useState([]); // remembered parties for the one-tap opener
   const [activePartyId, setActivePartyIdState] = useState(null);
   const [partyBoot, setPartyBoot] = useState(false); // don't render the opener until storage has answered
-  const activeRoster = parties.find((p) => p.id === activePartyId) || parties[0] || null;
+  /* Which party is the active one, really. Display used to fall back to parties[0] whenever
+     activePartyId didn't resolve — and it stops resolving the moment you delete the active party,
+     which leaves the id null with the other parties still there. Every writer, meanwhile, guarded on
+     the raw activePartyId and quietly did nothing. So the notebook opened headed "— Heroes", took a
+     whole new NPC, and dropped it on Save. Both sides go through this now. */
+  const activePartyIdEff = resolvePartyId(parties, activePartyId);
+  const activeRoster = parties.find((p) => p.id === activePartyIdEff) || null;
+  // the same resolution from inside a callback, where partiesRef is fresher than the render's copy
+  const livePartyId = () => resolvePartyId(partiesRef.current, activePartyId);
   const [dungeons, setDungeonsState] = useState([]); // saved dungeons (hex-grid maps of rooms)
   const saveDungeons = (list) => { setDungeonsState(list); stSet("dm5e:dungeons", list); };
   const [dungeonEditId, setDungeonEditId] = useState(null); // dungeon open in the full-screen builder, or null
@@ -10687,30 +10706,32 @@ export default function App() {
     if (!memberId) return;
     const cur = partiesRef.current; let changed = false;
     const list = cur.map((p) => ({ ...p, members: p.members.map((m) => (m.id === memberId ? (changed = true, { ...m, ...patch }) : m)) }));
-    if (changed) savePartiesAll(list, activePartyId);
+    if (changed) savePartiesAll(list, livePartyId());
   };
   // DM Notebook is stored on the active party (per-party), so it travels with the campaign.
   const saveNotebook = (nb) => {
-    if (!activePartyId) return;
-    savePartiesAll(partiesRef.current.map((p) => (p.id === activePartyId ? { ...p, notebook: nb } : p)), activePartyId);
+    const pid = livePartyId();
+    // Never fail quietly here: the notebook is the one place a DM types a page of prose before saving.
+    if (!pid) { pushToasts([{ kind: "bad", text: "Nothing saved — the notebook needs a party. Create one first, then re-enter this." }]); return; }
+    savePartiesAll(partiesRef.current.map((p) => (p.id === pid ? { ...p, notebook: nb } : p)), pid);
   };
   // Shared "party" loot fund — kept on the active party itself (not any one member: "the group gets
   // 80 gp"), and persisted with it. PARTY_STASH is the sentinel target id used by the assign menus.
-  const stashOf = () => (partiesRef.current.find((p) => p.id === activePartyId)?.stash) || [];
+  const stashOf = () => (partiesRef.current.find((p) => p.id === livePartyId())?.stash) || [];
   const persistStash = (items) => {
-    if (!activePartyId) return;
-    savePartiesAll(partiesRef.current.map((p) => (p.id === activePartyId ? { ...p, stash: items } : p)), activePartyId);
+    const pid = livePartyId(); if (!pid) return;
+    savePartiesAll(partiesRef.current.map((p) => (p.id === pid ? { ...p, stash: items } : p)), pid);
   };
   const addToStash = (item) => {
     if (!item) return false;
-    if (!activePartyId) { pushToasts([{ kind: "bad", text: "Load or create a party first to use the shared stash." }]); return false; }
+    if (!livePartyId()) { pushToasts([{ kind: "bad", text: "Load or create a party first to use the shared stash." }]); return false; }
     persistStash([...stashOf(), JSON.parse(JSON.stringify(item))]);
     return true;
   };
   // Convert a statblock (from the bestiary or a roster monster) into a notebook NPC that keeps
   // the full statblock — social by default, the whole creature when a fight breaks out.
   const saveMonsterAsNpc = (sb) => {
-    const p = (partiesRef.current || []).find((x) => x.id === activePartyId);
+    const p = (partiesRef.current || []).find((x) => x.id === livePartyId());
     if (!p) { pushToasts([{ kind: "bad", text: "Load or create a party first — NPCs are saved in its notebook." }]); return; }
     const nb = p.notebook || {};
     const npc = { id: newUid(), name: sb.name, tag: "", sections: [], sb: JSON.parse(JSON.stringify(sb)) };
@@ -10754,7 +10775,7 @@ export default function App() {
   }, [state.combatants]); // eslint-disable-line react-hooks/exhaustive-deps
   // Persist a board NPC's bag back onto its notebook entry, so items it picks up survive the session.
   useEffect(() => {
-    const p = (partiesRef.current || []).find((x) => x.id === activePartyId);
+    const p = (partiesRef.current || []).find((x) => x.id === livePartyId());
     const nb = p?.notebook; if (!nb || !Array.isArray(nb.npcs)) return;
     const byId = {}; nb.npcs.forEach((n) => { byId[n.id] = n; });
     let changed = false, npcs = nb.npcs;
@@ -11729,8 +11750,9 @@ export default function App() {
     // live combatant. Either endpoint may be the shared stash (PARTY_STASH) or a member id.
     partyInvMove: (fromMid, idx, toMid) => {
       let moved = null;
+      const pid = livePartyId();
       const list = partiesRef.current.map((p) => {
-        if (p.id !== activePartyId) return p;
+        if (p.id !== pid) return p;
         let np = { ...p };
         if (fromMid === PARTY_STASH) { const l = [...(np.stash || [])]; moved = l.splice(idx, 1)[0]; np = { ...np, stash: l }; }
         else np = { ...np, members: (np.members || []).map((m) => { if (m.id !== fromMid) return m; const l = [...(m.loot || [])]; moved = l.splice(idx, 1)[0]; return { ...m, loot: l }; }) };
@@ -11740,19 +11762,20 @@ export default function App() {
         return np;
       });
       if (moved == null) return;
-      savePartiesAll(list, activePartyId);
+      savePartiesAll(list, pid);
       mutate((d, L) => {
         if (fromMid !== PARTY_STASH) { const src = d.combatants.find((x) => x.type === "player" && x.memberId === fromMid); if (src) { const l = [...(src.loot || [])]; l.splice(idx, 1); src.loot = l; syncWeaponAttacks(src, L); } }
         if (toMid !== PARTY_STASH) { const dst = d.combatants.find((x) => x.type === "player" && x.memberId === toMid); if (dst) { dst.loot = [...(dst.loot || []), JSON.parse(JSON.stringify(moved))]; if (moved && moved.wpn) syncWeaponAttacks(dst, L); } }
       });
     },
     partyInvRemove: (mid, idx) => {
+      const pid = livePartyId();
       const list = partiesRef.current.map((p) => {
-        if (p.id !== activePartyId) return p;
+        if (p.id !== pid) return p;
         if (mid === PARTY_STASH) { const l = [...(p.stash || [])]; l.splice(idx, 1); return { ...p, stash: l }; }
         return { ...p, members: (p.members || []).map((m) => { if (m.id !== mid) return m; const l = [...(m.loot || [])]; l.splice(idx, 1); return { ...m, loot: l }; }) };
       });
-      savePartiesAll(list, activePartyId);
+      savePartiesAll(list, pid);
       if (mid !== PARTY_STASH) mutate((d, L) => { const c = d.combatants.find((x) => x.type === "player" && x.memberId === mid); if (c) { const l = [...(c.loot || [])]; l.splice(idx, 1); c.loot = l; syncWeaponAttacks(c, L); } });
     },
     openDeathSaves: (uid) => setModal({ type: "deathsaves", uid }),
@@ -12897,7 +12920,8 @@ export default function App() {
     // or every run of the tutorial leaves another "Tutorial Party" behind.
     if (clear && tutPartyIdRef.current) {
       const id = tutPartyIdRef.current;
-      savePartiesAll(partiesRef.current.filter((x) => x.id !== id), activePartyId === id ? null : activePartyId);
+      const rest = partiesRef.current.filter((x) => x.id !== id);
+      savePartiesAll(rest, resolvePartyId(rest, livePartyId() === id ? null : livePartyId()));
     }
     tutPartyIdRef.current = null;
     setPartyDemo(null);
@@ -12981,7 +13005,7 @@ export default function App() {
         if (at >= 0) merged[at] = { ...p, id: merged[at].id }; else merged.push(p);
         r.parties = (r.parties || 0) + 1;
       });
-      savePartiesAll(merged, activePartyId ?? merged[0].id);
+      savePartiesAll(merged, resolvePartyId(merged, activePartyId));
     }
     if (Array.isArray(obj.dungeons) && obj.dungeons.length) {
       const merged = [...dungeonsRef.current];
@@ -13404,7 +13428,7 @@ export default function App() {
               <b> replacing whatever's on screen</b>. Saved encounters are untouched.
             </div>
             {PLAYTEST_ENCOUNTERS.map((e) => (
-              <button key={e.key} className="btn" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => loadPlaytest(e)}>
+              <button key={e.key} className="btn w100" style={{ width: "100%", textAlign: "left", margin: "3px 0" }} onClick={() => loadPlaytest(e)}>
                 {e.name}<br /><span style={{ fontSize: 11, color: "var(--faint)" }}>{e.blurb}</span>
               </button>
             ))}
@@ -13430,28 +13454,28 @@ export default function App() {
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "4px 0" }}>Who rolls for the monsters?</div>
             {[[false, "The app rolls", "Attacks resolve instantly with animated dice"],
               [true, "I roll my own dice", "Attack buttons ask what you rolled — one tap per die — then play it out"]].map(([v, label, hint]) => (
-              <button key={String(v)} className={`btn ${manualDice === v ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              <button key={String(v)} className={`btn w100 ${manualDice === v ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
                 onClick={() => setManualDice(v)}>
                 {label}{manualDice === v ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: manualDice === v ? "inherit" : "var(--faint)" }}>{hint}</span>
               </button>
             ))}
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Damage effects</div>
-            <button className={`btn ${dmgFx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+            <button className={`btn w100 ${dmgFx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setDmgFx(!dmgFx)}>
               ⚡ Damage type effects{dmgFx ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgFx ? "inherit" : "var(--faint)" }}>Lightning, fire, slashes and more flare over the hit row just before the HP drops. (Also off when reveal speed is Off.)</span>
             </button>
-            <button className={`btn ${dmgFxAll ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0", opacity: dmgFx ? 1 : 0.5 }}
+            <button className={`btn w100 ${dmgFxAll ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0", opacity: dmgFx ? 1 : 0.5 }}
               disabled={!dmgFx} onClick={() => setDmgFxAll(!dmgFxAll)}>
               🌈 Mixed damage plays every type{dmgFxAll ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgFxAll ? "inherit" : "var(--faint)" }}>A slashing + acid bite plays both effects back-to-back. Off: only the biggest chunk's effect plays.</span>
             </button>
-            <button className={`btn ${dmgSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+            <button className={`btn w100 ${dmgSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setDmgSfx(!dmgSfx)}>
               🦷 Attack effects on screen{dmgSfx ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: dmgSfx ? "inherit" : "var(--faint)" }}>Every landed hit flashes the screen edge — signature attacks (bite, claw, gore…) get their own flair, everything else a soft pulse. Nothing on a miss.</span>
             </button>
-            <button className={`btn ${spellSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+            <button className={`btn w100 ${spellSfx ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setSpellSfx(!spellSfx)}>
               🐉 Spell &amp; breath effects{spellSfx ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: spellSfx ? "inherit" : "var(--faint)" }}>Breath weapons and AoE spells flash a full-screen shape — a cone, a bolt, or a burst — colored by damage type when they go off.</span>
@@ -13482,7 +13506,7 @@ export default function App() {
               ))}
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
-            <button className={`btn ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+            <button className={`btn w100 ${showTouches ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setShowTouches(!showTouches)}>
               👆 Show my taps{showTouches ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: showTouches ? "inherit" : "var(--faint)" }}>A glowing ring follows your finger — for demo videos. Doesn't change how anything works.</span>
@@ -13495,13 +13519,13 @@ export default function App() {
               ["medium", "Medium", "1.5s between elements"],
               ["slow", "Slow", "2.3s between elements"],
               ["off", "Off", "No dice tumble — everything appears instantly"]].map(([k, label, hint]) => (
-              <button key={k} className={`btn ${animSpeed === k ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+              <button key={k} className={`btn w100 ${animSpeed === k ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
                 onClick={() => setAnimSpeed(k)}>
                 {label}{animSpeed === k ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: animSpeed === k ? "inherit" : "var(--faint)" }}>{hint}</span>
               </button>
             ))}
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Ability-score items</div>
-            <button className={`btn ${promptScore ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+            <button className={`btn w100 ${promptScore ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
               onClick={() => setPromptScore(!promptScore)}>
               💪 Ask for the exact score on “+X” items{promptScore ? " ✓" : ""}<br />
               <span style={{ fontSize: 11, color: promptScore ? "inherit" : "var(--faint)" }}>Off: a “+X to a score” item assumes the base score is even, so the modifier rises by ⌊X/2⌋ (a +1 does nothing, +2 gives +1…). On: you’re prompted to type the creature’s current score so the new modifier is exact. Items that set a score to a fixed value (Belt of Giant Strength, Amulet of Health…) are always exact either way.</span>
@@ -14133,11 +14157,11 @@ export default function App() {
                 <button className="modal-x" title="Close" onClick={() => setModal(null)}>✕</button>
               </div>
               <div className="trait" style={{ margin: "6px 0 10px" }}>Two ways to get a feel for it — the same little fight either way: three heroes against two goblins.</div>
-              <button className="btn" style={{ width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 8, whiteSpace: "normal" }} onClick={startTutorial}>
+              <button className="btn w100" style={{ width: "100%", textAlign: "left", padding: "10px 12px", marginBottom: 8, whiteSpace: "normal" }} onClick={startTutorial}>
                 <div style={{ fontWeight: 700, color: "var(--gold)" }}>▶ Watch the guided tour</div>
                 <div className="trait" style={{ marginTop: 3 }}>Hands off — I build the party, pull in the goblins, and run a couple of turns while you just tap Next. Your board is put back exactly as it was afterwards.</div>
               </button>
-              <button className="btn" style={{ width: "100%", textAlign: "left", padding: "10px 12px", whiteSpace: "normal" }} onClick={loadTutorialSandbox}>
+              <button className="btn w100" style={{ width: "100%", textAlign: "left", padding: "10px 12px", whiteSpace: "normal" }} onClick={loadTutorialSandbox}>
                 <div style={{ fontWeight: 700, color: "var(--gold)" }}>⚔ Load the demo fight</div>
                 <div className="trait" style={{ marginTop: 3 }}>Drops the same heroes and goblins onto your board so you can run it yourself and poke at everything. They're ordinary combatants — nothing is added to your saved parties, so just Clear when you're done.</div>
               </button>
