@@ -1829,6 +1829,19 @@ function adjustDamage(c, amt, dtype) {
   return { finalDmg: amt, tag: null };
 }
 
+/* "7 slashing + 2 damage = 9 total" — an attack that deals two damage types was leaving the DM to add
+   them up mid-fight. Only totals when there's more than one part, so single-type hits read as before.
+   If a resistance, immunity or vulnerability changes what actually lands, both numbers are shown:
+   adjustDamage is a pure read, so the adjusted figure can be previewed without touching the target,
+   and without confusing "halved by resistance" with "the target only had 3 HP left". */
+const dmgPartsText = (parts, target) => {
+  const str = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
+  if (parts.length < 2) return str;
+  const raw = parts.reduce((n, p) => n + p.amt, 0);
+  const adj = target ? parts.reduce((n, p) => n + adjustDamage(target, p.amt, p.dtype).finalDmg, 0) : raw;
+  return `${str} = ${raw} total${adj !== raw ? ` (${adj} after resistances)` : ""}`;
+};
+
 /* death saving throws (2024 rules) — kind: success | fail | crit | nat20 | stabilize | reset */
 function applyDeathSave(c, kind, logs, toasts) {
   c.ds = c.ds || { s: 0, f: 0 };
@@ -11068,6 +11081,7 @@ export default function App() {
           }
         }
       }
+      if (parts.length > 1) dmgTxt = dmgPartsText(parts, t); // log the total too, not just the pieces
       if (t && parts.length) {
         if (isHit === true) {
           if (opts.reduction) { // a damage-reduction reaction (Uncanny Dodge, Absorb Elements, Deflect Missiles)
@@ -11079,7 +11093,7 @@ export default function App() {
           const hpBefore = t.hp;
           const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
           parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, opts.T || []));
-          const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
+          const dmgStr = dmgPartsText(parts, t);
           chips.push({ t: `${dmgStr} applied to ${t.name}${t.dead ? " ☠" : t.unconscious ? " (down)" : ""}`, k: "sgood" });
           // condition rider on a landed hit (Grab→Grappled, Gore→Prone, poison bite→Poisoned…)
           const rider = actionCondRider(a);
@@ -11871,7 +11885,7 @@ export default function App() {
         const hpBefore = t.hp;
         const snap = { hp: t.hp, thp: t.thp, dead: t.dead, unconscious: t.unconscious, stable: t.stable, id: Math.random() };
         parts.forEach((p) => applyDamage(t, p.amt, p.dtype, L, T));
-        const dmgStr = parts.map((p) => `${p.amt} ${p.dtype || "damage"}`).join(" + ");
+        const dmgStr = dmgPartsText(parts, t);
         // deferred-hit path (DM confirmed vs unknown AC): honor lifesteal here too
         const [auid, ai] = String(resKey).split(":");
         const atkC = d.combatants.find((x) => x.uid === auid);
