@@ -11042,7 +11042,12 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const saved = await stGet("dm5e:auto");
-      if (saved && saved.combatants && saved.combatants.length > 0) setRestoreBanner(saved);
+      if (saved && saved.combatants && saved.combatants.length > 0) {
+        // A build in between briefly stored temp HP against players who track their own HP. It's inert
+        // now, but it would spring back to life the day someone typed an HP for that player, so drop it.
+        saved.combatants.forEach((c) => { if (c.type === "player" && c.hp == null && c.thp) c.thp = 0; });
+        setRestoreBanner(saved);
+      }
       const best = await stGet("dm5e:bestiary");
       if (Array.isArray(best)) setMyBestiary(best);
       const pt = await stGet("dm5e:party");
