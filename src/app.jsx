@@ -4876,6 +4876,21 @@ function parseSpellcasting(sb) {
    are read back by the engine, and a paraphrase would quietly turn the automation off. {n} becomes
    the creature's name on the way in, the way a statblock writes it. `auto` marks the ones the app
    actually runs; everything else is reference text on the card. */
+/* What the engine actually reads out of a trait's prose, so a row can say so — and, where the wording
+   carries a number the engine parses, hand that number back as a control instead of leaving the DM to
+   guess that editing the sentence is what changes the effect. The tests mirror the matchers in
+   hasMagicResistance / regenTrait / selfAdvTrait. */
+const traitAuto = (name, d) => {
+  const txt = d || "";
+  const regen = txt.match(/regains (\d+) Hit Points at the start/i);
+  if (regen) return { note: `heals ${regen[1]} HP at the start of its turn${/Acid or Fire/i.test(txt) ? ", unless it took acid or fire" : ""}`, hp: +regen[1] };
+  if (/Advantage on saving throws against spells/i.test(txt)) return { note: "Advantage on saving throws against spells" };
+  if (/Advantage on attack rolls and (?:on )?saving throws/i.test(txt)) {
+    return { note: /\bBloodied\b/i.test(txt) ? "Advantage on its attacks and saves once it is Bloodied" : "Advantage on its attacks and saves" };
+  }
+  if (/^Legendary Resistance/i.test((name || "").trim())) return { note: "spend a use to turn a failed save into a success" };
+  return null;
+};
 const TRAIT_LIBRARY = [
   { n: "Magic Resistance", auto: "Advantage on saves against spells", d: "The {n} has Advantage on saving throws against spells and other magical effects." },
   { n: "Regeneration", auto: "heals at the start of its turn", d: "The {n} regains 10 Hit Points at the start of each of its turns if it has at least 1 Hit Point. If the {n} takes Acid or Fire damage, this trait doesn't function on the {n}'s next turn." },
@@ -5010,12 +5025,14 @@ function npcToSb(npc) {
 /* One name + prose row, shared by traits, bonus actions, reactions and legendary options. All four
    are the same shape in a statblock, and all four were unreachable for a homebrew creature before —
    which meant a cloned monster could have Pack Tactics and an invented one never could. */
-function ProseRows({ rows, onChange, what, placeholder }) {
+function ProseRows({ rows, onChange, what, placeholder, showAuto }) {
   const set = (i, k, v) => onChange(rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)));
   return (
     <>
-      {rows.map((r, i) => (
-        <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
+      {rows.map((r, i) => {
+        const auto = showAuto ? traitAuto(r.n, r.d) : null;
+        return (
+        <div key={i} style={{ border: `1px solid ${auto ? "var(--gold)" : "var(--line)"}`, borderRadius: 8, padding: "6px 8px", marginBottom: 6 }}>
           <div className="frow">
             <input type="text" placeholder="Name" autoComplete="off" spellCheck={false} style={{ flex: 1 }}
               value={r.n} onChange={(e) => set(i, "n", e.target.value)} />
@@ -5023,8 +5040,25 @@ function ProseRows({ rows, onChange, what, placeholder }) {
           </div>
           <textarea rows={2} placeholder={placeholder} value={r.d} onChange={(e) => set(i, "d", e.target.value)}
             style={{ width: "100%", marginTop: 4, boxSizing: "border-box", borderRadius: 7, padding: "6px 8px" }} />
+          {auto && (
+            <div style={{ fontSize: 11, color: "var(--gold)", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 3 }}>
+              <span>⚙ The app runs this: {auto.note}.</span>
+              {/* the engine reads the number out of the sentence, so editing it here rewrites the sentence */}
+              {auto.hp != null && (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--faint)" }}>
+                  HP per turn
+                  <input type="number" min={1} max={999} value={auto.hp} style={{ width: 56, textAlign: "center" }}
+                    onChange={(e) => {
+                      const n = Math.max(1, parseInt(e.target.value, 10) || 1);
+                      set(i, "d", (r.d || "").replace(/regains \d+ Hit Points at the start/i, `regains ${n} Hit Points at the start`));
+                    }} />
+                </label>
+              )}
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
       <button className="btn small ghost" onClick={() => onChange([...rows, { n: "", d: "" }])}>+ {what}</button>
     </>
   );
@@ -5494,7 +5528,7 @@ function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create
               <span style={{ fontSize: 11, color: "var(--faint)" }}>Nothing on the shelf matches — write it yourself below.</span>
             )}
           </div>
-          <ProseRows rows={traits} onChange={setTraits} what="trait" placeholder="What it does, in the statblock's words." />
+          <ProseRows rows={traits} onChange={setTraits} what="trait" placeholder="What it does, in the statblock's words." showAuto />
         </>))}
 
         {sect("more", "Bonus actions, reactions, legendary", [bonus.length && `${bonus.length} bonus`, reactions.length && `${reactions.length} reaction`, legOpts.length && `${legOpts.length} legendary`].filter(Boolean).join(" · ") || "optional", (<>
@@ -9700,6 +9734,36 @@ function dgnLevelSet(list, id) {
   return [...seen];
 }
 
+/* The list is flat but a multi-level dungeon isn't: floors are separate records joined by 🪜 exits.
+   This groups them into their connected sets, picks the entrance (the level nothing else descends
+   into), and measures each other level's depth from it, so the list can show a crypt as a crypt
+   instead of three unrelated boxes. Links are followed both ways here — looking at floor 2 should
+   still tell you it belongs under floor 1. */
+function dgnLevelGroups(list) {
+  const dungeons = list || [];
+  const byId = new Map(dungeons.map((d) => [d.id, d]));
+  const exits = (d) => Object.values((d && d.rooms) || {})
+    .map((rm) => (rm.link && rm.link.kind === "level" ? rm.link.dungeon : null))
+    .filter((x) => x && byId.has(x));
+  const near = new Map(dungeons.map((d) => [d.id, new Set()]));
+  dungeons.forEach((d) => exits(d).forEach((t) => { near.get(d.id).add(t); near.get(t).add(d.id); }));
+  const seen = new Set(), groups = [];
+  for (const d of dungeons) {
+    if (seen.has(d.id)) continue;
+    const ids = []; const stack = [d.id];
+    while (stack.length) { const cur = stack.pop(); if (seen.has(cur)) continue; seen.add(cur); ids.push(cur); near.get(cur).forEach((n) => { if (!seen.has(n)) stack.push(n); }); }
+    // the entrance is the level nothing else in the set descends into (a cycle falls back to list order)
+    const descendedInto = new Set();
+    ids.forEach((id) => exits(byId.get(id)).forEach((t) => { if (ids.includes(t)) descendedInto.add(t); }));
+    const entrance = ids.find((id) => !descendedInto.has(id)) ?? ids[0];
+    const depth = { [entrance]: 0 }; const q = [entrance];
+    while (q.length) { const cur = q.shift(); exits(byId.get(cur)).forEach((t) => { if (depth[t] == null) { depth[t] = depth[cur] + 1; q.push(t); } }); }
+    ids.forEach((id) => { if (depth[id] == null) depth[id] = 99; }); // reachable only sideways
+    groups.push({ entrance, depth, ids: ids.slice().sort((a, b) => depth[a] - depth[b] || dungeons.findIndex((x) => x.id === a) - dungeons.findIndex((x) => x.id === b)) });
+  }
+  return groups;
+}
+
 // Has the DM put anything into this room worth protecting? A freshly-added, untouched room
 // (default hex, default colour, no name/icons/notes) deletes in one tap; anything edited asks first.
 function roomTouched(r) {
@@ -11485,6 +11549,7 @@ export default function App() {
   };
   const [dgnDelId, setDgnDelId] = useState(null); // dungeon pending a delete confirmation, or null
   const [dgnResetId, setDgnResetId] = useState(null); // dungeon whose run is pending a reset confirmation
+  const [dgnDupId, setDgnDupId] = useState(null); // dungeon pending a duplicate confirmation
   // Bumped by a reset so the play panel forgets which encounters it has already dropped in — those
   // live in the panel, not on the map, and a reset that left them armed would be a half reset.
   const [dgnRunKey, setDgnRunKey] = useState(0);
@@ -14591,24 +14656,45 @@ export default function App() {
             <h3>🗺 Dungeon Builder</h3>
             <div className="trait" style={{ marginBottom: 8 }}>Build a hex map of rooms — shapes, colours, and notes. Playing one ticks loot off the map as the party takes it: <b>↺</b> puts it all back to run again, <b>⧉</b> makes a clean copy for another group.</div>
             {dungeons.length === 0 && <div className="trait" style={{ fontSize: 12 }}>No dungeons yet.</div>}
-            {dungeons.map((d) => {
-              const n = Object.keys(d.rooms || {}).length;
-              // run marks across this level and every level linked to it, so a played-through
-              // three-floor crypt offers Reset run from whichever floor you are looking at
-              const levels = dgnLevelSet(dungeons, d.id);
-              const played = levels.reduce((s, id) => s + dgnRunRooms(dungeons.find((x) => x.id === id)), 0);
+            {dgnLevelGroups(dungeons).map((g) => {
+              const rooms = g.ids.reduce((n2, id) => n2 + Object.keys((dungeons.find((x) => x.id === id) || {}).rooms || {}).length, 0);
+              const setPlayed = g.ids.reduce((s2, id) => s2 + dgnRunRooms(dungeons.find((x) => x.id === id)), 0);
               return (
-                // The name gets its own line: with five actions beside it, "The Sunken Crypt (copy 2)"
-                // truncated to "The Sunken…" — and telling a copy from its original is the whole point
-                // of having copies.
-                <div key={d.id} className="gs-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-                  <b style={{ flexBasis: "100%", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name?.trim() || "Untitled dungeon"}</b>
-                  <span className="ad" style={{ flex: 1 }}>{n} room{n === 1 ? "" : "s"}{played ? ` · ${played} looted` : ""}</span>
-                  <button className="btn small ok" title="Open this dungeon in the builder to edit it" onClick={() => { setDungeonEditId(d.id); setModal(null); }}>✎ Edit</button>
-                  {n > 0 && <button className="btn small primary" title="Load this dungeon into a play panel below the roster" onClick={() => { playDungeon(d.id); setModal(null); }}>▶ Play</button>}
-                  {n > 0 && <button className="btn small ghost" title="Duplicate — a clean copy of this dungeon (and any levels linked to it) to run with another group" onClick={() => duplicateDungeon(d.id)}>⧉</button>}
-                  {played > 0 && <button className="btn small ghost" style={{ color: "var(--gold)" }} title="Reset run — put the collected loot back so this dungeon can be run again" onClick={() => setDgnResetId(d.id)}>↺</button>}
-                  <button className="btn small danger" title="Delete this dungeon" onClick={() => setDgnDelId(d.id)}>✕</button>
+                <div key={g.entrance} style={g.ids.length > 1 ? { border: "1px solid var(--line2)", borderRadius: 10, padding: "4px 6px", marginBottom: 6 } : undefined}>
+                  {/* one frame per dungeon, however many floors it has — and the whole-set actions
+                      (duplicate, reset) live on the entrance, where "the dungeon" is unambiguous */}
+                  {g.ids.length > 1 && (
+                    <div style={{ fontSize: 11, color: "var(--gold)", letterSpacing: ".06em", textTransform: "uppercase", padding: "2px 2px 4px" }}>
+                      🪜 {g.ids.length} linked levels · {rooms} rooms{setPlayed ? ` · ${setPlayed} looted` : ""}
+                    </div>
+                  )}
+                  {g.ids.map((id) => {
+                    const d = dungeons.find((x) => x.id === id);
+                    if (!d) return null;
+                    const n = Object.keys(d.rooms || {}).length;
+                    const played = dgnRunRooms(d);
+                    const lvl = g.depth[id];
+                    const isHead = id === g.entrance;
+                    return (
+                      // The name gets its own line: with five actions beside it, "The Sunken Crypt (copy 2)"
+                      // truncated to "The Sunken…" — and telling a copy from its original is the whole point
+                      // of having copies.
+                      <div key={id} className="gs-row" style={{ alignItems: "center", flexWrap: "wrap", marginLeft: g.ids.length > 1 && !isHead ? 12 : 0 }}>
+                        <b style={{ flexBasis: "100%", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {g.ids.length > 1 && (
+                            <span className="npctag" style={{ marginRight: 6 }}>{isHead ? "entrance" : lvl < 99 ? `level ${lvl + 1}` : "linked"}</span>
+                          )}
+                          {d.name?.trim() || "Untitled dungeon"}
+                        </b>
+                        <span className="ad" style={{ flex: 1 }}>{n} room{n === 1 ? "" : "s"}{played ? ` · ${played} looted` : ""}</span>
+                        <button className="btn small ok" title="Open this level in the builder to edit it" onClick={() => { setDungeonEditId(id); setModal(null); }}>✎ Edit</button>
+                        {n > 0 && <button className="btn small primary" title={isHead ? "Load this dungeon into a play panel below the roster" : "Start the party on this level instead of the entrance"} onClick={() => { playDungeon(id); setModal(null); }}>▶ Play</button>}
+                        {n > 0 && isHead && <button className="btn small ghost" title={`Duplicate — a clean copy${g.ids.length > 1 ? " of all its levels" : ""} to run with another group`} onClick={() => setDgnDupId(id)}>⧉</button>}
+                        {isHead && setPlayed > 0 && <button className="btn small ghost" style={{ color: "var(--gold)" }} title="Reset run — put the collected loot back so this dungeon can be run again" onClick={() => setDgnResetId(id)}>↺</button>}
+                        <button className="btn small danger" title={isHead && g.ids.length > 1 ? "Delete this level — the levels below it stay, unlinked" : "Delete this dungeon"} onClick={() => setDgnDelId(id)}>✕</button>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -14637,6 +14723,20 @@ export default function App() {
           <ConfirmModal text={`Delete ${nm === "this dungeon" ? "this dungeon" : `the “${nm}” dungeon`}? Its rooms and notes will be lost — this can't be undone.`} confirmLabel="Delete dungeon"
             onYes={() => { saveDungeons(dungeons.filter((x) => x.id !== dgnDelId)); if (dungeonPlayId === dgnDelId) setDungeonPlayId(null); setDgnDelId(null); }}
             onClose={() => setDgnDelId(null)} />
+        );
+      })()}
+      {dgnDupId && (() => {
+        const dg = dungeons.find((x) => x.id === dgnDupId);
+        if (!dg) return null;
+        const levels = dgnLevelSet(dungeons, dgnDupId);
+        const rooms = levels.reduce((s2, id) => s2 + Object.keys((dungeons.find((x) => x.id === id) || {}).rooms || {}).length, 0);
+        const nm = (dg.name || "").trim() || "Untitled dungeon";
+        return (
+          <ConfirmModal
+            text={`Make a copy of “${nm}”? You'll get a second dungeon named “${nm} (copy)” with the same ${rooms} room${rooms === 1 ? "" : "s"}${levels.length > 1 ? ` across ${levels.length} linked levels` : ""} and no loot collected yet — for running the same map with another group. The original isn't touched.`}
+            confirmLabel="Make a copy"
+            onYes={() => { duplicateDungeon(dgnDupId); setDgnDupId(null); }}
+            onClose={() => setDgnDupId(null)} />
         );
       })()}
       {dgnResetId && (() => {
