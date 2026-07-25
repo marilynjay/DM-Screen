@@ -6823,33 +6823,43 @@ function DefensesModal({ c, onSave, onAddAttack, onClose }) {
 }
 
 function AddAttackModal({ c, onAdd, onClose }) {
-  const [a, setA] = useState({ n: "", hit: 4, dmg: "1d6+2", dtype: "slashing", extra: "", extraType: "fire", d: "" });
+  // the same dice picker the monster builder uses — count, a die face to tap, and the flat bonus
+  const [a, setA] = useState({ n: "", hit: 4, dtype: "slashing", extraType: "fire", d: "" });
+  const [dice, setDice] = useState(() => splitDice("1d6+2"));
+  const [xdice, setXdice] = useState(() => splitDice(""));
   const set = (k, v) => setA({ ...a, [k]: v });
+  const dmg = joinDice(dice), extra = joinDice(xdice);
+  const broken = dmgBad(dmg) || dmgBad(extra);
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>New attack — {c.name}</h3>
         <div className="frow"><label>Name</label><input type="text" placeholder="Silvered Spear" autoComplete="off" autoCorrect="off" spellCheck={false} value={a.n} onChange={(e) => set("n", e.target.value)} autoFocus /></div>
-        <div className="grid2">
-          <div className="frow"><label>To hit</label><input type="number" value={a.hit} onChange={(e) => set("hit", e.target.value)} /></div>
-          <div className="frow"><label>Damage</label><input type="text" style={{ width: 80 }} value={a.dmg} onChange={(e) => set("dmg", e.target.value)} /></div>
+        <div className="frow" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Capped cap="+ to hit" width={78}>
+            <input type="number" style={{ width: "100%" }} value={a.hit} onChange={(e) => set("hit", e.target.value)} />
+          </Capped>
+          <Capped cap="damage type">
+            <select style={{ width: "100%" }} value={a.dtype} onChange={(e) => set("dtype", e.target.value)}>
+              {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+            </select>
+          </Capped>
         </div>
-        <div className="frow"><label>Type</label>
-          <select value={a.dtype} onChange={(e) => set("dtype", e.target.value)}>
-            {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-          </select>
+        <DiceField v={dice} onChange={setDice} />
+        <div className="frow" style={{ flexWrap: "wrap", alignItems: "flex-end", marginTop: 6 }}>
+          <Capped cap="bonus damage type">
+            <select style={{ width: "100%" }} value={a.extraType} onChange={(e) => set("extraType", e.target.value)}>
+              {DTYPES.map((t) => (<option key={t}>{t}</option>))}
+            </select>
+          </Capped>
         </div>
-        <div className="frow"><label>Bonus dmg</label>
-          <input type="text" placeholder="1d6 (optional)" style={{ width: 90, flex: "none" }} value={a.extra} onChange={(e) => set("extra", e.target.value)} />
-          <select value={a.extraType} onChange={(e) => set("extraType", e.target.value)}>
-            {DTYPES.map((t) => (<option key={t}>{t}</option>))}
-          </select>
-        </div>
-        <div className="frow"><label>Notes</label><input type="text" placeholder="reach 10 ft, thrown 20/60…" value={a.d} onChange={(e) => set("d", e.target.value)} /></div>
+        <DiceField v={xdice} onChange={setXdice} allowNone />
+        <div className="frow" style={{ marginTop: 6 }}><label>Notes</label><input type="text" placeholder="reach 10 ft, thrown 20/60…" value={a.d} onChange={(e) => set("d", e.target.value)} /></div>
         <div className="frow" style={{ justifyContent: "flex-end" }}>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className="btn primary" disabled={!a.n.trim()}
-            onClick={() => onAdd({ n: a.n.trim(), kind: "atk", hit: parseInt(a.hit, 10) || 0, dmg: a.dmg, dtype: a.dtype, extra: a.extra.trim() || undefined, extraType: a.extra.trim() ? a.extraType : undefined, d: a.d.trim() || undefined })}>
+          <button className="btn primary" disabled={!a.n.trim() || broken}
+            title={broken ? "Fix the damage marked ⚠ first" : undefined}
+            onClick={() => onAdd({ n: a.n.trim(), kind: "atk", hit: parseInt(a.hit, 10) || 0, dmg, dtype: a.dtype, extra: extra || undefined, extraType: extra ? a.extraType : undefined, d: a.d.trim() || undefined })}>
             Add attack
           </button>
         </div>
