@@ -5025,7 +5025,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
           <div className="mlist">
             {mine.map((b) => (
               <span key={b.name} style={{ position: "relative" }}>
-                <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
+                <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                   {b.name}<br /><span className="cr">{b.cr ? `CR ${b.cr} · ` : ""}AC {b.ac} · {b.hp} HP</span>
                 </button>
                 <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -5045,7 +5045,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
             <div className="mlist">
               {builtIn.map((b) => (
                 <span key={b.name} style={{ position: "relative" }}>
-                  <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
+                  <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                     {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                   </button>
                   <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -5077,7 +5077,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
                     <div className="mlist" style={{ marginBottom: 6 }}>
                       {members.sort((a, b2) => crToNum(a.cr) - crToNum(b2.cr) || a.name.localeCompare(b2.name)).map((b) => (
                         <span key={b.name} style={{ position: "relative" }}>
-                          <button className="btn" style={{ width: "100%" }} onClick={() => pick(b)}>
+                          <button className={`btn ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
                             {b.name}{b.src === "tob" ? <span className="tobtag">ToB</span> : null}<br /><span className="cr">CR {b.cr} · AC {b.ac} · {b.hp} HP{bestiaryBadges(b) ? " " : ""}{bestiaryBadges(b)}</span>
                           </button>
                           <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
@@ -9716,9 +9716,9 @@ const TUT_MONSTER = "Goblin Warrior", TUT_MONSTER_N = 2;
 const TUT_PARTY_NAME = "Tutorial Party";
 const TUTORIAL_STEPS = [
   { key: "welcome", title: "Welcome — sit back and watch \ud83c\udf93", body: "A quick guided show. Every step explains itself first, then you tap \u201cShow me\u201d and watch it happen for real \u2014 no reading and watching at the same time. Nothing here touches your game: \u201cClear & finish\u201d at the end puts everything back." },
-  { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Player / ally is for a guest or a summoned ally \u2014 it drops someone on the board without saving them.)" },
+  { key: "party", act: "party", title: "1 \u00b7 Save your party", target: ["party"], targetPlayed: ["roster"], body: "Start with the heroes. This card is the one that *remembers* them: type a party name, add each character\u2019s name, AC and HP, and tap Add party. That both puts them on tonight\u2019s board and saves the group, so next session they\u2019re one tap away under \ud83d\udcc2 Load party. (\uff0b Add \u25b8 Player / ally is for a guest or a summoned ally \u2014 it drops someone on the board without saving them.)" },
   { key: "monsters", act: "monsters", title: "2 \u00b7 Add monsters", target: ["addbestiary", "add"], targetPlayed: ["roster"], body: "Now the foes: \uff0b Add \u25b8 Monster from bestiary. Watch me search for \u201cgoblin\u201d, pick the Goblin Warrior out of the results, and add two. That\u2019s 300+ SRD monsters with full statblocks \u2014 no book required." },
-  { key: "start", act: "start", title: "3 \u00b7 Roll initiative", target: ["active", "roster"], body: "The app rolls the monsters itself. For your heroes you get this dialogue \u2014 type each initiative as the table calls it out, then Start combat. (I use fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
+  { key: "start", act: "start", title: "3 \u00b7 Roll initiative", target: ["start", "roster"], targetPlayed: ["active", "roster"], body: "The app rolls the monsters itself. For your heroes you get this dialogue \u2014 type each initiative as the table calls it out, then Start combat. (I use fixed numbers so the fight plays the same every time: Bram leads on 20.)" },
   { key: "playerAttack", act: "playerAttack", title: "4 \u00b7 A hero attacks", target: ["cardattack", "active"], targetPlayed: ["roster"], body: "Bram is up. Your players roll their own dice, so you just record what happened: tap \u2694 Attack, pick the target, say whether it hit, type the damage. Watch the goblin\u2019s HP drop in the roster." },
   { key: "monsterAttack", act: "monsterAttack", title: "5 \u00b7 The monster strikes back", target: ["roster"], targetPlayed: ["active", "roster"], body: "Now a goblin\u2019s turn \u2014 and here\u2019s the good part: the app rolls the monster\u2019s attack and applies the damage for you. No flipping through statblocks mid-fight." },
   { key: "oldschool", act: "more", title: "6 \u00b7 Prefer your own dice? \ud83d\udd6f", body: "Like rolling everything yourself? Open the \u22ef menu and you\u2019ll find \ud83d\udd6f Old School Mode. The app stops rolling for monsters and just tracks HP with quick damage/heal boxes, showing monster attacks as reference. Toggle it any time.", target: ["oldschool", "more"] },
@@ -12610,6 +12610,9 @@ export default function App() {
       }],
       // flag them so the rest of the tour (fixed initiative, the rigged monster hit) can find them
       [9700, () => mutate((d) => d.combatants.forEach((c) => { if (c.type === "player") c._demo = true; }))],
+      // The party card is gone once they're on the board, so its spotlight target no longer exists and
+      // the step used to end under a full dim. Finish on the roster — the heroes are the payoff.
+      [9900, () => setTutSpot(["roster"])],
     );
     return cues;
   };
@@ -12634,9 +12637,11 @@ export default function App() {
       [4500, () => setTutCaret("bcount")],
       [5200, () => tutDemo("bestiary", { count: TUT_MONSTER_N })],
       [5800, () => setTutCaret(null)],
-      [6300, () => tutDemo("bestiary", { pick: TUT_MONSTER })],   // tap the Goblin Warrior result
-      [7500, () => tutDemo("bestiary", { press: "add" })],        // its card now reads "Add ×2"
-      [8000, () => { setModal(null); tutAddGoblins(); }],
+      // tap the result itself before the dialogue swaps to that monster's card
+      [6300, () => tutDemo("bestiary", { pressResult: TUT_MONSTER })],
+      [6900, () => tutDemo("bestiary", { pressResult: null, pick: TUT_MONSTER })],
+      [8100, () => tutDemo("bestiary", { press: "add" })],        // its card now reads "Add ×2"
+      [8600, () => { setModal(null); tutAddGoblins(); }],
     );
     return cues;
   };
@@ -12646,21 +12651,23 @@ export default function App() {
     if (stateRef.current.mode === "combat") return [];
     const heroInits = [20, 12, 4];
     return [
-      [200, () => { tutTop(); startCombat(); }], // fixes the goblins' initiative, leaves the heroes blank
-      [900, () => setModal({ type: "roll-init", demo: {} })],
-      ...heroInits.flatMap((v, i) => [[1450 + i * 850, () => {
+      [200, () => tutTop()],
+      [800, () => setTutPress("start")],          // the header button, visibly tapped
+      [1400, () => { setTutPress(null); startCombat(); }], // fixes the goblins' init, leaves the heroes blank
+      [1900, () => setModal({ type: "roll-init", demo: {} })],
+      ...heroInits.flatMap((v, i) => [[2450 + i * 850, () => {
         const hero = stateRef.current.combatants.filter((c) => c._demo && c.type === "player")[i];
         if (hero) setTutCaret(`init-${hero.uid}`);
       }]]),
-      ...heroInits.map((v, i) => [1700 + i * 850, () => setModal((m) => {
+      ...heroInits.map((v, i) => [2700 + i * 850, () => setModal((m) => {
         if (!m || m.type !== "roll-init") return m;
         const hero = stateRef.current.combatants.filter((c) => c._demo && c.type === "player")[i];
         if (!hero) return m;
         return { ...m, demo: { ...m.demo, vals: { ...(m.demo?.vals || {}), [hero.uid]: String(v) } } };
       })]),
-      [4300, () => setTutCaret(null)],
-      [4500, () => tutDemo("roll-init", { press: "start" })],
-      [5000, () => tutDemo("roll-init", { go: true })],
+      [5300, () => setTutCaret(null)],
+      [5500, () => tutDemo("roll-init", { press: "start" })],
+      [6000, () => tutDemo("roll-init", { go: true })],
     ];
   };
 
@@ -12683,7 +12690,9 @@ export default function App() {
       [6600, () => setTutCaret(null)],
       [6900, () => tutDemo("player-attack", { dtype: "slashing" })],
       [7500, () => tutDemo("player-attack", { press: "apply" })],
-      [8000, () => { setModal(null); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
+      // the dialogue closes and the hit lands on the roster — light it as it happens, not once the
+      // step finishes, or the moment the goblin's HP drops is the one moment that's dimmed
+      [8000, () => { setModal(null); setTutSpot(["roster"]); api.playerHit(hero.uid, goblin.uid, 7, "slashing"); }],
     ];
   };
 
@@ -12927,7 +12936,7 @@ export default function App() {
           <button className="btn primary" onClick={requestNext}>Next ▶</button>
         </>)}
         {state.mode === "setup" && state.combatants.some((c) => c.side === "enemy" && c.type !== "effect" && c.type !== "object") && (
-          <button className="btn primary" data-tut="start" onClick={startCombat}>Start combat</button>
+          <button className={`btn primary ${tutPress === "start" ? "demo-press" : ""}`} data-tut="start" onClick={startCombat}>Start combat</button>
         )}
         <span className="spacer" />
         <button className="btn small ghost" title="Undo last change" disabled={undoN === 0} onClick={undo}>↩</button>
