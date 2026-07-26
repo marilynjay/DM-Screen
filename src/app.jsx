@@ -7416,7 +7416,10 @@ const rollNpcName = (species, avoid, sex) => {
   return name;
 };
 const LOOK_FACES = [["round", "Round"], ["oval", "Oval"], ["square", "Square"], ["long", "Long"], ["heart", "Heart"], ["angular", "Angular"]];
-const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["swept", "Swept"], ["long", "Long"], ["ponytail", "Ponytail"], ["bun", "Bun"], ["curly", "Curly"], ["mohawk", "Mohawk"], ["braids", "Braids"], ["hood", "Hooded"]];
+const LOOK_HAIR = [["bald", "Bald"], ["short", "Short"], ["buzz", "Buzz"], ["pixie", "Pixie"], ["swept", "Swept"], ["fringe", "Fringe"],
+  ["bob", "Bob"], ["long", "Long"], ["wavy", "Wavy"], ["ponytail", "Ponytail"], ["pigtails", "Pigtails"], ["bun", "Bun"],
+  ["topknot", "Topknot"], ["curly", "Curly"], ["afro", "Afro"], ["dreads", "Dreadlocks"], ["mohawk", "Mohawk"],
+  ["braids", "Braids"], ["receding", "Receding"], ["tonsure", "Tonsure"], ["hood", "Hooded"]];
 const LOOK_HORNS = [["none", "None"], ["small", "Small"], ["straight", "Straight"], ["curved", "Curved"], ["ram", "Ram"], ["gazelle", "Gazelle"], ["bull", "Bull"]];
 const LOOK_BEARD = [["none", "None"], ["stubble", "Stubble"], ["moustache", "Moustache"], ["goatee", "Goatee"], ["full", "Full"]];
 const SKIN_TONES = ["#f4d9bd", "#e8c19c", "#d8a878", "#c68a5e", "#a86b43", "#7c4a2d", "#553320", "#8fbf6a", "#6fa84e", "#7db0cf", "#b7a6d6", "#cf8a8a", "#a9b0ba", "#d9cdbf"];
@@ -7826,7 +7829,18 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   // hair — back layer sits behind the head, front layer over the forehead
   const hairBack = (() => {
     switch (L.hair) {
-      case "long": return <path d="M19 42 Q17 82 28 90 L72 90 Q83 82 81 42 Q81 18 50 16 Q19 18 19 42 Z" fill={hairC} />;
+      case "long": return <path d="M15 42 Q13 84 24 95 L76 95 Q87 84 85 42 Q85 18 50 16 Q15 18 15 42 Z" fill={hairC} />;
+      case "wavy": return <path d="M14 42 Q9 54 15 61 Q9 70 16 78 Q11 87 18 91 Q24 96 29 88 Q35 95 41 89 Q50 95 59 89 Q65 95 71 88 Q76 96 82 91 Q89 87 84 78 Q91 70 85 61 Q91 54 86 42 Q86 18 50 16 Q14 18 14 42 Z" fill={hairC} />;
+      case "bob": return <path d="M17 44 Q15 72 25 81 L75 81 Q85 72 83 44 Q83 17 50 15 Q17 17 17 44 Z" fill={hairC} />;
+      case "afro": return <ellipse cx="50" cy="34" rx="35" ry="28" fill={hairC} />;
+      case "dreads": return <g fill={hairC}>
+        <path d="M16 48 Q14 19 50 16 Q86 19 84 48 Z" />
+        {[18, 26, 34, 66, 74, 82].map((x, i) => <rect key={x} x={x - 3.6} y={38} width="7.2" height={i % 2 ? 54 : 46} rx="3.6" />)}
+      </g>;
+      case "pigtails": return <g fill={hairC}>
+        <path d="M21 44 Q19 22 50 18 Q81 22 79 44 Z" />
+        <ellipse cx="16" cy="56" rx="10" ry="13" /><ellipse cx="84" cy="56" rx="10" ry="13" />
+      </g>;
       case "ponytail": return <g fill={hairC}><path d="M70 34 Q92 40 88 62 Q86 76 76 78 Q86 62 79 44 Z" /></g>;
       case "braids": return <g fill={hairC}><circle cx="24" cy="52" r="6" /><circle cx="23" cy="62" r="5.5" /><circle cx="23" cy="71" r="5" /><circle cx="76" cy="52" r="6" /><circle cx="77" cy="62" r="5.5" /><circle cx="77" cy="71" r="5" /></g>;
       default: return null;
@@ -7843,7 +7857,23 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       // a hood is a garment, so it takes the clothing colour — it used to be hardcoded, which
       // made the hair-colour swatch look broken for anyone wearing one
       case "hood": return <path d="M15 54 Q13 20 50 15 Q87 20 85 54 Q85 40 73 34 L74 42 Q72 29 50 27 Q28 29 26 42 L27 34 Q15 40 15 54 Z" fill={clothC} stroke="rgba(0,0,0,.3)" strokeWidth="1" />;
+      case "pixie": return <path d="M24 45 Q22 19 50 18 Q78 19 76 45 Q74 33 66 30 Q60 37 52 31 Q46 37 38 30 Q26 33 24 45 Z" fill={hairC} />;
+      case "fringe": return <path d="M23 46 Q21 19 50 18 Q79 19 77 46 Q77 31 62 29 L38 29 Q23 31 23 46 Z" fill={hairC} />;
+      case "bob": return <path d="M23 46 Q21 19 50 18 Q79 19 77 46 Q77 31 63 28 Q57 33 50 32 Q43 33 37 28 Q23 31 23 46 Z" fill={hairC} />;
+      case "afro": return <path d="M22 44 Q20 22 50 21 Q80 22 78 44 Q76 33 50 32 Q24 33 22 44 Z" fill={hairC} />;
+      case "topknot": return <g fill={hairC}><circle cx="50" cy="12.5" r="8" /><path d="M44 26 Q50 16 56 26 Q50 23 44 26 Z" /><path d="M27 42 Q28 22 50 20 Q72 22 73 42 Q68 30 50 29 Q32 30 27 42 Z" /></g>;
+      case "dreads": return <path d="M22 44 Q20 20 50 18 Q80 20 78 44 Q76 32 50 31 Q24 32 22 44 Z" fill={hairC} />;
+      case "pigtails": return <path d="M24 45 Q22 20 50 19 Q78 20 76 45 Q76 32 50 30 Q24 32 24 45 Z" fill={hairC} />;
+      // hair that has gone from the crown but not the sides — the hairline sits well back
+      case "receding": return <g fill={hairC}>
+        <path d="M23 50 Q21 26 38 22 Q31 32 29 50 Z" /><path d="M77 50 Q79 26 62 22 Q69 32 71 50 Z" />
+      </g>;
+      case "tonsure": return <g fill={hairC}>
+        <path d="M22 50 Q21 30 33 24 Q27 34 27 50 Z" /><path d="M78 50 Q79 30 67 24 Q73 34 73 50 Z" />
+        <path d="M27 42 Q50 34 73 42 L73 47 Q50 39 27 47 Z" opacity="0.9" />
+      </g>;
       case "long":
+      case "wavy":
       case "ponytail":
       case "braids":
       case "short":
@@ -7939,6 +7969,10 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const has = (k) => marks.includes(k);
   const bust = (
     <>
+      {/* Hair that falls past the head goes down FIRST, behind everything. It used to be drawn
+          after the neck and shoulders, so anything long enough to reach them covered them —
+          the neck disappeared under it. Behind the body is also simply where it belongs. */}
+      {hairBack}
       {/* shoulders + neck give it a bust silhouette; the outfit is drawn over them, clipped to
           the same silhouette so a lapel or pauldron cannot spill into the background */}
       <clipPath id={fitClip}><path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" /></clipPath>
@@ -7946,7 +7980,6 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       {outfit}
       <rect x="43" y="72" width="14" height="14" rx="4" fill={skin} stroke={line} strokeWidth="1" />
       <g transform={`translate(0,${dy})`}>{ear(22, -1)}{ear(78, 1)}</g>
-      {hairBack}
       {face}
       {scaled && <g stroke="rgba(0,0,0,.2)" strokeWidth="0.9" fill="none">
         <path d="M36 36 Q40 33 44 36" /><path d="M56 36 Q60 33 64 36" /><path d="M31 62 Q34 60 37 63" /><path d="M63 63 Q66 60 69 62" /><path d="M42 30 Q50 27 58 30" />
