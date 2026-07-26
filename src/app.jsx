@@ -9991,6 +9991,11 @@ function DungeonMapLayer({ map }) {
     opacity={map.op == null ? 0.85 : map.op} style={{ pointerEvents: "none" }} preserveAspectRatio="none" />;
 }
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
+/* Every hex corridor is this wide. It used to be written out at each shape, and the dead end
+   was left at 0.5 while the rest moved to 0.42 — so a dead end met a corridor a few units
+   wider than it and the join showed. The square grid derives all of its corridors from one
+   value, which is why they lined up; hexes do now too. */
+const HEX_CORRIDOR = HEX_SIZE * 0.42;
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
 // inverse of hexToPix with cube rounding → the (q,r) of the hex containing a world point
 const pixToHex = (wx, wy) => {
@@ -10228,19 +10233,19 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
     if (shape === "square") { const side = s * 1.18; return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={fill} stroke={stk} strokeWidth="1.5" />; }
     if (shape === "diamond") { const d = s * 0.84; return <polygon points={`${cx},${(cy - d).toFixed(1)} ${(cx + d).toFixed(1)},${cy} ${cx},${(cy + d).toFixed(1)} ${(cx - d).toFixed(1)},${cy}`} fill={fill} stroke={stk} strokeWidth="1.5" />; }
     if (shape === "stub") {
-      const th = s * 0.5, apo = (s * Math.sqrt(3)) / 2;
+      const th = HEX_CORRIDOR, apo = (s * Math.sqrt(3)) / 2;
       const rot = ((Number(room.orient) || 0) % 6) * 60;
       // a corridor that enters one edge flush and terminates in a rounded dead end near the centre
       return wrap(<path d={stubPath(cx, cy, th, apo)} fill={fill} stroke={stk} strokeWidth="1" />, rot);
     }
     if (shape === "hall") {
-      const th = s * 0.42, L = Math.sqrt(3) * s;
+      const th = HEX_CORRIDOR, L = Math.sqrt(3) * s;
       const MAP = { h: { rot: 0 }, d1: { rot: 120 }, d2: { rot: 60 } };
       const conf = MAP[room.orient] || MAP.h;
       return wrap(<rect x={cx - L / 2} y={cy - th / 2} width={L} height={th} fill={fill} stroke={stk} strokeWidth="1" />, conf.rot);
     }
     if (shape === "angle" || shape === "ytee" || shape === "cross") {
-      const th = s * 0.42, apo = (s * Math.sqrt(3)) / 2;
+      const th = HEX_CORRIDOR, apo = (s * Math.sqrt(3)) / 2;
       // cross = the Y-junction plus a fourth exit budding from one of its crooks (still edge-aligned)
       const arms = shape === "ytee" ? [0, 120, 240] : shape === "cross" ? [0, 120, 240, 60] : [300, 60];
       const arm = (deg) => {
@@ -10255,7 +10260,7 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
       // true T / X junctions: the crossbar runs edge-to-edge (0↔180) while the perpendicular arm(s)
       // run point-to-point through the hex corners (90/270). Arms are over-long and clipped to the hex,
       // so each reaches its own boundary (apothem for edges, the vertex for corners).
-      const th = s * 0.42, L = s * 1.08;
+      const th = HEX_CORRIDOR, L = s * 1.08;
       const arms = shape === "ex" ? [0, 90, 180, 270] : [0, 180, 270];
       const arm = (deg) => {
         const a = (deg * Math.PI) / 180;
@@ -10266,7 +10271,7 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
       return wrap(<g>{arms.map(arm)}<circle cx={cx} cy={cy} r={th * 0.6} fill={fill} /></g>, rot);
     }
     if (shape === "ccurve") {
-      const th = s * 0.42, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
+      const th = HEX_CORRIDOR, R = 0.5 * s, ri = R - th / 2, ro = R + th / 2;
       const vAng = (-30 * Math.PI) / 180;
       const vx = cx + s * Math.cos(vAng), vy = cy + s * Math.sin(vAng);
       const a1 = (90 * Math.PI) / 180, a2 = (210 * Math.PI) / 180;
@@ -10276,7 +10281,7 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
       return wrap(<path d={d} fill={fill} stroke={stk} strokeWidth="1" />, rot);
     }
     if (shape === "curve" || shape === "wcurve") {
-      const th = s * 0.42;
+      const th = HEX_CORRIDOR;
       const dx = shape === "wcurve" ? s * 0.42 : 0;
       const Pa = { x: cx + s * 0.433 + dx, y: cy - s * 0.75 };
       const Pb = { x: cx + s * 0.433 + dx, y: cy + s * 0.75 };
