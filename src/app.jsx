@@ -7433,9 +7433,14 @@ const CLOTH_COLORS = ["#3b3444", "#2b2f3d", "#4b3a2b", "#5a2b2b", "#2b4a3a", "#2
 /* What they are wearing, drawn over the shoulders. The garment takes the clothing colour and
    its own trim is derived from it, so one swatch dresses the whole outfit and no NPC ends up
    in colours that fight. */
-const LOOK_OUTFITS = [["plain", "Plain"], ["tunic", "Tunic"], ["robe", "Robe"], ["cloak", "Cloak"], ["hooded", "Hooded cloak"],
-  ["armour", "Plate"], ["mail", "Chain mail"], ["leather", "Leathers"], ["noble", "Noble"], ["vestment", "Vestments"],
-  ["apron", "Apron"], ["scarf", "Scarf"], ["bare", "Bare shoulders"]];
+const LOOK_OUTFITS = [["plain", "Plain"], ["bare", "Bare shoulders"], ["tunic", "Tunic"], ["apron", "Apron"], ["scarf", "Scarf"],
+  ["robe", "Robe"], ["cloak", "Cloak"], ["vestment", "Vestments"], ["noble", "Noble"], ["king", "King"], ["queen", "Queen"],
+  ["leather", "Leathers"], ["studded", "Studded"], ["mail", "Chain mail"], ["scale", "Scale mail"],
+  ["armour", "Plate"], ["knight", "Knight"], ["tabard", "Tabard"]];
+// "hooded" was a second cloak nobody could tell from the first; saved NPCs wearing it get the survivor
+const OUTFIT_ALIAS = { hooded: "cloak" };
+// Read the outfit through the alias everywhere, so a retired name still draws and still lights up its chip
+const outfitKey = (v) => { const k = v || "plain"; return OUTFIT_ALIAS[k] || k; };
 // #rrggbb toward black (k<1) or white (k>1), so trim and shadow follow whatever colour is picked
 function tintHex(hex, k) {
   const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ""));
@@ -7885,11 +7890,16 @@ function NpcPortrait({ look, size = 64, frame = true }) {
      outfit and nothing clashes. Clipped to the bust so a lapel or a pauldron cannot spill into
      the background. */
   const outfit = (() => {
-    const k = L.outfit || "plain";
+    const k = outfitKey(L.outfit);
     if (k === "plain") return null;
     const dark = tintHex(clothC, 0.62), light = tintHex(clothC, 1.35), edge = "rgba(0,0,0,.3)";
     const body = "M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z";
     const inner = (n) => <g clipPath={`url(#${fitClip})`}>{n}</g>;
+    /* A few garments have a collar that stands up behind the neck, which is above the bust
+       silhouette the clip is cut from. Those parts are drawn unclipped, kept well inside the
+       shoulders so there is nothing to spill. The neck is painted after the outfit, so a raised
+       collar correctly ends up behind it. */
+    const gold = "#d8b34a", goldDark = "#8a6a1e";
     switch (k) {
       case "bare": return <path d={body} fill={skin} stroke={line} strokeWidth="1" />;
       case "tunic": return inner(<g>
@@ -7902,16 +7912,23 @@ function NpcPortrait({ look, size = 64, frame = true }) {
         <path d="M30 100 Q34 88 44 82" stroke={light} strokeWidth="1.6" fill="none" />
         <path d="M70 100 Q66 88 56 82" stroke={light} strokeWidth="1.6" fill="none" />
       </g>);
-      case "cloak": return inner(<g>
-        <path d="M22 100 Q23 85 38 80 L44 84 L40 100 Z" fill={dark} />
-        <path d="M78 100 Q77 85 62 80 L56 84 L60 100 Z" fill={dark} />
-        <circle cx="50" cy="84" r="3.6" fill={light} stroke={edge} strokeWidth="0.8" />
-      </g>);
-      case "hooded": return inner(<g>
-        <path d="M22 100 Q20 84 36 78 L45 84 L42 100 Z" fill={dark} />
-        <path d="M78 100 Q80 84 64 78 L55 84 L58 100 Z" fill={dark} />
-        <path d="M38 80 Q50 74 62 80 Q50 88 38 80 Z" fill={tintHex(clothC, 0.45)} />
-      </g>);
+      case "cloak": return (<>
+        {inner(<g>
+          {/* the cloak hangs open, so a lighter garment shows down the middle */}
+          <path d={body} fill={light} />
+          <path d="M22 100 Q21 84 38 79 L46 88 L43 100 Z" fill={clothC} stroke={edge} strokeWidth="0.8" />
+          <path d="M78 100 Q79 84 62 79 L54 88 L57 100 Z" fill={clothC} stroke={edge} strokeWidth="0.8" />
+          <path d="M38 79 L46 88 L43 100" fill="none" stroke={dark} strokeWidth="1.6" />
+          <path d="M62 79 L54 88 L57 100" fill="none" stroke={dark} strokeWidth="1.6" />
+        </g>)}
+        {/* The hood is pushed back, so it rests on top of the shoulders rather than behind them.
+           Two separate bunches rather than one arch, so the open front stays open between them —
+           their tops tuck under the head, which is painted after the outfit. */}
+        <path d="M33 97 Q29 84 41 78 Q47 86 43 97 Z" fill={tintHex(clothC, 0.5)} stroke={edge} strokeWidth="0.7" />
+        <path d="M67 97 Q71 84 59 78 Q53 86 57 97 Z" fill={tintHex(clothC, 0.5)} stroke={edge} strokeWidth="0.7" />
+        {/* the clasp sits below the chin, clear of the neck, or it cannot be seen at all */}
+        <circle cx="50" cy="90" r="3.6" fill={gold} stroke={goldDark} strokeWidth="1" />
+      </>);
       case "armour": return inner(<g>
         <path d="M22 100 Q23 84 36 79 Q44 82 43 92 L40 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
         <path d="M78 100 Q77 84 64 79 Q56 82 57 92 L60 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
@@ -7934,6 +7951,61 @@ function NpcPortrait({ look, size = 64, frame = true }) {
         <path d="M44 80 Q50 86 56 80 L56 76 L44 76 Z" fill={dark} />
         <circle cx="50" cy="93" r="2.4" fill={light} />
       </g>);
+      case "knight": return (<>
+        {inner(<g>
+          <path d="M22 100 Q22 82 36 77 Q46 81 44 92 L41 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
+          <path d="M78 100 Q78 82 64 77 Q54 81 56 92 L59 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
+          <path d="M25 90 Q33 85 41 88" stroke={edge} strokeWidth="0.9" fill="none" />
+          <path d="M75 90 Q67 85 59 88" stroke={edge} strokeWidth="0.9" fill="none" />
+          <path d="M42 84 L58 84 L60 100 L40 100 Z" fill={tintHex(clothC, 1.1)} stroke={edge} strokeWidth="0.9" />
+          <path d="M50 86 L50 100 M44 92 L56 92" stroke={edge} strokeWidth="1" />
+        </g>)}
+        {/* gorget: the plate collar at the throat, standing above the shoulder line */}
+        <path d="M40 84 Q50 76 60 84 Q50 81 40 84 Z" fill={tintHex(clothC, 1.45)} stroke={edge} strokeWidth="0.9" />
+      </>);
+      case "scale": return inner(<g>
+        <path d={body} fill={tintHex(clothC, 1.08)} />
+        {[0, 1, 2, 3, 4].map((r) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map((c) => (
+          <path key={`${r}-${c}`} d={`M${24 + c * 7 + (r % 2 ? 3.5 : 0)} ${82 + r * 4.4} a3.5 3.5 0 0 1 7 0`}
+            fill={dark} stroke={edge} strokeWidth="0.4" />
+        )))}
+      </g>);
+      case "studded": return inner(<g>
+        <path d={body} fill={tintHex(clothC, 0.85)} />
+        <path d="M38 80 L38 100 M62 80 L62 100" stroke={dark} strokeWidth="3.5" />
+        {[0, 1, 2, 3].map((r) => [0, 1, 2, 3, 4, 5, 6].map((c) => (
+          <circle key={`${r}-${c}`} cx={27 + c * 8} cy={84 + r * 5} r="1.3" fill={light} opacity="0.85" />
+        )))}
+      </g>);
+      case "tabard": return inner(<g>
+        <path d={body} fill={tintHex(clothC, 0.7)} />
+        <path d="M40 80 L60 80 L60 100 L40 100 Z" fill={light} stroke={edge} strokeWidth="0.8" />
+        <path d="M50 84 L54 90 L50 96 L46 90 Z" fill={dark} />
+        <path d="M40 80 L40 100 M60 80 L60 100" stroke={dark} strokeWidth="1.4" />
+      </g>);
+      case "king": return (<>
+        {inner(<g>
+          <path d={body} fill={tintHex(clothC, 0.78)} />
+          {/* ermine mantle across the shoulders */}
+          <path d="M22 100 Q24 86 40 80 L60 80 Q76 86 78 100 L78 93 Q60 87 50 87 Q40 87 22 93 Z" fill="#f2ede1" stroke="rgba(0,0,0,.18)" strokeWidth="0.7" />
+          {[28, 36, 44, 56, 64, 72].map((x, i) => (
+            <path key={x} d={`M${x} ${95 + (i % 2 ? 1.5 : 0)} l1.6 3 l-1.6 1 l-1.6 -1 Z`} fill="#2b2622" />
+          ))}
+          <path d="M40 80 Q50 92 60 80" stroke={gold} strokeWidth="2" fill="none" />
+        </g>)}
+        <circle cx="50" cy="88" r="3.6" fill={gold} stroke={goldDark} strokeWidth="1" />
+      </>);
+      case "queen": return (<>
+        {inner(<g>
+          <path d={body} fill={tintHex(clothC, 0.9)} />
+          <path d="M40 80 L50 90 L60 80 L64 83 L58 100 L42 100 L36 83 Z" fill={light} stroke={edge} strokeWidth="0.7" />
+        </g>)}
+        {/* a standing fan collar rising behind the neck, and a jewelled chain */}
+        <path d="M38 86 Q33 70 28 64 Q42 74 50 74 Q58 74 72 64 Q67 70 62 86 Q50 80 38 86 Z"
+          fill={tintHex(clothC, 1.3)} stroke={edge} strokeWidth="0.8" />
+        <path d="M42 88 Q50 95 58 88" stroke={gold} strokeWidth="1.6" fill="none" />
+        <circle cx="50" cy="93" r="2.8" fill="#7fd4e0" stroke={goldDark} strokeWidth="1" />
+      </>);
       case "vestment": return inner(<g>
         <path d="M44 80 L44 100 L50 100 L50 80 Z" fill={light} />
         <path d="M56 80 L56 100 L50 100 L50 80 Z" fill={light} />
@@ -8273,8 +8345,8 @@ function NpcAppearance({ value, onChange }) {
         {(usesMarkColor(marks) || marks.includes("freckles")) &&
           <div className="look-row col"><span>Marking colour</span><LookSwatches colors={MARK_COLORS} value={look.markColor || MARK_COLORS[0]} onPick={(c) => set({ markColor: c })} /></div>}
       </LookGroup>
-      <LookGroup title="Clothing" sub={`${lbl(LOOK_OUTFITS, look.outfit || "plain")} · shoulders and any hood`} open={open.cloth} onToggle={() => flip("cloth")}>
-        <div className="look-row col"><span>Outfit</span><LookChips options={LOOK_OUTFITS} value={look.outfit || "plain"} onPick={(v) => set({ outfit: v })} /></div>
+      <LookGroup title="Clothing" sub={`${lbl(LOOK_OUTFITS, outfitKey(look.outfit))} · shoulders and any hood`} open={open.cloth} onToggle={() => flip("cloth")}>
+        <div className="look-row col"><span>Outfit</span><LookChips options={LOOK_OUTFITS} value={outfitKey(look.outfit)} onPick={(v) => set({ outfit: v })} /></div>
         <div className="look-row col"><span>Colour</span><LookSwatches colors={CLOTH_COLORS} value={look.cloth || CLOTH_COLORS[0]} onPick={(c) => set({ cloth: c })} /></div>
         <div className="trait">One colour dresses the whole outfit — trim and shadow are shaded from it. Clothing does most of the work telling NPCs apart in the roster, where the portrait is tiny.</div>
       </LookGroup>
