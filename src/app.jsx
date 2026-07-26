@@ -238,6 +238,12 @@ input[type=number]{width:64px}
 .dgn-top{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
 .dgn-top input.nm{flex:1;min-width:0;font-family:var(--disp);font-size:16px;background:transparent;border:none;color:var(--text);-webkit-text-fill-color:var(--text)}
 .dgn-canvas{flex:1;position:relative;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
+/* placing a picture of a map under the grid */
+.dgn-mapbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 10px;background:var(--raised);
+  border-bottom:1px solid var(--line2)}
+.dgn-mapctl{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--faint)}
+.dgn-mapctl input[type=range]{width:88px}
+.dgn-maphint{font-size:11px;color:var(--faint);flex:1 1 100%;min-width:0}
 .dgn-hex{fill:transparent;stroke:var(--line2);stroke-width:1}
 /* on a light backdrop the faint white grid washes out — flip empty-cell lines to dark ink */
 .dgn-light .dgn-hex{stroke:rgba(0,0,0,.34)}
@@ -7569,24 +7575,97 @@ const PORTRAIT_PX = 320;
 const imgKey = (id) => `dm5e:img:${id}`;
 const IMG_CACHE = new Map();
 const IMG_PENDING = new Map();
+
+/* Pictures live in IndexedDB, not in the key-value store the rest of the app uses. That store
+   is localStorage behind a shim, capped near 5MB for EVERYTHING — fine for a 25KB portrait,
+   hopeless once dungeon maps arrive at a few hundred KB each. IndexedDB is measured in
+   hundreds of megabytes.
+
+   Everything goes through the three functions below, so the swap is contained. Reads still
+   check the old location and migrate what they find, and if IndexedDB is unavailable at all
+   (private windows on some browsers) the old path is used unchanged. */
+const IDB_NAME = "dm5e", IDB_STORE = "img";
+let idbPromise = null;
+function idbOpen() {
+  if (idbPromise) return idbPromise;
+  idbPromise = new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === "undefined") return resolve(null);
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => { const db = req.result; if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return idbPromise;
+}
+function idbRun(mode, fn) {
+  return idbOpen().then((db) => {
+    if (!db) return { ok: false, value: undefined };
+    return new Promise((resolve) => {
+      let out;
+      try {
+        const tx = db.transaction(IDB_STORE, mode);
+        out = fn(tx.objectStore(IDB_STORE));
+        tx.oncomplete = () => resolve({ ok: true, value: out && out.result });
+        // a full disk shows up here as a failed transaction, not a thrown call
+        tx.onerror = () => resolve({ ok: false, value: undefined, err: tx.error });
+        tx.onabort = () => resolve({ ok: false, value: undefined, err: tx.error });
+      } catch (e) { resolve({ ok: false, value: undefined, err: e }); }
+    });
+  });
+}
 async function imgLoad(id) {
   if (!id) return null;
   if (IMG_CACHE.has(id)) return IMG_CACHE.get(id);
   if (IMG_PENDING.has(id)) return IMG_PENDING.get(id);
-  const p = stGet(imgKey(id)).then((v) => {
-    const url = typeof v === "string" && v.startsWith("data:") ? v : null;
-    IMG_CACHE.set(id, url); IMG_PENDING.delete(id); return url;
-  });
+  const p = (async () => {
+    const got = await idbRun("readonly", (st) => st.get(id));
+    let url = typeof got.value === "string" && got.value.startsWith("data:") ? got.value : null;
+    if (!url) {
+      // pre-IndexedDB pictures: read from the old key and move them across as they are touched
+      const legacy = await stGet(imgKey(id));
+      if (typeof legacy === "string" && legacy.startsWith("data:")) {
+        url = legacy;
+        const moved = await idbRun("readwrite", (st) => st.put(url, id));
+        if (moved.ok) stDel(imgKey(id));
+      }
+    }
+    IMG_CACHE.set(id, url); IMG_PENDING.delete(id);
+    return url;
+  })();
   IMG_PENDING.set(id, p);
   return p;
 }
-async function imgSave(id, dataUrl) { const ok = await stSet(imgKey(id), dataUrl); if (ok) IMG_CACHE.set(id, dataUrl); return ok; }
-async function imgDrop(id) { if (!id) return; IMG_CACHE.delete(id); await stDel(imgKey(id)); }
-// Pull every photo a party's NPCs use into the cache up front, so thumbnails draw on first paint.
-function imgWarm(parties) {
+async function imgSave(id, dataUrl) {
+  const r = await idbRun("readwrite", (st) => st.put(dataUrl, id));
+  const ok = r.ok || (await stSet(imgKey(id), dataUrl)); // no IndexedDB here — use the old store
+  if (ok) IMG_CACHE.set(id, dataUrl);
+  return ok;
+}
+async function imgDrop(id) {
+  if (!id) return;
+  IMG_CACHE.delete(id);
+  await idbRun("readwrite", (st) => st.delete(id));
+  await stDel(imgKey(id)); // and any copy left behind before the move
+}
+/* Every stored picture is reachable from exactly two places — an NPC's look, or a dungeon's
+   map — so backups, cache warming and clean-up all ask here rather than each growing their
+   own idea of what is in use. */
+const partyImgIds = (parties) => {
   const ids = new Set();
-  (parties || []).forEach((p) => (p.notebook?.npcs || p.npcs || []).forEach((n) => { if (n?.look?.img) ids.add(n.look.img); }));
-  ids.forEach((id) => { imgLoad(id); });
+  (parties || []).forEach((p) => ((p.notebook || {}).npcs || p.npcs || []).forEach((n) => { if (n && n.look && n.look.img) ids.add(n.look.img); }));
+  return ids;
+};
+const dungeonImgIds = (dungeons) => {
+  const ids = new Set();
+  (dungeons || []).forEach((d) => { if (d && d.map && d.map.img) ids.add(d.map.img); });
+  return ids;
+};
+// Pull the pictures in play into the cache up front, so thumbnails draw on first paint.
+function imgWarm(parties, dungeons) {
+  [...partyImgIds(parties), ...dungeonImgIds(dungeons)].forEach((id) => { imgLoad(id); });
 }
 function useLookImage(look) {
   const id = (look && look.img) || "";
@@ -9840,6 +9919,37 @@ const SAMPLE_DUNGEONS = [
 const ROOM_ICONS = ["😈", "📜", "⭐️", "💰", "🙂", "💥", "🧨", "🍖", "💦", "🌿", "🔥", "🍄", "🪦", "💀", "🚪", "🗝️", "⚔️", "🔮", "🧪", "👑", "🕸️", "🗿", "🕳️", "💎"];
 const ROOM_ICON_MAX = 3; // how many icons a single hex may show
 const DNAME_MAX = 12;     // display-name character cap (must stay legible on a hex)
+/* ── A picture of the map, under the grid ─────────────────────────────────────
+   A DM who already has a map wants to use it rather than redraw it. The picture is
+   stored downscaled (bigger than a portrait — it has to stay readable zoomed in —
+   but nowhere near a phone photo) and lives in WORLD coordinates inside the same
+   transformed group as the rooms, so it inherits pan, zoom and fit-to-rooms for free
+   and cannot drift out of register once it is lined up.
+
+   dungeon.map = { img, x, y, s, op, w, h, lock }
+   x,y  centre of the picture in world units    s   world units per picture pixel
+   w,h  the baked pixel size                    op  0..1, so the grid reads over it
+   lock once aligned, dragging pans the view again instead of nudging the map */
+const DGN_MAP_PX = 1600; // long edge; a map has to survive zooming in, unlike a 320px face
+async function bakeDungeonMap(im, px = DGN_MAP_PX) {
+  const nw = im.naturalWidth || im.width, nh = im.naturalHeight || im.height;
+  const k = Math.min(1, px / Math.max(nw, nh)); // never upscale a small map
+  const w = Math.max(1, Math.round(nw * k)), h = Math.max(1, Math.round(nh * k));
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  cv.getContext("2d").drawImage(im, 0, 0, w, h);
+  const webp = cv.toDataURL("image/webp", 0.8);
+  return { data: webp.startsWith("data:image/webp") ? webp : cv.toDataURL("image/jpeg", 0.85), w, h };
+}
+// Start about twelve hexes across — big enough to trace over, small enough to see whole.
+const dgnMapDefaults = (w, h) => ({ x: 0, y: 0, s: (12 * Math.sqrt(3) * 46) / w, op: 0.85, w, h, lock: false });
+function DungeonMapLayer({ map }) {
+  const url = useLookImage(map && map.img ? { img: map.img } : null);
+  if (!map || !map.img || !url) return null;
+  const w = (map.w || 1000) * (map.s || 1), h = (map.h || 1000) * (map.s || 1);
+  return <image href={url} x={(map.x || 0) - w / 2} y={(map.y || 0) - h / 2} width={w} height={h}
+    opacity={map.op == null ? 0.85 : map.op} style={{ pointerEvents: "none" }} preserveAspectRatio="none" />;
+}
 const HEX_SIZE = 46; // pointy-top hex radius (world units)
 const hexToPix = (q, r) => ({ x: HEX_SIZE * Math.sqrt(3) * (q + r / 2), y: HEX_SIZE * 1.5 * r });
 // inverse of hexToPix with cube rounding → the (q,r) of the hex containing a world point
@@ -9944,7 +10054,23 @@ function OneTextureDef({ id, suffix = "" }) {
    rooms must emit its OWN TextureDefs with a matching suffix: WebKit refuses to resolve url(#id)
    across separate <svg> elements, so two svgs sharing bare `tex-*` ids leaves whichever one didn't
    define them (in practice the room-editor preview) painting flat colour on iOS. */
-function RoomShape({ room, cx, cy, hexKey, texSuffix = "" }) {
+/* A clear room paints no floor, so an uploaded map shows through where the room is. It is
+   still a room in every other way — notes, encounters, loot, doors, links, play navigation —
+   which is the whole point: a hotspot over a picture, without a second kind of thing to
+   maintain. `editing` draws a dashed outline so it can still be found and tapped in the
+   builder; in play it leaves only its icons, since something invisible cannot be tapped. */
+function GhostRoom({ cx, cy, editing }) {
+  if (editing) {
+    return <polygon points={hexCorners(cx, cy, HEX_SIZE * 0.94)} fill="rgba(255,255,255,.05)"
+      stroke="var(--gold)" strokeWidth="1.6" strokeDasharray="5 4" opacity="0.75" />;
+  }
+  /* In play, a marker in the corner clear of the icons and the link badge. A room with nothing
+     drawn at all would be a hotspot nobody could find — the cell stays tappable either way. */
+  return <circle cx={cx - HEX_SIZE * 0.42} cy={cy - HEX_SIZE * 0.46} r={HEX_SIZE * 0.1}
+    fill="rgba(0,0,0,.45)" stroke="var(--gold)" strokeWidth="1.2" style={{ pointerEvents: "none" }} />;
+}
+function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false }) {
+  if (room && room.ghost) return <GhostRoom cx={cx} cy={cy} editing={editing} />;
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
   const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}${texSuffix}` : null;
@@ -10551,10 +10677,18 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
             <span style={{ fontSize: 11, color: (room.dname || "").length >= DNAME_MAX ? "var(--gold)" : "var(--faint)" }}>{(room.dname || "").length}/{DNAME_MAX}</span>
           </div>
           <input className="dgn-name" style={{ fontSize: 16, marginTop: 2 }} maxLength={DNAME_MAX} placeholder="Short label (optional)…" value={room.dname || ""} onChange={(e) => set({ dname: e.target.value })} />
+          {/* A clear room is a hotspot over an uploaded map: no floor drawn, everything else
+              about a room intact. All the paint below stops mattering, so it is hidden. */}
           <span className="dgn-flabel">Shape</span>
-          <div className="pickgrid">
-            {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
-          </div>
+          <button className={`btn small w100 ${room.ghost ? "primary" : "ghost"}`} style={{ marginBottom: 6 }} onClick={() => set({ ghost: !room.ghost })}>
+            {room.ghost ? "👻 Clear room — the map shows through ✓" : "👻 Make this a clear room"}
+          </button>
+          {room.ghost ? (
+            <div className="trait">Nothing is drawn here, so a picture of a map shows through — but it is still a room: notes, monsters, loot, doors and exits all work, and tapping the hex opens it. A dashed outline marks it while you build; in play it shows only its icons and a small corner dot.</div>
+          ) : (<>
+            <div className="pickgrid">
+              {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
+            </div>
           {room.shape === "hall" && (
             <div className="pickgrid" style={{ marginTop: 4 }}>
               {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
@@ -10582,8 +10716,8 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
               <button key={c} className={`dgn-swatch ${room.glow && (room.glowColor || GLOW_COLORS[0]) === c ? "on" : ""}`} title="Glow colour"
                 style={{ background: c, boxShadow: `0 0 7px ${c}` }} onClick={() => set({ glow: true, glowColor: c })} />
             ))}
-          </div>
-          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— shape · colour · texture · feature · doors · edges · glow</span></span>
+          </div></>)}
+          <span className="dgn-flabel">Preview <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— {room.ghost ? "where it sits, and its doors" : "shape · colour · texture · feature · doors · edges · glow"}</span></span>
           <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 4px" }}>
             <svg width="118" height="106" viewBox="-59 -53 118 106" style={{ background: "radial-gradient(circle at 40% 30%,#191b23,#0c0d11)", borderRadius: 10 }}>
               {/* own suffix: this preview is a separate <svg> from the map, and WebKit won't resolve
@@ -10604,6 +10738,7 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
               <RoomDoors room={room} cx={0} cy={0} />
             </svg>
           </div>
+          {!room.ghost && (<>
           <span className="dgn-flabel">Background Colour</span>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {DGN_COLORS.map((c) => <button key={c} className={`dgn-swatch ${(room.color || DGN_COLORS[0]) === c ? "on" : ""}`} style={{ background: c }} onClick={() => set({ color: c })} />)}
@@ -10668,6 +10803,8 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
               <span style={{ fontSize: 11, color: "var(--faint)" }}>centre, or nudge to a wall</span>
             </div>
           )}
+          </>)}
+          {/* doors stay: a clear room still connects to the rooms around it */}
           <button className="dgn-collapse" onClick={() => toggleSec("doors")}>
             <span className="dgn-fold">{openSec.doors ? "▾" : "▸"}</span>
             <span className="dgn-flabel" style={{ margin: 0 }}>Doors</span>
@@ -10891,7 +11028,38 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
   const commit = (fn) => setDg((prev) => { const next = fn(prev); onSaveRef.current(next); return next; });
   const [editKey, setEditKey] = useState(null);
   const [bgPick, setBgPick] = useState(false); // whole-map backdrop picker
+  const [mapMode, setMapMode] = useState(false); // placing the map picture, not building rooms
+  const [mapMsg, setMapMsg] = useState("");
+  const mapFileRef = useRef(null);
   const bg = dgnBg(dg.bg);
+  const dmap = dg.map || null;
+  const setMap = (patch) => commit((prev) => ({ ...prev, map: { ...(prev.map || {}), ...patch } }));
+  const pickMap = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setMapMsg("");
+    try {
+      const { im, release } = await decodeImageFile(file);
+      const { data, w, h } = await bakeDungeonMap(im);
+      release();
+      const prev = dmap && dmap.img;
+      const id = newUid();
+      if (!(await imgSave(id, data))) { setMapMsg("Couldn't save the map — storage is full. Free some space and try again."); return; }
+      // keep the placement when swapping one picture for another of the same shape
+      const keep = dmap && dmap.w === w && dmap.h === h ? { x: dmap.x, y: dmap.y, s: dmap.s, op: dmap.op, lock: dmap.lock } : {};
+      commit((p) => ({ ...p, map: { ...dgnMapDefaults(w, h), ...keep, img: id, w, h } }));
+      if (prev) imgDrop(prev);
+      setMapMode(true);
+      setMapMsg("");
+    } catch {
+      setMapMsg("This device can't read that image. iPhone .heic files only open on Safari — a JPEG or PNG works everywhere.");
+    }
+  };
+  const dropMap = () => { const id = dmap && dmap.img; commit((p) => ({ ...p, map: null })); setMapMode(false); if (id) imgDrop(id); };
+  const placingMap = !!(mapMode && dmap && dmap.img && !dmap.lock);
+  const [trace, setTrace] = useState(false); // new rooms are born clear, for tracing over a map
+  const traceRef = useRef(trace); traceRef.current = trace;
   // sources for a room's encounter editor: every monster (SRD + custom) and the DM's saved groups
   const monsterList = useMemo(() => fullBestiary().concat(customMonsters || []), [customMonsters]);
   const [groupNames, setGroupNames] = useState([]);
@@ -10916,9 +11084,24 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       const [q, r] = k.split(",").map(Number);
       return Math.max(m, Math.abs(q), Math.abs(r));
     }, 0);
-    return Math.max(8, ext + 2);
-  }, [rooms]);
-  const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], notes: { desc: "", loot: "", npcs: "" } } } }));
+    /* A map scaled up past the default reaches beyond the grid, and hexes are what you tap to
+       place a room — so grow the grid to cover the picture. Capped, since the grid is drawn as
+       a full square of cells and a huge one would cost more than it is worth. */
+    let mext = 0;
+    if (dg.map && dg.map.img) {
+      const mw = (dg.map.w || 0) * (dg.map.s || 1), mh = (dg.map.h || 0) * (dg.map.s || 1);
+      const mx = dg.map.x || 0, my = dg.map.y || 0;
+      [[mx - mw / 2, my - mh / 2], [mx + mw / 2, my - mh / 2], [mx - mw / 2, my + mh / 2], [mx + mw / 2, my + mh / 2]]
+        .forEach(([wx, wy]) => { const c = pixToHex(wx, wy); mext = Math.max(mext, Math.abs(c.q), Math.abs(c.r)); });
+      mext = Math.min(mext + 1, 22);
+    }
+    return Math.max(8, ext + 2, mext);
+  }, [rooms, dg.map]);
+  /* Tracing a map means placing a dozen clear rooms in a row, so trace mode makes new rooms
+     clear by default rather than asking for three taps each. Read through a ref: the grid is
+     memoised on the rooms, so a handler captured in an earlier render would still think
+     tracing was off. */
+  const addRoom = (key) => commit((prev) => ({ ...prev, rooms: { ...(prev.rooms || {}), [key]: { shape: "hex", color: DGN_COLORS[0], ghost: traceRef.current || undefined, notes: { desc: "", loot: "", npcs: "" } } } }));
   const removeRoom = (key) => commit((prev) => { const nr = { ...prev.rooms }; delete nr[key]; return { ...prev, rooms: nr }; });
   const [ghost, setGhost] = useState(null); // {srcKey, tq, tr} while dragging a room to a new hex
   // icons + display name are only legible when zoomed in; hide them once the map is zoomed out
@@ -10934,7 +11117,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
         <g key={key} style={{ cursor: "pointer" }} onPointerDown={(e) => hexDown(key, e)}
           onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
           <polygon className="dgn-hex" points={hexCorners(x, y)} />
-          {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} />}
+          {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} editing />}
           {room && <RoomDoors room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
@@ -10960,13 +11143,20 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
     const wy = (clientY - rect.top - (size.h / 2 + view.y)) / view.z;
     return pixToHex(wx, wy);
   };
-  const onDown = (e) => { if (drag.current && drag.current.mode === "room") return; drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
+  const onDown = (e) => {
+    if (drag.current && drag.current.mode === "room") return;
+    // while placing an unlocked map, a drag slides the picture under the grid instead of panning
+    if (mapMode && dmap && dmap.img && !dmap.lock) { drag.current = { mode: "map", sx: e.clientX, sy: e.clientY, ox: dmap.x || 0, oy: dmap.y || 0, moved: false }; return; }
+    drag.current = { mode: "pan", sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
+  };
   const onMove = (e) => {
     const d = drag.current; if (!d) return;
     const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
     if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true;
     if (!d.moved) return;
     if (d.mode === "pan") { setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); return; }
+    // the canvas is scaled, so screen pixels have to come back to world units
+    if (d.mode === "map") { setMap({ x: d.ox + dx / view.z, y: d.oy + dy / view.z }); return; }
     const t = clientToHex(e.clientX, e.clientY);
     if (t) { d.tq = t.q; d.tr = t.r; setGhost({ srcKey: d.key, tq: t.q, tr: t.r }); }
   };
@@ -11006,7 +11196,39 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
         <button className="btn small" onClick={onClose}>✕ Close</button>
         <input className="nm" value={dg.name || ""} placeholder="Dungeon name…" onChange={(e) => commit((prev) => ({ ...prev, name: e.target.value }))} />
         <button className={`btn small ${bgPick ? "" : "ghost"}`} title="Change the whole-map backdrop (grass, water, sand…)" onClick={() => setBgPick((v) => !v)}>🎨 Backdrop</button>
+        <button className={`btn small ${mapMode ? "" : "ghost"}`} title="Put a picture of a map underneath and line the grid up with it" onClick={() => { setMapMode((v) => !v); setBgPick(false); }}>🖼 Map</button>
       </div>
+      {mapMode && (
+        <div className="dgn-mapbar">
+          {!dmap || !dmap.img ? (<>
+            <button className="btn small primary" onClick={() => mapFileRef.current && mapFileRef.current.click()}>🖼 Upload a map picture…</button>
+            <span className="dgn-maphint">Stays on this device. Line it up under the grid, then trace rooms over it — clear rooms let the picture show through.</span>
+          </>) : (<>
+            <label className="dgn-mapctl">Size
+              <input type="range" min="0.15" max="4" step="0.01" value={(dmap.s || 1) / (dgnMapDefaults(dmap.w || 1000, dmap.h || 1000).s || 1)}
+                onChange={(e) => setMap({ s: Number(e.target.value) * dgnMapDefaults(dmap.w || 1000, dmap.h || 1000).s })} />
+            </label>
+            <label className="dgn-mapctl">Fade
+              <input type="range" min="0.15" max="1" step="0.01" value={dmap.op == null ? 0.85 : dmap.op} onChange={(e) => setMap({ op: Number(e.target.value) })} />
+            </label>
+            <button className={`btn small ${dmap.lock ? "primary" : "ghost"}`} title={dmap.lock ? "Unlock to move the picture again" : "Lock it here so dragging pans the view instead"} onClick={() => setMap({ lock: !dmap.lock })}>
+              {dmap.lock ? "🔒 Locked" : "🔓 Drag to move"}
+            </button>
+            <button className="btn small ghost" onClick={() => mapFileRef.current && mapFileRef.current.click()}>Replace…</button>
+            <button className="btn small ghost warn" onClick={dropMap}>Remove</button>
+            <button className={`btn small ${trace ? "primary" : "ghost"}`} title="New rooms are clear, so the picture shows through them" onClick={() => setTrace((v) => !v)}>
+              {trace ? "👻 Tracing ✓" : "👻 Trace"}
+            </button>
+            <span className="dgn-maphint">
+              {!dmap.lock ? "Drag anywhere to move the picture. Lock it when it lines up."
+                : trace ? "Tap a hex over a room on the picture — it becomes a clear room you can put notes in, with the map showing through."
+                  : "Locked — drag pans the view. Tap hexes to build over the map."}
+            </span>
+          </>)}
+          <input ref={mapFileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/*" style={{ display: "none" }} onChange={pickMap} />
+          {mapMsg && <span className="dgn-maphint" style={{ color: "var(--danger)" }}>{mapMsg}</span>}
+        </div>
+      )}
       {bgPick && (
         <div className="dgn-bgbar">
           {DGN_BACKDROPS.map(([id, label, grad, tex, texOp]) => (
@@ -11031,7 +11253,10 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
           <defs><TextureDefs /></defs>
           {bg.tex && <rect width={size.w} height={size.h} fill={`url(#tex-${bg.tex})`} opacity={bg.texOp} />}
           <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>
-            {grid}
+            <DungeonMapLayer map={dg.map} />
+            {/* while the picture is loose, the whole canvas belongs to it — otherwise every
+                attempt to slide it would drop a room wherever you happened to let go */}
+            <g style={placingMap ? { pointerEvents: "none" } : undefined}>{grid}</g>
             {linkConnectors(rooms)}
             {ghost && (() => {
               const gsrc = rooms[ghost.srcKey]; if (!gsrc) return null;
@@ -11040,7 +11265,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
               const blocked = tkey !== ghost.srcKey && !!rooms[tkey];
               return (
                 <g style={{ pointerEvents: "none" }}>
-                  {!blocked && <g opacity="0.55"><RoomShape room={gsrc} cx={x} cy={y} hexKey="dgnghost" /></g>}
+                  {!blocked && <g opacity="0.55"><RoomShape room={gsrc} cx={x} cy={y} hexKey="dgnghost" editing /></g>}
                   <polygon points={hexCorners(x, y)} fill={blocked ? "rgba(224,85,85,.18)" : "none"} stroke={blocked ? "#e05555" : "var(--gold)"} strokeWidth="2.5" />
                 </g>
               );
@@ -11196,7 +11421,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
             <svg width={size.w} height={size.h}>
               <defs><TextureDefs /></defs>
               {bg.tex && <rect width={size.w} height={size.h} fill={`url(#tex-${bg.tex})`} opacity={bg.texOp} />}
-              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}>{grid}{linkConnectors(rooms)}</g>
+              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}><DungeonMapLayer map={dungeon.map} />{grid}{linkConnectors(rooms)}</g>
             </svg>
             <div className="dgn-zoom">
               <button onClick={() => zoom(1.25)}>＋</button>
@@ -12218,6 +12443,17 @@ export default function App() {
       return nd;
     });
     saveDungeons([...dungeonsRef.current, ...copies]);
+    /* Each copy gets its own copy of the map picture. Sharing the stored image would mean
+       replacing or deleting the map on one silently blanked the other. */
+    copies.forEach((nd) => {
+      const src = nd.map && nd.map.img;
+      if (!src) return;
+      imgLoad(src).then(async (data) => {
+        if (!data) return;
+        const id = newUid();
+        if (await imgSave(id, data)) saveDungeons(dungeonsRef.current.map((d) => (d.id === nd.id ? { ...d, map: { ...d.map, img: id } } : d)));
+      });
+    });
     pushToasts([{ kind: "good", text: copies.length > 1
       ? `Copied ${copies.length} levels — the copies' exits link to each other.`
       : `Copied to “${copies[0].name}”.` }]);
@@ -12549,12 +12785,12 @@ export default function App() {
         }),
       }));
       setPartiesState(withIds);
-      imgWarm(withIds); // pull NPC photos into memory now, so list thumbnails draw on first paint
+      imgWarm(withIds, null); // pull NPC photos into memory now, so list thumbnails draw on first paint
       if (migrated) stSet("dm5e:parties", withIds); // stabilize member ids so spellbooks stay linked across sessions
       const ap = await stGet("dm5e:activeParty");
       if (ap) setActivePartyIdState(ap);
       const dg = await stGet("dm5e:dungeons");
-      if (Array.isArray(dg)) setDungeonsState(dg.filter((x) => x && x.id));
+      if (Array.isArray(dg)) { const clean = dg.filter((x) => x && x.id); setDungeonsState(clean); imgWarm(null, clean); }
       // Reopen the dungeon that was being played. Combat already survives a reload via dm5e:auto;
       // without this the dock vanished with it, which on a phone happens whenever the PWA is evicted.
       const play = await stGet("dm5e:dungeonPlay");
@@ -14634,8 +14870,7 @@ export default function App() {
     for (const k of groupKeys) groups[k.replace("dm5e:group:", "")] = await stGet(k);
     const images = {};
     if (withImages) {
-      const ids = new Set();
-      (partiesRef.current || []).forEach((p) => ((p.notebook || {}).npcs || []).forEach((n) => { if (n?.look?.img) ids.add(n.look.img); }));
+      const ids = new Set([...partyImgIds(partiesRef.current), ...dungeonImgIds(dungeonsRef.current)]);
       for (const id of ids) { const data = await imgLoad(id); if (data) images[id] = data; }
     }
     const now = Date.now(); // producing an export counts as a backup — quiets the periodic reminder
@@ -15427,7 +15662,15 @@ export default function App() {
         const nm = (dg && dg.name && dg.name.trim()) || "this dungeon";
         return (
           <ConfirmModal text={`Delete ${nm === "this dungeon" ? "this dungeon" : `the “${nm}” dungeon`}? Its rooms and notes will be lost — this can't be undone.`} confirmLabel="Delete dungeon"
-            onYes={() => { saveDungeons(dungeons.filter((x) => x.id !== dgnDelId)); if (dungeonPlayId === dgnDelId) setDungeonPlayId(null); setDgnDelId(null); }}
+            onYes={() => {
+                const rest = dungeons.filter((x) => x.id !== dgnDelId);
+                const gone = dungeons.find((x) => x.id === dgnDelId);
+                saveDungeons(rest);
+                // a duplicated dungeon shares its map id, so only drop what nothing else uses
+                const keep = dungeonImgIds(rest);
+                if (gone && gone.map && gone.map.img && !keep.has(gone.map.img)) imgDrop(gone.map.img);
+                if (dungeonPlayId === dgnDelId) setDungeonPlayId(null); setDgnDelId(null);
+              }}
             onClose={() => setDgnDelId(null)} />
         );
       })()}
