@@ -10018,6 +10018,16 @@ const GRIDS = {
   },
 };
 const gridOf = (d) => GRIDS[(d && d.grid) || "hex"] || GRIDS.hex;
+/* A dead-end corridor, pointing east before rotation: square where it meets the wall so it
+   butts flush against whatever is in the next cell, rounded only at the closed end. It used
+   to be a rounded rectangle, which rounds all four corners — so the mouth pulled away from
+   the wall and left a notch against the corridor it was supposed to join. */
+const stubPath = (cx, cy, th, reach) => {
+  const x0 = cx - th * 0.5, x1 = cx + reach, y0 = cy - th / 2, y1 = cy + th / 2, r = th * 0.42;
+  const n = (v) => v.toFixed(1);
+  return `M${n(x1)} ${n(y0)} L${n(x0 + r)} ${n(y0)} A${n(r)} ${n(r)} 0 0 0 ${n(x0)} ${n(y0 + r)}`
+    + ` L${n(x0)} ${n(y1 - r)} A${n(r)} ${n(r)} 0 0 0 ${n(x0 + r)} ${n(y1)} L${n(x1)} ${n(y1)} Z`;
+};
 // edges first, then corners — a door can straddle either
 const doorSlotCount = (G) => G.sides * 2;
 const doorSlotAt = (G, i) => (i < G.sides
@@ -10164,7 +10174,7 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
     if (sh === "cell") return <polygon points={G.corners(cx, cy, 0.97)} fill={fill} stroke={stk} strokeWidth="1.5" />;
     if (sh === "hall") { const vert = room.orient === "v" || room.orient === "d1" || room.orient === "d2";
       return wrap(<rect x={cx - a} y={cy - th / 2} width={a * 2} height={th} fill={fill} stroke={stk} strokeWidth="1" />, vert ? 90 : 0); }
-    if (sh === "stub") return wrap(<rect x={cx - th * 0.5} y={cy - th / 2} width={a + th * 0.5} height={th} rx={th * 0.42} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    if (sh === "stub") return wrap(<path d={stubPath(cx, cy, th, a)} fill={fill} stroke={stk} strokeWidth="1" />, rot);
     if (sh === "angle") return wrap(<g>{[0, 90].map((d) => arm(d))}{hub}</g>, rot);
     if (sh === "tee") return wrap(<g>{[0, 180, 90].map((d) => arm(d))}{hub}</g>, rot);
     if (sh === "cross") return wrap(<g>{[0, 90, 180, 270].map((d) => arm(d))}{hub}</g>, 0);
@@ -10190,8 +10200,8 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = 
     if (shape === "stub") {
       const th = s * 0.5, apo = (s * Math.sqrt(3)) / 2;
       const rot = ((Number(room.orient) || 0) % 6) * 60;
-      // a corridor that enters one edge and terminates in a rounded dead end near the centre
-      return wrap(<rect x={cx - th * 0.5} y={cy - th / 2} width={apo + th * 0.5} height={th} rx={th * 0.42} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+      // a corridor that enters one edge flush and terminates in a rounded dead end near the centre
+      return wrap(<path d={stubPath(cx, cy, th, apo)} fill={fill} stroke={stk} strokeWidth="1" />, rot);
     }
     if (shape === "hall") {
       const th = s * 0.42, L = Math.sqrt(3) * s;
