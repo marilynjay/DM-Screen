@@ -7472,6 +7472,25 @@ const FACE_SHIFT = { round: 0, oval: 0.5, long: 3, square: 0.5, heart: -0.5, ang
 // Multi-select; each is drawn over the finished face. Sides are as you look at the portrait.
 const LOOK_MARKS = [["scar", "Scar"], ["patch", "Eye patch"], ["warpaint", "War paint"], ["tattoo", "Tattoo"], ["freckles", "Freckles"]];
 const usesMarkColor = (m) => (m || []).some((k) => k === "warpaint" || k === "tattoo");
+/* Accessories: three slots that do not compete for the same space — something on the head,
+   something on the eyes, and small trinkets. They live in the upper two thirds of the frame,
+   which is the part a 34px roster portrait actually has room for; clothing sits in the bottom
+   fifth and all but vanishes there, so this is what tells one NPC from another in a list. */
+const LOOK_HATS = [["none", "None"], ["brim", "Wide brim"], ["straw", "Straw hat"], ["cap", "Cap"], ["beret", "Beret"],
+  ["top", "Top hat"], ["wizard", "Wizard hat"], ["bandana", "Bandana"], ["turban", "Turban"],
+  ["circlet", "Circlet"], ["crown", "Crown"], ["helm", "Helmet"]];
+const LOOK_EYEWEAR = [["none", "None"], ["glasses", "Glasses"], ["round", "Round specs"], ["half", "Half-moon"],
+  ["monocle", "Monocle"], ["dark", "Dark glasses"], ["goggles", "Goggles"], ["blindfold", "Blindfold"]];
+const LOOK_TRINKETS = [["flower", "Flower"], ["bow", "Bow"], ["feather", "Feather"], ["earrings", "Earrings"],
+  ["nosering", "Nose ring"], ["pendant", "Pendant"], ["pipe", "Pipe"], ["halo", "Halo"]];
+/* Hats are a big block of colour and want their own palette; frames, hoops and gems share one
+   accent. The default leads with slate rather than leather brown: brown is the commonest hat
+   colour but it is also the default hair colour, and a brown hat on brown hair reads as neither. */
+const HAT_COLORS = ["#2b2f3d", "#4a3728", "#5a2b2b", "#2b4a3a", "#28405c", "#4a2b52", "#6b6250", "#8a8f98", "#1b1722", "#e8d7b8", "#c9a227", "#b03b2b"];
+const ACC_COLORS = ["#d8b34a", "#c9cfd6", "#8a6a1e", "#2b2622", "#e8d7b8", "#b03b2b", "#7048a8", "#2f7c8c", "#3f9a4e", "#d94e42"];
+const usesAccColor = (L) => (L.eyewear || "none") !== "none" || (Array.isArray(L.trinkets) && L.trinkets.length > 0);
+// These hang off the ears, nose and mouth, so they ride the same shift the face features get.
+const FACE_TRINKETS = ["earrings", "nosering", "pipe"];
 // Ears/teeth used to be hard-wired to species; now they're editable fields. When unset (older data or a
 // homebrew race), fall back to the species-appropriate default so nothing regresses.
 const deriveEars = (sp) => (["Elf", "Half-Elf", "Dark Elf", "Drow"].includes(sp) ? "pointed" : ["Goblin", "Kobold", "Hobgoblin"].includes(sp) ? "large" : "round");
@@ -7481,6 +7500,7 @@ const blankLook = () => ({
   face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none",
   sclera: SCLERA_COLORS[0], hornColor: HORN_COLORS[0], cloth: CLOTH_COLORS[0], outfit: "plain", expr: "warm", marks: [], markColor: MARK_COLORS[0],
   eyeSplit: false, eyesR: "", scleraR: "", img: "",
+  hat: "none", hatColor: HAT_COLORS[0], eyewear: "none", trinkets: [], accColor: ACC_COLORS[0],
 });
 /* Iris and sclera are one choice for both eyes until the DM asks for two. When `eyeSplit`
    is off the right-hand fields are ignored entirely, so turning it off restores a matched
@@ -8037,6 +8057,186 @@ function NpcPortrait({ look, size = 64, frame = true }) {
     );
     return <g>{one}<g transform="translate(100,0) scale(-1,1)">{one}</g></g>;
   })();
+  /* ── Accessories ──
+     All three slots are authored against the default round head: a circle at cx50 cy53 r29, so
+     the crown of the skull is y24 and the eyes sit at y55. Other face shapes are a little taller
+     or narrower, which the hair already lives with. */
+  const hatC = L.hatColor || HAT_COLORS[0];
+  const accC = L.accColor || ACC_COLORS[0];
+  const trinkets = Array.isArray(L.trinkets) ? L.trinkets : [];
+  const edgeA = "rgba(0,0,0,.35)";
+  const headwear = (() => {
+    const dk = tintHex(hatC, 0.68), lt = tintHex(hatC, 1.32);
+    switch (L.hat) {
+      case "brim": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M33 27 Q33 8 50 8 Q67 8 67 27 Z" fill={hatC} />
+        <ellipse cx="50" cy="27" rx="33" ry="6.5" fill={dk} />
+        <path d="M33 22 Q50 26 67 22 L67 26 Q50 30 33 26 Z" fill={lt} stroke="none" />
+      </g>;
+      case "straw": return <g stroke={edgeA} strokeWidth="1">
+        {/* floppier and shallower than the felt brim, with a ribbon instead of a hatband */}
+        <path d="M35 25 Q35 13 50 13 Q65 13 65 25 Z" fill={hatC} />
+        <path d="M15 28 Q26 21 50 21 Q74 21 85 28 Q74 35 50 35 Q26 35 15 28 Z" fill={hatC} />
+        <path d="M20 28 Q35 25 50 25 Q65 25 80 28" fill="none" stroke="rgba(0,0,0,.16)" strokeWidth="0.9" />
+        <path d="M35 24 Q50 28 65 24 L65 27 Q50 31 35 27 Z" fill={accC} stroke="none" />
+      </g>;
+      case "cap": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M30 29 Q30 9 50 9 Q70 9 70 29 Z" fill={hatC} />
+        {/* the peak reads as a cap only if it juts clear of the head and turns down at the end */}
+        <path d="M50 26 Q74 25 82 33 Q64 35 50 31 Z" fill={dk} />
+        <circle cx="50" cy="10" r="2.2" fill={lt} />
+      </g>;
+      case "beret": return <g stroke={edgeA} strokeWidth="1">
+        {/* worn at a slant, which is most of what makes a beret read as one: it overhangs the
+            head on one side and sits down on the ear on the other */}
+        <path d="M27 27 Q24 10 50 11 Q79 10 74 20 Q62 31 40 31 Q29 31 27 27 Z" fill={hatC} />
+        <path d="M29 26 Q50 32 72 21" fill="none" stroke={dk} strokeWidth="2.2" />
+        <circle cx="70" cy="12" r="2.8" fill={lt} />
+      </g>;
+      case "top": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M36 26 L36 3 L64 3 L64 26 Z" fill={hatC} />
+        <ellipse cx="50" cy="4" rx="14" ry="3" fill={lt} />
+        <ellipse cx="50" cy="27" rx="27" ry="5.5" fill={dk} />
+        <path d="M36 20 L64 20 L64 25 L36 25 Z" fill={accC} stroke="none" />
+      </g>;
+      case "wizard": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M32 28 Q40 12 57 2 Q60 4 58 9 L64 28 Z" fill={hatC} />
+        <ellipse cx="50" cy="28" rx="31" ry="6" fill={dk} />
+        <path d="M35 24 Q50 28 63 23 L64 27 Q50 32 34 28 Z" fill={accC} stroke="none" />
+        {/* a couple of stars, because a pointed hat with nothing on it just looks like a cone */}
+        <g fill={accC} stroke="none">
+          <path d="M44 17 l1.3 2.6 l2.7 0.4 l-2 1.9 l0.5 2.7 l-2.5 -1.3 l-2.5 1.3 l0.5 -2.7 l-2 -1.9 l2.7 -0.4 Z" />
+          <circle cx="52" cy="11" r="1.4" />
+        </g>
+      </g>;
+      case "bandana": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M26 31 Q26 14 50 14 Q74 14 74 31 Q50 26 26 31 Z" fill={hatC} />
+        <path d="M72 26 L82 22 L79 31 L84 34 L72 34 Z" fill={dk} />
+        <g fill={lt} stroke="none" opacity="0.75">
+          {[[36, 22], [46, 19], [56, 19], [66, 22], [41, 27], [59, 27]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.5" />)}
+        </g>
+      </g>;
+      case "turban": return <g stroke={edgeA} strokeWidth="1">
+        {/* stacked wraps, each one a little higher and shorter than the last */}
+        <path d="M25 30 Q25 12 50 12 Q75 12 75 30 Q50 25 25 30 Z" fill={hatC} />
+        <path d="M27 24 Q50 18 73 24" fill="none" stroke={dk} strokeWidth="2.2" />
+        <path d="M30 18 Q50 13 70 18" fill="none" stroke={dk} strokeWidth="2" />
+        <path d="M46 9 Q50 4 54 9 Q50 12 46 9 Z" fill={lt} />
+        <circle cx="50" cy="21" r="2.6" fill={accC} />
+      </g>;
+      case "circlet": return <g>
+        {/* worn on the brow, not on the crown: up in the hair a thin band disappears entirely */}
+        <path d="M26 34 Q50 25 74 34" fill="none" stroke="rgba(0,0,0,.3)" strokeWidth="4.4" strokeLinecap="round" />
+        <path d="M26 33 Q50 24 74 33" fill="none" stroke={hatC} strokeWidth="3.2" strokeLinecap="round" />
+        <path d="M50 25 l3.4 4.4 l-3.4 4.4 l-3.4 -4.4 Z" fill={accC} stroke={edgeA} strokeWidth="0.7" />
+      </g>;
+      case "crown": return <g stroke={edgeA} strokeWidth="1">
+        <path d="M30 30 L70 30 L70 21 L63 26 L57 13 L50 22 L43 13 L37 26 L30 21 Z" fill={hatC} />
+        <path d="M30 30 L70 30 L70 26 L30 26 Z" fill={tintHex(hatC, 0.72)} />
+        <g fill={accC} stroke="none">{[[43, 28], [50, 28], [57, 28]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.7" />)}</g>
+      </g>;
+      case "helm": return <g stroke={edgeA} strokeWidth="1">
+        {/* A helm has to swallow the hair or it reads as a hat balanced on a haircut, so the dome
+            is wide and comes down to the brow. Metal is the tint above the base colour. */}
+        <path d="M24 35 Q24 5 50 5 Q76 5 76 35 Z" fill={tintHex(hatC, 1.28)} />
+        <path d="M30 14 Q50 8 70 14" fill="none" stroke={tintHex(hatC, 1.7)} strokeWidth="2" />
+        <path d="M24 33 Q50 27 76 33 L76 38 Q50 32 24 38 Z" fill={tintHex(hatC, 0.72)} />
+        {/* the nasal bar runs down between the eyes — that is the rest of the silhouette */}
+        <rect x="47.4" y="33" width="5.2" height="19" rx="2.4" fill={tintHex(hatC, 1.16)} />
+      </g>;
+      default: return null;
+    }
+  })();
+  const eyewear = (() => {
+    const lens = "rgba(255,255,255,.14)";
+    const rim = { fill: "none", stroke: accC, strokeWidth: 2 };
+    const arms = <g fill="none" stroke={accC} strokeWidth="1.6" strokeLinecap="round"><path d="M28 52 L19 49" /><path d="M72 52 L81 49" /></g>;
+    switch (L.eyewear) {
+      case "glasses": return <g>
+        <rect x="29" y="47" width="18" height="15" rx="3.5" fill={lens} {...rim} />
+        <rect x="53" y="47" width="18" height="15" rx="3.5" fill={lens} {...rim} />
+        <path d="M47 53 L53 53" stroke={accC} strokeWidth="1.8" />{arms}
+      </g>;
+      case "round": return <g>
+        <circle cx="38" cy="55" r="9.5" fill={lens} {...rim} />
+        <circle cx="62" cy="55" r="9.5" fill={lens} {...rim} />
+        <path d="M47.5 54 Q50 51.5 52.5 54" fill="none" stroke={accC} strokeWidth="1.6" />{arms}
+      </g>;
+      case "half": return <g>
+        {/* reading glasses worn low, so the brows and the top of the eyes stay readable */}
+        <path d="M29 55 L47 55 Q47 63 38 63 Q29 63 29 55 Z" fill={lens} {...rim} />
+        <path d="M53 55 L71 55 Q71 63 62 63 Q53 63 53 55 Z" fill={lens} {...rim} />
+        <path d="M47 55.5 L53 55.5" stroke={accC} strokeWidth="1.6" />
+        <g fill="none" stroke={accC} strokeWidth="1.5" strokeLinecap="round"><path d="M29 56 L20 52" /><path d="M71 56 L80 52" /></g>
+      </g>;
+      case "monocle": return <g>
+        <circle cx="62" cy="55" r="10" fill={lens} stroke={accC} strokeWidth="2.4" />
+        <path d="M70 62 Q77 72 71 79" fill="none" stroke={accC} strokeWidth="1.2" />
+        <circle cx="71" cy="80" r="1.8" fill={accC} />
+      </g>;
+      case "dark": return <g>
+        <rect x="28" y="46" width="19" height="16" rx="4" fill="#14101a" opacity="0.86" stroke={accC} strokeWidth="1.8" />
+        <rect x="53" y="46" width="19" height="16" rx="4" fill="#14101a" opacity="0.86" stroke={accC} strokeWidth="1.8" />
+        <path d="M47 51 L53 51" stroke={accC} strokeWidth="2.4" />{arms}
+      </g>;
+      case "goggles": return <g>
+        <circle cx="38" cy="55" r="10" fill="#2a3340" opacity="0.55" stroke={accC} strokeWidth="3.2" />
+        <circle cx="62" cy="55" r="10" fill="#2a3340" opacity="0.55" stroke={accC} strokeWidth="3.2" />
+        <path d="M48 55 L52 55" stroke={accC} strokeWidth="3" />
+        <path d="M28 52 L15 50 M72 52 L85 50" stroke={tintHex(accC, 0.7)} strokeWidth="3.4" strokeLinecap="round" />
+        <circle cx="34" cy="51" r="2.4" fill="#fff" opacity="0.35" />
+        <circle cx="58" cy="51" r="2.4" fill="#fff" opacity="0.35" />
+      </g>;
+      case "blindfold": return <g>
+        <path d="M20 47 Q50 42 80 47 L80 61 Q50 56 20 61 Z" fill={accC} stroke={edgeA} strokeWidth="1" />
+        <path d="M24 50 Q50 46 76 50" fill="none" stroke="rgba(0,0,0,.18)" strokeWidth="1.2" />
+      </g>;
+      default: return null;
+    }
+  })();
+  /* Trinkets are independent, so each one owns a patch of the portrait nothing else claims: the
+     hair above the portrait's right ear, the ears, the nose, the chest, and the mouth. */
+  const trinket = (k) => {
+    switch (k) {
+      case "flower": return <g key={k} stroke={edgeA} strokeWidth="0.6">
+        {[[0, -4.6], [4.4, -1.4], [2.7, 3.7], [-2.7, 3.7], [-4.4, -1.4]].map(([dx, dy2], i) => (
+          <ellipse key={i} cx={73 + dx} cy={30 + dy2} rx="3.1" ry="3.6" fill={accC} transform={`rotate(${i * 72} ${73 + dx} ${30 + dy2})`} />
+        ))}
+        <circle cx="73" cy="30" r="2.4" fill="#f0d878" />
+      </g>;
+      case "bow": return <g key={k} stroke={edgeA} strokeWidth="0.7" fill={accC}>
+        <path d="M72 28 Q64 22 65 29 Q66 35 72 31 Z" />
+        <path d="M75 28 Q83 22 82 29 Q81 35 75 31 Z" />
+        <circle cx="73.5" cy="29.5" r="2.4" fill={tintHex(accC, 1.3)} />
+      </g>;
+      case "feather": return <g key={k}>
+        <path d="M74 32 Q86 16 80 4 Q70 16 70 32 Z" fill={accC} stroke={edgeA} strokeWidth="0.7" />
+        <path d="M73 31 Q78 17 79 7" fill="none" stroke="rgba(0,0,0,.28)" strokeWidth="0.9" />
+      </g>;
+      case "earrings": return <g key={k} fill="none" stroke={accC} strokeWidth="1.8">
+        <circle cx="23" cy="63" r="3.2" /><circle cx="77" cy="63" r="3.2" />
+      </g>;
+      case "nosering": return <g key={k} fill="none" stroke={accC} strokeWidth="1.5">
+        <circle cx="50" cy="67.5" r="3.4" />
+      </g>;
+      case "pendant": return <g key={k}>
+        {/* a hairline chain vanished against the outfit — it needs weight and a dark backing */}
+        <path d="M40 79 Q50 90 60 79" fill="none" stroke="rgba(0,0,0,.35)" strokeWidth="3" />
+        <path d="M40 79 Q50 90 60 79" fill="none" stroke={accC} strokeWidth="1.8" />
+        <path d="M50 87 L53.6 91.8 L50 96.6 L46.4 91.8 Z" fill={accC} stroke={edgeA} strokeWidth="0.8" />
+      </g>;
+      case "pipe": return <g key={k}>
+        <path d="M55 72 Q66 74 70 78" fill="none" stroke="#3a2a1c" strokeWidth="2.4" strokeLinecap="round" />
+        <path d="M67 76 L75 76 L74 84 L69 84 Z" fill="#4a3524" stroke={edgeA} strokeWidth="0.7" />
+        <g fill="#cfd4da" opacity="0.4"><circle cx="72" cy="71" r="2.2" /><circle cx="77" cy="65" r="1.6" /></g>
+      </g>;
+      case "halo": return <g key={k}>
+        <ellipse cx="50" cy="11" rx="18" ry="4.6" fill="none" stroke={accC} strokeWidth="4" opacity="0.28" />
+        <ellipse cx="50" cy="11" rx="18" ry="4.6" fill="none" stroke={accC} strokeWidth="1.8" />
+      </g>;
+      default: return null;
+    }
+  };
   // scar and tattoo sit on the portrait's left cheek, the patch on its right, so they never fight
   const has = (k) => marks.includes(k);
   const bust = (
@@ -8087,6 +8287,15 @@ function NpcPortrait({ look, size = 64, frame = true }) {
         </g>}
       </g>
       {hairFront}
+      {/* Accessories go on last, in the order you would put them on: hat over the hair, things
+          tucked into the hair over the hat, then eyewear, which nothing may cover. Horns stay
+          last of all so they come through a hat rather than being swallowed by it. */}
+      {headwear}
+      {trinkets.filter((k) => !FACE_TRINKETS.includes(k)).map(trinket)}
+      <g transform={`translate(0,${dy})`}>
+        {trinkets.filter((k) => FACE_TRINKETS.includes(k)).map(trinket)}
+        {eyewear}
+      </g>
       {horns}
     </>
   );
@@ -8162,18 +8371,25 @@ const rollLook = (L) => ({
   horns: Math.random() < 0.7 ? "none" : rndOf(LOOK_HORNS.slice(1))[0], hornColor: rndOf(HORN_COLORS),
   cloth: rndOf(CLOTH_COLORS), outfit: rndOf(LOOK_OUTFITS)[0], expr: rndOf(LOOK_EXPR)[0],
   marks: Math.random() < 0.6 ? [] : [rndOf(LOOK_MARKS)[0]], markColor: rndOf(MARK_COLORS),
+  /* Accessories are the exception rather than the rule on a rolled face — a tavern full of NPCs
+     all in crowns and goggles is noise. Most rolls get nothing; some get one thing. */
+  hat: Math.random() < 0.68 ? "none" : rndOf(LOOK_HATS.slice(1))[0], hatColor: rndOf(HAT_COLORS),
+  eyewear: Math.random() < 0.82 ? "none" : rndOf(LOOK_EYEWEAR.slice(1))[0],
+  trinkets: Math.random() < 0.7 ? [] : [rndOf(LOOK_TRINKETS)[0]], accColor: rndOf(ACC_COLORS),
 });
 /* Copy a face from one NPC and paste it onto another — the fields that describe the drawing,
    not who the person is. Held in a module variable so it survives closing one editor and
    opening the next. */
 const LOOK_DRAW_KEYS = ["face", "ears", "skin", "hair", "hairColor", "eyes", "sclera", "eyeSplit", "eyesR", "scleraR",
-  "beard", "teeth", "horns", "hornColor", "cloth", "outfit", "expr", "marks", "markColor", "img"];
+  "beard", "teeth", "horns", "hornColor", "cloth", "outfit", "expr", "marks", "markColor", "img",
+  "hat", "hatColor", "eyewear", "trinkets", "accColor"];
 let LOOK_CLIP = null;
 const copyLook = (L) => { LOOK_CLIP = {}; LOOK_DRAW_KEYS.forEach((k) => { if (L[k] !== undefined) LOOK_CLIP[k] = L[k]; }); };
 /* A pasted photo is duplicated rather than shared: two NPCs pointing at one stored image
    means removing the photo from either one blanks both. */
 async function pastedLook(clip) {
-  const next = { ...clip, marks: Array.isArray(clip.marks) ? [...clip.marks] : [] };
+  // the arrays get their own copy, or editing one NPC's markings would edit the other's too
+  const next = { ...clip, marks: Array.isArray(clip.marks) ? [...clip.marks] : [], trinkets: Array.isArray(clip.trinkets) ? [...clip.trinkets] : [] };
   if (clip.img) {
     const src = await imgLoad(clip.img);
     if (src) { const id = newUid(); next.img = (await imgSave(id, src)) ? id : ""; } else next.img = "";
@@ -8188,7 +8404,7 @@ function NpcAppearance({ value, onChange }) {
   const [choosing, setChoosing] = useState(false); // race + use-default/customize picker, before a portrait exists
   const [expanded, setExpanded] = useState(false);  // full builder controls open
   // face/eyes/hair start open — the rest would just be forty swatches between you and the horns
-  const [open, setOpen] = useState({ photo: false, face: true, eyes: true, hair: true, horns: false, expr: false, cloth: false });
+  const [open, setOpen] = useState({ photo: false, face: true, eyes: true, hair: true, horns: false, expr: false, acc: false, cloth: false });
   const [advEyes, setAdvEyes] = useState(false);
   const [crop, setCrop] = useState(null); // { im, url, release, z, nx, ny } while framing a picked photo
   const [imgMsg, setImgMsg] = useState("");
@@ -8256,6 +8472,12 @@ function NpcAppearance({ value, onChange }) {
   );
   const lbl = (list, v) => (list.find(([k]) => k === v) || ["", "—"])[1];
   const marks = Array.isArray(look.marks) ? look.marks : [];
+  const trinkets = Array.isArray(look.trinkets) ? look.trinkets : [];
+  /* The group headers double as a summary of what is on, so a collapsed builder still tells you
+     the face has a hat and glasses without opening anything. */
+  const accSub = [(look.hat || "none") !== "none" && lbl(LOOK_HATS, look.hat),
+    (look.eyewear || "none") !== "none" && lbl(LOOK_EYEWEAR, look.eyewear),
+    trinkets.length && `${trinkets.length} trinket${trinkets.length === 1 ? "" : "s"}`].filter(Boolean).join(" · ") || "none";
   const cr = crop ? cropRect(crop.im.naturalWidth, crop.im.naturalHeight, crop, CROP_PX) : null;
   const photoBlock = (
     <LookGroup title="Photo" sub={look.img ? "using a photo" : "off — drawn face"} open={open.photo} onToggle={() => flip("photo")}>
@@ -8344,6 +8566,18 @@ function NpcAppearance({ value, onChange }) {
         </div>
         {(usesMarkColor(marks) || marks.includes("freckles")) &&
           <div className="look-row col"><span>Marking colour</span><LookSwatches colors={MARK_COLORS} value={look.markColor || MARK_COLORS[0]} onPick={(c) => set({ markColor: c })} /></div>}
+      </LookGroup>
+      <LookGroup title="Accessories" sub={accSub} open={open.acc} onToggle={() => flip("acc")}>
+        <div className="look-row col"><span>Headwear</span><LookChips options={LOOK_HATS} value={look.hat || "none"} onPick={(v) => set({ hat: v })} /></div>
+        {(look.hat || "none") !== "none" &&
+          <div className="look-row col"><span>Headwear colour</span><LookSwatches colors={HAT_COLORS} value={look.hatColor || HAT_COLORS[0]} onPick={(c) => set({ hatColor: c })} /></div>}
+        <div className="look-row col"><span>Eyewear</span><LookChips options={LOOK_EYEWEAR} value={look.eyewear || "none"} onPick={(v) => set({ eyewear: v })} /></div>
+        <div className="look-row col"><span>Trinkets</span>
+          <LookMultiChips options={LOOK_TRINKETS} value={trinkets} onToggle={(v) => set({ trinkets: trinkets.includes(v) ? trinkets.filter((t) => t !== v) : [...trinkets, v] })} />
+        </div>
+        {usesAccColor(look) &&
+          <div className="look-row col"><span>Accent colour</span><LookSwatches colors={ACC_COLORS} value={look.accColor || ACC_COLORS[0]} onPick={(c) => set({ accColor: c })} /></div>}
+        <div className="trait">One accent dresses the frames, hoops, gems and petals. Accessories sit up in the face, so unlike clothing they still read at roster size — a hat or a pair of glasses is the quickest way to make an NPC recognisable.</div>
       </LookGroup>
       <LookGroup title="Clothing" sub={`${lbl(LOOK_OUTFITS, outfitKey(look.outfit))} · shoulders and any hood`} open={open.cloth} onToggle={() => flip("cloth")}>
         <div className="look-row col"><span>Outfit</span><LookChips options={LOOK_OUTFITS} value={outfitKey(look.outfit)} onPick={(v) => set({ outfit: v })} /></div>
