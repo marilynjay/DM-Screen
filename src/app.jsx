@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, useId } from "react";
 import BESTIARY from "./data/bestiary.js";
 import SPELL_REF from "./data/spells.js";
 import ENCOUNTER_POOLS from "./data/encounterPools.js";
@@ -417,21 +417,26 @@ input[type=number]{width:64px}
 .gs-targets{max-height:34vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px 8px}
 .gs-target{display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}
 .gs-target:last-child{border-bottom:0}
-/* A notebook entry row: portrait, then a name that truncates rather than wrapping, with the
-   tag on its own line beneath. Keeps every row the same height on a phone. */
-/* A floor on the name, not zero: the row already wraps, so on a narrow phone the action
-   buttons drop to a second line instead of squeezing the name down to two letters — they
-   wrap as one cluster rather than one button at a time. */
-.nbrow-txt{flex:1 1 108px;min-width:108px;display:flex;flex-direction:column;justify-content:center;gap:1px}
-.nbrow-acts{flex:none;display:flex;align-items:center;gap:4px;margin-left:auto}
-/* 56px, not stretched to the row. Stretch-plus-aspect-ratio looks right until you measure it:
-   the square's height feeds back into the row's, so it pinned to its maximum and pushed every
-   row taller instead of filling one. 56 is what the two text lines and the wrapped buttons come
-   to on a phone, so it fills the row there without inflating it. */
+/* A notebook entry row, and it must stay ONE line — the portrait, name and four buttons fit
+   only if nothing is allowed to wrap. The name truncates rather than wrapping (it used to wrap
+   a letter at a time and stretch rows past 100px), the tag sits under it, and the buttons are
+   tightened to icon width so the name keeps a usable share of a phone's width. */
+/* .frow is declared later in this sheet with the same specificity, so these have to out-weigh
+   it rather than merely follow it — hence the doubled selectors. */
+.frow.nbrow{gap:5px;flex-wrap:nowrap;margin-bottom:0}
+.nbrow .nbrow-txt{flex:1 1 auto;min-width:54px;display:flex;flex-direction:column;justify-content:center;gap:0}
+.nbrow .nbrow-acts{flex:none;display:flex;align-items:center;gap:2px}
+.nbrow .nbrow-acts .btn{padding-left:6px;padding-right:6px}
+/* the fold is a bullet on most entries — it does not need a full button's width here */
+.nbrow .dgn-fold{width:16px;min-width:16px;padding:0;margin-right:0}
+/* Sized to the two lines of text beside it, so it fills the row without making it taller.
+   Not stretched: align-self stretch with an aspect ratio reads well and measures badly, because
+   the square's height feeds back into the row's — it pinned to its maximum and pushed every row
+   taller instead of filling one. */
 .nbrow-art{flex:none;line-height:0;display:flex}
 .nbrow-line{display:flex;align-items:center;gap:3px;min-width:0}
 .nbrow-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nbrow-tag{font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3}
+.nbrow-tag{font-size:10.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3}
 .gs-row{display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}
 .gs-row:last-child{border-bottom:0}
 .verdict.small{font-size:12px;padding:0 6px}
@@ -7422,6 +7427,23 @@ const LOOK_TEETH = [["none", "None"], ["tusks", "Tusks"], ["fangs", "Fangs"]];
 const HORN_COLORS = ["#e4d8bd", "#cbb894", "#9a8360", "#6b5a44", "#2f2a26", "#d9d2c5", "#c9a227", "#8a3030", "#3f4a5a", "#7048a8"];
 const SCLERA_COLORS = ["#ffffff", "#f3ece0", "#e8d7b8", "#f0c9c9", "#c9cfd6", "#8f9aa6", "#4a4450", "#161018", "#2a4a2a", "#3a2030"];
 const CLOTH_COLORS = ["#3b3444", "#2b2f3d", "#4b3a2b", "#5a2b2b", "#2b4a3a", "#28405c", "#4a2b52", "#6b6250", "#8a8f98", "#1b1722", "#7a5a2b", "#b03b2b"];
+/* What they are wearing, drawn over the shoulders. The garment takes the clothing colour and
+   its own trim is derived from it, so one swatch dresses the whole outfit and no NPC ends up
+   in colours that fight. */
+const LOOK_OUTFITS = [["plain", "Plain"], ["tunic", "Tunic"], ["robe", "Robe"], ["cloak", "Cloak"], ["hooded", "Hooded cloak"],
+  ["armour", "Plate"], ["mail", "Chain mail"], ["leather", "Leathers"], ["noble", "Noble"], ["vestment", "Vestments"],
+  ["apron", "Apron"], ["scarf", "Scarf"], ["bare", "Bare shoulders"]];
+// #rrggbb toward black (k<1) or white (k>1), so trim and shadow follow whatever colour is picked
+function tintHex(hex, k) {
+  const m = /^#([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const out = k <= 1 ? v * k : v + (255 - v) * (k - 1);
+    return Math.max(0, Math.min(255, Math.round(out)));
+  });
+  return `#${ch.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
 const MARK_COLORS = ["#8a3030", "#b03b2b", "#1c140f", "#2f5aa8", "#3f9a4e", "#c9a227", "#7048a8", "#efeff3", "#2f7c8c", "#d94e42"];
 /* The mouth and brows carried a single hardcoded smile, so a lich, a grieving widow and a
    tavern keeper all beamed identically. Each expression sets the mouth and how the brows
@@ -7449,7 +7471,7 @@ const deriveTeeth = (sp) => (["Orc", "Half-Orc"].includes(sp) ? "tusks" : ["Vamp
 const blankLook = () => ({
   on: false, notes: "", species: "Human", sex: "", customRace: "",
   face: "round", skin: SKIN_TONES[1], hair: "short", hairColor: HAIR_COLORS[2], eyes: EYE_COLORS[0], horns: "none", beard: "none",
-  sclera: SCLERA_COLORS[0], hornColor: HORN_COLORS[0], cloth: CLOTH_COLORS[0], expr: "warm", marks: [], markColor: MARK_COLORS[0],
+  sclera: SCLERA_COLORS[0], hornColor: HORN_COLORS[0], cloth: CLOTH_COLORS[0], outfit: "plain", expr: "warm", marks: [], markColor: MARK_COLORS[0],
   eyeSplit: false, eyesR: "", scleraR: "", img: "",
 });
 /* Iris and sclera are one choice for both eyes until the DM asks for two. When `eyeSplit`
@@ -7731,6 +7753,7 @@ function bakePortrait(im, crop, px = PORTRAIT_PX) {
 function NpcPortrait({ look, size = 64, frame = true }) {
   const L = look || {};
   const photo = useLookImage(L);
+  const fitClip = `fit${useId().replace(/:/g, "")}`; // unique per portrait — several share a page
   const skin = L.skin || SKIN_TONES[1];
   const hairC = L.hairColor || HAIR_COLORS[2];
   const clothC = L.cloth || CLOTH_COLORS[0];
@@ -7827,6 +7850,78 @@ function NpcPortrait({ look, size = 64, frame = true }) {
       default: return <path d="M24 46 Q22 20 50 19 Q78 20 76 46 Q76 33 64 30 Q57 34 50 33 Q43 34 36 30 Q24 33 24 46 Z" fill={hairC} />;
     }
   })();
+  /* What they are wearing. Everything is drawn into the shoulder area (y 78-100) over the base
+     bust, and every accent is derived from the clothing colour, so one swatch dresses the whole
+     outfit and nothing clashes. Clipped to the bust so a lapel or a pauldron cannot spill into
+     the background. */
+  const outfit = (() => {
+    const k = L.outfit || "plain";
+    if (k === "plain") return null;
+    const dark = tintHex(clothC, 0.62), light = tintHex(clothC, 1.35), edge = "rgba(0,0,0,.3)";
+    const body = "M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z";
+    const inner = (n) => <g clipPath={`url(#${fitClip})`}>{n}</g>;
+    switch (k) {
+      case "bare": return <path d={body} fill={skin} stroke={line} strokeWidth="1" />;
+      case "tunic": return inner(<g>
+        <path d="M41 80 L50 92 L59 80 L64 82 L58 100 L42 100 L36 82 Z" fill={light} />
+        <path d="M46 88 L54 88 M46 93 L54 93" stroke={dark} strokeWidth="1.4" />
+      </g>);
+      case "robe": return inner(<g>
+        <path d="M40 80 L50 90 L60 80 L66 83 L62 100 L38 100 L34 83 Z" fill={dark} />
+        <path d="M50 90 L50 100" stroke={light} strokeWidth="1.6" />
+        <path d="M30 100 Q34 88 44 82" stroke={light} strokeWidth="1.6" fill="none" />
+        <path d="M70 100 Q66 88 56 82" stroke={light} strokeWidth="1.6" fill="none" />
+      </g>);
+      case "cloak": return inner(<g>
+        <path d="M22 100 Q23 85 38 80 L44 84 L40 100 Z" fill={dark} />
+        <path d="M78 100 Q77 85 62 80 L56 84 L60 100 Z" fill={dark} />
+        <circle cx="50" cy="84" r="3.6" fill={light} stroke={edge} strokeWidth="0.8" />
+      </g>);
+      case "hooded": return inner(<g>
+        <path d="M22 100 Q20 84 36 78 L45 84 L42 100 Z" fill={dark} />
+        <path d="M78 100 Q80 84 64 78 L55 84 L58 100 Z" fill={dark} />
+        <path d="M38 80 Q50 74 62 80 Q50 88 38 80 Z" fill={tintHex(clothC, 0.45)} />
+      </g>);
+      case "armour": return inner(<g>
+        <path d="M22 100 Q23 84 36 79 Q44 82 43 92 L40 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
+        <path d="M78 100 Q77 84 64 79 Q56 82 57 92 L60 100 Z" fill={light} stroke={edge} strokeWidth="0.9" />
+        <path d="M42 82 L58 82 L60 100 L40 100 Z" fill={tintHex(clothC, 1.12)} stroke={edge} strokeWidth="0.9" />
+        <path d="M50 84 L50 100" stroke={edge} strokeWidth="1" />
+      </g>);
+      case "mail": return inner(<g>
+        <path d={body} fill={tintHex(clothC, 1.15)} />
+        {[0, 1, 2, 3].map((r) => [0, 1, 2, 3, 4, 5, 6, 7].map((c) => (
+          <circle key={`${r}-${c}`} cx={26 + c * 7 + (r % 2 ? 3.5 : 0)} cy={83 + r * 5} r="1.5" fill={dark} opacity="0.75" />
+        )))}
+      </g>);
+      case "leather": return inner(<g>
+        <path d="M38 80 L62 96 M62 80 L38 96" stroke={dark} strokeWidth="4" />
+        <rect x="46" y="85" width="8" height="7" rx="1.5" fill={light} stroke={edge} strokeWidth="0.8" />
+      </g>);
+      case "noble": return inner(<g>
+        <path d="M40 80 Q36 88 38 100 L44 100 L46 84 Z" fill={light} />
+        <path d="M60 80 Q64 88 62 100 L56 100 L54 84 Z" fill={light} />
+        <path d="M44 80 Q50 86 56 80 L56 76 L44 76 Z" fill={dark} />
+        <circle cx="50" cy="93" r="2.4" fill={light} />
+      </g>);
+      case "vestment": return inner(<g>
+        <path d="M44 80 L44 100 L50 100 L50 80 Z" fill={light} />
+        <path d="M56 80 L56 100 L50 100 L50 80 Z" fill={light} />
+        <path d="M47 88 L53 88" stroke={dark} strokeWidth="1.6" />
+        <path d="M50 84 L50 96" stroke={dark} strokeWidth="1.6" />
+      </g>);
+      case "apron": return inner(<g>
+        <path d="M43 82 L57 82 L59 100 L41 100 Z" fill={light} />
+        <path d="M43 82 L47 78 M57 82 L53 78" stroke={light} strokeWidth="2" />
+        <path d="M41 92 L59 92" stroke={dark} strokeWidth="1.2" />
+      </g>);
+      case "scarf": return inner(<g>
+        <path d="M36 82 Q50 90 64 82 L66 88 Q50 96 34 88 Z" fill={light} />
+        <path d="M56 88 L62 100 L54 100 Z" fill={dark} />
+      </g>);
+      default: return null;
+    }
+  })();
   const horns = (() => {
     const art = HORN_ART[L.horns];
     if (!art) return null;
@@ -7844,8 +7939,11 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   const has = (k) => marks.includes(k);
   const bust = (
     <>
-      {/* shoulders + neck give it a bust silhouette */}
+      {/* shoulders + neck give it a bust silhouette; the outfit is drawn over them, clipped to
+          the same silhouette so a lapel or pauldron cannot spill into the background */}
+      <clipPath id={fitClip}><path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" /></clipPath>
       <path d="M22 100 Q24 84 40 80 L60 80 Q76 84 78 100 Z" fill={clothC} />
+      {outfit}
       <rect x="43" y="72" width="14" height="14" rx="4" fill={skin} stroke={line} strokeWidth="1" />
       <g transform={`translate(0,${dy})`}>{ear(22, -1)}{ear(78, 1)}</g>
       {hairBack}
@@ -7957,14 +8055,14 @@ const rollLook = (L) => ({
   eyeSplit: false, eyesR: "", scleraR: "",
   beard: rndOf(LOOK_BEARD)[0], teeth: rndOf(LOOK_TEETH)[0],
   horns: Math.random() < 0.7 ? "none" : rndOf(LOOK_HORNS.slice(1))[0], hornColor: rndOf(HORN_COLORS),
-  cloth: rndOf(CLOTH_COLORS), expr: rndOf(LOOK_EXPR)[0],
+  cloth: rndOf(CLOTH_COLORS), outfit: rndOf(LOOK_OUTFITS)[0], expr: rndOf(LOOK_EXPR)[0],
   marks: Math.random() < 0.6 ? [] : [rndOf(LOOK_MARKS)[0]], markColor: rndOf(MARK_COLORS),
 });
 /* Copy a face from one NPC and paste it onto another — the fields that describe the drawing,
    not who the person is. Held in a module variable so it survives closing one editor and
    opening the next. */
 const LOOK_DRAW_KEYS = ["face", "ears", "skin", "hair", "hairColor", "eyes", "sclera", "eyeSplit", "eyesR", "scleraR",
-  "beard", "teeth", "horns", "hornColor", "cloth", "expr", "marks", "markColor", "img"];
+  "beard", "teeth", "horns", "hornColor", "cloth", "outfit", "expr", "marks", "markColor", "img"];
 let LOOK_CLIP = null;
 const copyLook = (L) => { LOOK_CLIP = {}; LOOK_DRAW_KEYS.forEach((k) => { if (L[k] !== undefined) LOOK_CLIP[k] = L[k]; }); };
 /* A pasted photo is duplicated rather than shared: two NPCs pointing at one stored image
@@ -8142,9 +8240,10 @@ function NpcAppearance({ value, onChange }) {
         {(usesMarkColor(marks) || marks.includes("freckles")) &&
           <div className="look-row col"><span>Marking colour</span><LookSwatches colors={MARK_COLORS} value={look.markColor || MARK_COLORS[0]} onPick={(c) => set({ markColor: c })} /></div>}
       </LookGroup>
-      <LookGroup title="Clothing" sub="shoulders, and any hood" open={open.cloth} onToggle={() => flip("cloth")}>
+      <LookGroup title="Clothing" sub={`${lbl(LOOK_OUTFITS, look.outfit || "plain")} · shoulders and any hood`} open={open.cloth} onToggle={() => flip("cloth")}>
+        <div className="look-row col"><span>Outfit</span><LookChips options={LOOK_OUTFITS} value={look.outfit || "plain"} onPick={(v) => set({ outfit: v })} /></div>
         <div className="look-row col"><span>Colour</span><LookSwatches colors={CLOTH_COLORS} value={look.cloth || CLOTH_COLORS[0]} onPick={(c) => set({ cloth: c })} /></div>
-        <div className="trait">Does most of the work telling NPCs apart in the roster, where the portrait is tiny.</div>
+        <div className="trait">One colour dresses the whole outfit — trim and shadow are shaded from it. Clothing does most of the work telling NPCs apart in the roster, where the portrait is tiny.</div>
       </LookGroup>
     </div>
   );
@@ -8511,9 +8610,9 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
     const isOpen = !!open[e.id];
     return (
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
-        <div className="frow" style={{ alignItems: "center" }}>
+        <div className="frow nbrow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-          {rowTab === "npcs" && hasLook(e.look) && <span className="nbrow-art"><NpcPortrait look={e.look} size={56} /></span>}
+          {rowTab === "npcs" && hasLook(e.look) && <span className="nbrow-art"><NpcPortrait look={e.look} size={34} /></span>}
           {/* Name, tag and badges used to be one inline run competing with the portrait and four
               buttons for what little width a phone leaves. It lost: names wrapped a letter or two
               per line and rows grew to three or four times their natural height. Name on one line
