@@ -9868,6 +9868,16 @@ const GLOW_COLORS = ["#e0483a", "#3f7be0", "#e8b23a", "#57c94a", "#a24de0", "#3a
 const HEX_NEIGHBORS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 const DGN_SHAPES = [["hex", "⬡ Hex"], ["square", "▭ Square"], ["round", "◯ Round"], ["diamond", "◇ Diamond"], ["hall", "▬ Hallway"], ["angle", "∠ Angled"], ["ccurve", "◜ Corner"], ["wcurve", "◡ Wide curve"], ["ytee", "⋔ Junction"], ["cross", "✚ Cross"], ["tee", "┬ T-junction"], ["ex", "╳ Crossroad"], ["stub", "╴ Dead end"]];
 const HALL_ORIENT = [["h", "— Horizontal"], ["d1", "／ Diagonal"], ["d2", "＼ Diagonal"]];
+/* The square set. Mostly the same rooms, but the corridors are square-native and the
+   three-way-at-120° junction is gone — a square has no such angle. "hex" is kept as the key
+   for "fills the whole cell" so a dungeon can be switched between grids without its rooms
+   losing their shapes; only the label changes. */
+const DGN_SHAPES_SQ = [["hex", "▦ Room"], ["square", "▭ Small room"], ["round", "◯ Round"], ["diamond", "◇ Diamond"],
+  ["hall", "▬ Corridor"], ["angle", "∠ Corner"], ["ccurve", "◜ Curve"],
+  ["tee", "┬ T-junction"], ["cross", "✚ Crossroad"], ["stub", "╴ Dead end"]];
+const HALL_ORIENT_SQ = [["h", "— Horizontal"], ["v", "│ Vertical"]];
+const shapesFor = (G) => (G.key === "square" ? DGN_SHAPES_SQ : DGN_SHAPES);
+const hallOrientFor = (G) => (G.key === "square" ? HALL_ORIENT_SQ : HALL_ORIENT);
 const DGN_FIELDS = { desc: "Room Description", loot: "Objects of Interest", npcs: "NPCs" };
 
 // Ready-made starter dungeons — original content built only from SRD (CC-BY) monsters, for players to
@@ -9942,7 +9952,7 @@ async function bakeDungeonMap(im, px = DGN_MAP_PX) {
   return { data: webp.startsWith("data:image/webp") ? webp : cv.toDataURL("image/jpeg", 0.85), w, h };
 }
 // Start about twelve hexes across — big enough to trace over, small enough to see whole.
-const dgnMapDefaults = (w, h) => ({ x: 0, y: 0, s: (12 * Math.sqrt(3) * 46) / w, op: 0.85, w, h, lock: false });
+const dgnMapDefaults = (w, h, G) => ({ x: 0, y: 0, s: (12 * ((G && G.span) || Math.sqrt(3) * 46)) / w, op: 0.85, w, h, lock: false });
 function DungeonMapLayer({ map }) {
   const url = useLookImage(map && map.img ? { img: map.img } : null);
   if (!map || !map.img || !url) return null;
@@ -9966,6 +9976,53 @@ const hexCorners = (cx, cy, s = HEX_SIZE) => Array.from({ length: 6 }, (_, i) =>
   const a = (Math.PI / 180) * (60 * i - 30);
   return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`;
 }).join(" ");
+
+/* ── Grid geometry ──────────────────────────────────────────────────────────────
+   A dungeon is laid out on hexes or on squares. Hexes suit a dungeon you draw
+   yourself; squares suit one traced over a picture of a map, because published maps
+   are almost always gridded in squares.
+
+   Everything that needs to know the difference asks here — where a cell sits, what
+   polygon it is, which cells touch it, how many boundaries it has for doors, and how
+   far one rotation step turns a corridor. Both grids key rooms identically ("q,r"),
+   and both are sized to the same apothem: a hex of radius 46 and a square of side 80
+   are each 40 units from centre to wall. That is deliberate, so every glyph already
+   tuned against HEX_SIZE — labels, doors, props, badges — lands correctly on either
+   grid without a second set of numbers. */
+const SQ_SIZE = 80;
+const sqCorners = (cx, cy, s = SQ_SIZE) => {
+  const h = s / 2;
+  return `${(cx - h).toFixed(1)},${(cy - h).toFixed(1)} ${(cx + h).toFixed(1)},${(cy - h).toFixed(1)} ${(cx + h).toFixed(1)},${(cy + h).toFixed(1)} ${(cx - h).toFixed(1)},${(cy + h).toFixed(1)}`;
+};
+const GRIDS = {
+  hex: {
+    key: "hex", label: "⬡ Hexes", cell: "hex", cells: "hexes",
+    toPix: hexToPix, fromPix: pixToHex,
+    corners: (cx, cy, k = 1) => hexCorners(cx, cy, HEX_SIZE * k),
+    neighbors: HEX_NEIGHBORS,
+    sides: 6,            // edges — also the door-edge count and the rotation steps
+    apo: (HEX_SIZE * Math.sqrt(3)) / 2, // centre to edge midpoint
+    far: HEX_SIZE,       // centre to corner
+    span: Math.sqrt(3) * HEX_SIZE, // centre-to-centre spacing
+  },
+  square: {
+    key: "square", label: "▦ Squares", cell: "square", cells: "squares",
+    toPix: (q, r) => ({ x: q * SQ_SIZE, y: r * SQ_SIZE }),
+    fromPix: (wx, wy) => ({ q: Math.round(wx / SQ_SIZE), r: Math.round(wy / SQ_SIZE) }),
+    corners: (cx, cy, k = 1) => sqCorners(cx, cy, SQ_SIZE * k),
+    neighbors: [[1, 0], [0, -1], [-1, 0], [0, 1]],
+    sides: 4,
+    apo: SQ_SIZE / 2,
+    far: (SQ_SIZE * Math.SQRT2) / 2,
+    span: SQ_SIZE,
+  },
+};
+const gridOf = (d) => GRIDS[(d && d.grid) || "hex"] || GRIDS.hex;
+// edges first, then corners — a door can straddle either
+const doorSlotCount = (G) => G.sides * 2;
+const doorSlotAt = (G, i) => (i < G.sides
+  ? { ang: (360 / G.sides) * i, dist: G.apo }
+  : { ang: (360 / G.sides) * (i - G.sides) - 180 / G.sides, dist: G.far * 0.9 });
 
 // Room background textures — all procedural SVG (no image assets). Each is a <pattern> filled as a
 // semi-transparent detail layer over the room's colour, so colour + texture compose. Pure geometry
@@ -10059,9 +10116,9 @@ function OneTextureDef({ id, suffix = "" }) {
    which is the whole point: a hotspot over a picture, without a second kind of thing to
    maintain. `editing` draws a dashed outline so it can still be found and tapped in the
    builder; in play it leaves only its icons, since something invisible cannot be tapped. */
-function GhostRoom({ cx, cy, editing }) {
+function GhostRoom({ cx, cy, editing, G = GRIDS.hex }) {
   if (editing) {
-    return <polygon points={hexCorners(cx, cy, HEX_SIZE * 0.94)} fill="rgba(255,255,255,.05)"
+    return <polygon points={G.corners(cx, cy, 0.94)} fill="rgba(255,255,255,.05)"
       stroke="var(--gold)" strokeWidth="1.6" strokeDasharray="5 4" opacity="0.75" />;
   }
   /* In play, a marker in the corner clear of the icons and the link badge. A room with nothing
@@ -10069,8 +10126,8 @@ function GhostRoom({ cx, cy, editing }) {
   return <circle cx={cx - HEX_SIZE * 0.42} cy={cy - HEX_SIZE * 0.46} r={HEX_SIZE * 0.1}
     fill="rgba(0,0,0,.45)" stroke="var(--gold)" strokeWidth="1.2" style={{ pointerEvents: "none" }} />;
 }
-function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false }) {
-  if (room && room.ghost) return <GhostRoom cx={cx} cy={cy} editing={editing} />;
+function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false, G = GRIDS.hex }) {
+  if (room && room.ghost) return <GhostRoom cx={cx} cy={cy} editing={editing} G={G} />;
   const s = HEX_SIZE, col = room.color || DGN_COLORS[0], stroke = "rgba(255,255,255,.28)";
   const shape = room.shape || "hex";
   const texId = room.texture && room.texture !== "none" ? `tex-${room.texture}${texSuffix}` : null;
@@ -10086,9 +10143,47 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false }) {
   const fxOn = !!disp || glowOn;
   const needClip = shape === "hall" || shape === "angle" || shape === "ytee" || shape === "cross" || shape === "tee" || shape === "ex" || shape === "stub" || shape === "ccurve" || shape === "curve" || shape === "wcurve";
   const wrap = (node, rot) => <g clipPath={`url(#${clipId})`}>{rot ? <g transform={`rotate(${rot} ${cx} ${cy})`}>{node}</g> : node}</g>;
+  /* Corridors on a square grid need their own geometry: arms run at 90° instead of 60°, they
+     reach a half-side rather than a hex apothem, and the three-way-at-120° junction a hex
+     affords has no square equivalent. Rooms that are just a shape in the middle of the cell —
+     round, diamond, the small square — are the same on both grids and fall through below.
+     A dungeon switched from hexes keeps its old shape names, so the hex-only ones map onto
+     their nearest square relative rather than vanishing. */
+  const SQ_ALIAS = { ytee: "cross", ex: "cross", curve: "ccurve", wcurve: "ccurve", hex: "cell" };
+  const drawSquare = (fill, stk) => {
+    const a = G.apo, th = a * 0.68, rot = ((Number(room.orient) || 0) % 4) * 90;
+    const sh = SQ_ALIAS[shape] || shape;
+    // one arm from the centre out to the wall, in a compass direction (0 = east)
+    const arm = (deg, len = a, round = false) => {
+      const rad = (deg * Math.PI) / 180;
+      const mx = cx + (len / 2) * Math.cos(rad), my = cy + (len / 2) * Math.sin(rad);
+      return <rect key={deg} x={mx - len / 2} y={my - th / 2} width={len} height={th} rx={round ? th * 0.42 : 0}
+        fill={fill} stroke={stk} strokeWidth="1" transform={`rotate(${deg} ${mx} ${my})`} />;
+    };
+    const hub = <circle cx={cx} cy={cy} r={th * 0.55} fill={fill} />;
+    if (sh === "cell") return <polygon points={G.corners(cx, cy, 0.97)} fill={fill} stroke={stk} strokeWidth="1.5" />;
+    if (sh === "hall") { const vert = room.orient === "v" || room.orient === "d1" || room.orient === "d2";
+      return wrap(<rect x={cx - a} y={cy - th / 2} width={a * 2} height={th} fill={fill} stroke={stk} strokeWidth="1" />, vert ? 90 : 0); }
+    if (sh === "stub") return wrap(<rect x={cx - th * 0.5} y={cy - th / 2} width={a + th * 0.5} height={th} rx={th * 0.42} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    if (sh === "angle") return wrap(<g>{[0, 90].map((d) => arm(d))}{hub}</g>, rot);
+    if (sh === "tee") return wrap(<g>{[0, 180, 90].map((d) => arm(d))}{hub}</g>, rot);
+    if (sh === "cross") return wrap(<g>{[0, 90, 180, 270].map((d) => arm(d))}{hub}</g>, 0);
+    if (sh === "ccurve") {
+      /* A quarter turn swept about a corner of the cell, radius exactly half a cell — that is the
+         only radius whose ends land on the midpoints of the two walls, which is what lets a curve
+         line up with the corridors either side of it. */
+      const R = a, C = { x: cx - a, y: cy + a };
+      const ro = R + th / 2, ri = Math.max(1, R - th / 2);
+      const d = `M ${(C.x + ro).toFixed(1)} ${C.y.toFixed(1)} A ${ro.toFixed(1)} ${ro.toFixed(1)} 0 0 0 ${C.x.toFixed(1)} ${(C.y - ro).toFixed(1)}`
+        + ` L ${C.x.toFixed(1)} ${(C.y - ri).toFixed(1)} A ${ri.toFixed(1)} ${ri.toFixed(1)} 0 0 1 ${(C.x + ri).toFixed(1)} ${C.y.toFixed(1)} Z`;
+      return wrap(<path d={d} fill={fill} stroke={stk} strokeWidth="1" />, rot);
+    }
+    return null; // round / diamond / small square are shared — handled below
+  };
   // draw(fill, stk) renders the shape geometry with a given paint — called once for the base colour,
   // then again with the texture pattern layered on top (transparent detail over the colour).
   const draw = (fill, stk) => {
+    if (G.key === "square") { const sq = drawSquare(fill, stk); if (sq) return sq; }
     if (shape === "round") return <circle cx={cx} cy={cy} r={s * 0.74} fill={fill} stroke={stk} strokeWidth="1.5" />;
     if (shape === "square") { const side = s * 1.18; return <rect x={cx - side / 2} y={cy - side / 2} width={side} height={side} fill={fill} stroke={stk} strokeWidth="1.5" />; }
     if (shape === "diamond") { const d = s * 0.84; return <polygon points={`${cx},${(cy - d).toFixed(1)} ${(cx + d).toFixed(1)},${cy} ${cx},${(cy + d).toFixed(1)} ${(cx - d).toFixed(1)},${cy}`} fill={fill} stroke={stk} strokeWidth="1.5" />; }
@@ -10153,11 +10248,11 @@ function RoomShape({ room, cx, cy, hexKey, texSuffix = "", editing = false }) {
       const rot = ((Number(room.orient) || 0) % 6) * 60;
       return wrap(<path d={d} fill={fill} stroke={stk} strokeWidth="1" />, rot);
     }
-    return <polygon points={hexCorners(cx, cy, s * 0.97)} fill={fill} stroke={stk} strokeWidth="1.5" />;
+    return <polygon points={G.corners(cx, cy, 0.97)} fill={fill} stroke={stk} strokeWidth="1.5" />;
   };
   return (
     <>
-      {needClip && <clipPath id={clipId}><polygon points={hexCorners(cx, cy, s)} /></clipPath>}
+      {needClip && <clipPath id={clipId}><polygon points={G.corners(cx, cy)} /></clipPath>}
       {/* Edge/glow filter: an optional turbulence displacement (cave = smooth-organic, rubble = choppy-
           broken) reshapes the outline, then an optional coloured halo is flooded around the result. A
           per-room seed keeps each rough outline unique. */}
@@ -10250,12 +10345,12 @@ function RoomLabel({ room, cx, cy }) {
 
 // A decorative prop drawn in a room (over the floor, under the labels). Centred by default; featurePos
 // 0-5 nudges it toward that edge (60·i°) so props that belong against a wall don't float dead-centre.
-function RoomFeature({ room, cx, cy }) {
+function RoomFeature({ room, cx, cy, G = GRIDS.hex }) {
   const f = room && room.feature; if (!f || f === "none") return null;
   const s = HEX_SIZE;
   const pos = room && room.featurePos;
   let ox = 0, oy = 0;
-  if (typeof pos === "number" && pos >= 0 && pos <= 5) { const a = (60 * pos * Math.PI) / 180, d = s * 0.42; ox = d * Math.cos(a); oy = d * Math.sin(a); }
+  if (typeof pos === "number" && pos >= 0 && pos < G.sides) { const a = ((360 / G.sides) * pos * Math.PI) / 180, d = s * 0.42; ox = d * Math.cos(a); oy = d * Math.sin(a); }
   const wrap = (children) => <g style={{ pointerEvents: "none" }} transform={ox || oy ? `translate(${ox.toFixed(1)} ${oy.toFixed(1)})` : undefined}>{children}</g>;
   if (f === "pool" || f === "fountain") {
     return wrap(<>
@@ -10338,21 +10433,17 @@ function RoomFeature({ room, cx, cy }) {
 // Door-slot geometry, shared by RoomDoors and the editor. Slots 0-5 are the edge midpoints (60·i°, at
 // the apothem); slots 6-11 are the hex corners (60·j-30°, near the vertex). Corner doors let a corridor
 // exit point-first, so true T and X junctions line up with a doorway. Returns angle (deg) + radial dist.
-const DOOR_SLOTS = 12;
-function doorSlot(i, s) {
-  if (i < 6) return { ang: 60 * i, dist: (s * Math.sqrt(3)) / 2 };
-  return { ang: 60 * (i - 6) - 30, dist: s * 0.9 };
-}
-// Doors on the hex's edges and corners (independent of the room shape). room.doors is a list of slot
-// indices 0-11. Each door is a small panel straddling that boundary point.
-function RoomDoors({ room, cx, cy }) {
+// Doors on the cell's edges and corners (independent of the room shape). room.doors is a list of
+// slot indices: the edges first, then the corners — twelve on a hex, eight on a square. Each door
+// is a small panel straddling that boundary point.
+function RoomDoors({ room, cx, cy, G = GRIDS.hex }) {
   const doors = Array.isArray(room && room.doors) ? room.doors : [];
   if (!doors.length) return null;
   const s = HEX_SIZE, dw = s * 0.52, dh = s * 0.17;
   return (
     <g style={{ pointerEvents: "none" }}>
       {doors.map((i) => {
-        const { ang, dist } = doorSlot(i, s);
+        const { ang, dist } = doorSlotAt(G, i);
         const a = (ang * Math.PI) / 180;
         const mx = cx + dist * Math.cos(a), my = cy + dist * Math.sin(a);
         return (
@@ -10380,13 +10471,13 @@ function RoomLinkMark({ room, cx, cy, onFollow }) {
   );
 }
 // Dashed connector lines for every in-dungeon secret passage whose target still exists.
-function linkConnectors(rooms) {
+function linkConnectors(rooms, G = GRIDS.hex) {
   const out = [];
   Object.entries(rooms || {}).forEach(([k, rm]) => {
     const link = rm && rm.link;
     if (!link || link.kind !== "room" || !link.room || !rooms[link.room]) return;
     const [q1, r1] = k.split(",").map(Number), [q2, r2] = link.room.split(",").map(Number);
-    const a = hexToPix(q1, r1), b = hexToPix(q2, r2);
+    const a = G.toPix(q1, r1), b = G.toPix(q2, r2);
     out.push(<line key={`lk-${k}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="rgba(95,230,223,.5)" strokeWidth="2" strokeDasharray="4 5" style={{ pointerEvents: "none" }} />);
   });
   return out;
@@ -10545,7 +10636,7 @@ function roomTouched(r) {
   return keys.some((k) => asSections(n[k]).some((s) => (s.title || "").trim() || (s.body || "").trim()));
 }
 
-function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], party = { size: 4, level: 3, difficulty: "moderate" }, monsterList = [], groupNames = [], customItems = [], onSaveCustomItem, onChange, onDelete, onClose }) {
+function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], party = { size: 4, level: 3, difficulty: "moderate" }, monsterList = [], groupNames = [], customItems = [], onSaveCustomItem, onChange, onDelete, onClose, G = GRIDS.hex }) {
   const [tab, setTab] = useState("appearance");
   const [full, setFull] = useState(null); // {k, label} of a note field open full-screen, or null
   const [confirmDel, setConfirmDel] = useState(false);
@@ -10684,20 +10775,20 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
             {room.ghost ? "👻 Clear room — the map shows through ✓" : "👻 Make this a clear room"}
           </button>
           {room.ghost ? (
-            <div className="trait">Nothing is drawn here, so a picture of a map shows through — but it is still a room: notes, monsters, loot, doors and exits all work, and tapping the hex opens it. A dashed outline marks it while you build; in play it shows only its icons and a small corner dot.</div>
+            <div className="trait">Nothing is drawn here, so a picture of a map shows through — but it is still a room: notes, monsters, loot, doors and exits all work, and tapping the cell opens it. A dashed outline marks it while you build; in play it shows only its icons and a small corner dot.</div>
           ) : (<>
             <div className="pickgrid">
-              {DGN_SHAPES.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
+              {shapesFor(G).map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.shape || "hex") === k ? "on" : ""}`} onClick={() => set({ shape: k })}>{lbl}</button>)}
             </div>
           {room.shape === "hall" && (
             <div className="pickgrid" style={{ marginTop: 4 }}>
-              {HALL_ORIENT.map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
+              {hallOrientFor(G).map(([k, lbl]) => <button key={k} className={`lvlchip ${(room.orient || "h") === k ? "on" : ""}`} onClick={() => set({ orient: k })}>{lbl}</button>)}
             </div>
           )}
           {(room.shape === "ccurve" || room.shape === "curve" || room.shape === "wcurve" || room.shape === "angle" || room.shape === "ytee" || room.shape === "cross" || room.shape === "tee" || room.shape === "ex" || room.shape === "stub") && (
             <div className="frow" style={{ marginTop: 4, alignItems: "center", gap: 8 }}>
-              <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % 6 })}>↻ Rotate</button>
-              <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % 6) + 1} / 6 — cycles which edges it joins</span>
+              <button className="btn small" onClick={() => set({ orient: ((Number(room.orient) || 0) + 1) % G.sides })}>↻ Rotate</button>
+              <span className="ad" style={{ fontSize: 11 }}>orientation {((Number(room.orient) || 0) % G.sides) + 1} / {G.sides} — cycles which edges it joins</span>
             </div>
           )}
           <span className="dgn-flabel">Edge treatment <span style={{ fontWeight: 400, fontSize: 12, color: "var(--faint)" }}>— reshapes the outline on any shape</span></span>
@@ -10727,15 +10818,15 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
                   room's shape meets the ones around it */}
               {neighbors.map((n, i) => (
                 <g key={i}>
-                  <clipPath id={`dgnnb-${i}`}><polygon points={hexCorners(n.dx, n.dy, HEX_SIZE)} /></clipPath>
-                  <g clipPath={`url(#dgnnb-${i})`} opacity="0.5"><RoomShape room={n.room} cx={n.dx} cy={n.dy} hexKey={`nb${i}`} texSuffix="-pv" /></g>
+                  <clipPath id={`dgnnb-${i}`}><polygon points={G.corners(n.dx, n.dy)} /></clipPath>
+                  <g clipPath={`url(#dgnnb-${i})`} opacity="0.5"><RoomShape room={n.room} cx={n.dx} cy={n.dy} hexKey={`nb${i}`} texSuffix="-pv" G={G} /></g>
                 </g>
               ))}
               {/* the cell outline, so you can see how the shape sits within its hex */}
-              <polygon points={hexCorners(0, 0, HEX_SIZE)} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" strokeDasharray="3 3" />
-              <RoomShape room={room} cx={0} cy={0} hexKey="preview" texSuffix="-pv" />
-              <RoomFeature room={room} cx={0} cy={0} />
-              <RoomDoors room={room} cx={0} cy={0} />
+              <polygon points={G.corners(0, 0)} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="1" strokeDasharray="3 3" />
+              <RoomShape room={room} cx={0} cy={0} hexKey="preview" texSuffix="-pv" G={G} />
+              <RoomFeature room={room} cx={0} cy={0} G={G} />
+              <RoomDoors room={room} cx={0} cy={0} G={G} />
             </svg>
           </div>
           {!room.ghost && (<>
@@ -10793,10 +10884,10 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "2px 0 4px 2px" }}>
               <span className="dgn-flabel" style={{ margin: 0 }}>Position</span>
               <svg width="80" height="72" viewBox="-40 -36 80 72" style={{ background: "#14151c", borderRadius: 8 }}>
-                <polygon points={hexCorners(0, 0, 30)} fill="#20222b" stroke="rgba(255,255,255,.16)" strokeWidth="1" />
+                <polygon points={G.corners(0, 0, 30 / G.far)} fill="#20222b" stroke="rgba(255,255,255,.16)" strokeWidth="1" />
                 {(() => { const on = room.featurePos == null; return <circle cx="0" cy="0" r="6" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#f0dcae" : "rgba(255,255,255,.3)"} strokeWidth="1.3" style={{ cursor: "pointer" }} onClick={() => set({ featurePos: null })} />; })()}
-                {Array.from({ length: 6 }, (_, i) => {
-                  const a = (60 * i * Math.PI) / 180, d = 24, mx = d * Math.cos(a), my = d * Math.sin(a), on = room.featurePos === i;
+                {Array.from({ length: G.sides }, (_, i) => {
+                  const a = (((360 / G.sides) * i) * Math.PI) / 180, d = 24, mx = d * Math.cos(a), my = d * Math.sin(a), on = room.featurePos === i;
                   return <circle key={i} cx={mx} cy={my} r="5.5" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#f0dcae" : "rgba(255,255,255,.3)"} strokeWidth="1.2" style={{ cursor: "pointer" }} onClick={() => set({ featurePos: i })} />;
                 })}
               </svg>
@@ -10813,17 +10904,18 @@ function RoomEditor({ room, neighbors = [], linkRooms = [], linkDungeons = [], p
           {openSec.doors && (
             <div style={{ display: "flex", justifyContent: "center", padding: "2px 0 6px" }}>
               <svg width="100%" viewBox="-62 -56 124 112" style={{ maxWidth: 300, height: "auto", display: "block", background: "#14151c", borderRadius: 12 }}>
-                <polygon points={hexCorners(0, 0, 44)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
-                {Array.from({ length: DOOR_SLOTS }, (_, i) => {
+                <polygon points={G.corners(0, 0, 44 / G.far)} fill="#20222b" stroke="rgba(255,255,255,.18)" strokeWidth="1.5" />
+                {Array.from({ length: doorSlotCount(G) }, (_, i) => {
                   const cur = Array.isArray(room.doors) ? room.doors : [];
-                  const on = cur.includes(i), corner = i >= 6;
-                  const ang = (corner ? 60 * (i - 6) - 30 : 60 * i) * Math.PI / 180;
-                  const dist = corner ? 44 : (44 * Math.sqrt(3)) / 2;
+                  const on = cur.includes(i), corner = i >= G.sides;
+                  // the picker draws the cell at 44 units across, so scale the real slot positions to match
+                  const slot = doorSlotAt(G, i), k = 44 / G.far;
+                  const ang = (slot.ang * Math.PI) / 180, dist = slot.dist * k;
                   const mx = dist * Math.cos(ang), my = dist * Math.sin(ang);
                   return (
                     <g key={i} style={{ cursor: "pointer" }} onClick={() => set({ doors: on ? cur.filter((x) => x !== i) : [...cur, i] })}>
                       <circle cx={mx} cy={my} r="9" fill={on ? "#7d5730" : "rgba(255,255,255,.06)"} stroke={on ? "#2f1f12" : "rgba(255,255,255,.28)"} strokeWidth="1.4" />
-                      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="9" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"}>{on ? "🚪" : (corner ? "◇" : "＋")}</text>
+                      <text x={mx} y={my} textAnchor="middle" dominantBaseline="central" fontSize="9" fill={on ? "#f0dcae" : "rgba(255,255,255,.5)"} style={{ pointerEvents: "none" }}>{on ? "🚪" : (corner ? "◇" : "＋")}</text>
                     </g>
                   );
                 })}
@@ -11032,6 +11124,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
   const [mapMsg, setMapMsg] = useState("");
   const mapFileRef = useRef(null);
   const bg = dgnBg(dg.bg);
+  const G = gridOf(dg);
   const dmap = dg.map || null;
   const setMap = (patch) => commit((prev) => ({ ...prev, map: { ...(prev.map || {}), ...patch } }));
   const pickMap = async (e) => {
@@ -11048,7 +11141,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       if (!(await imgSave(id, data))) { setMapMsg("Couldn't save the map — storage is full. Free some space and try again."); return; }
       // keep the placement when swapping one picture for another of the same shape
       const keep = dmap && dmap.w === w && dmap.h === h ? { x: dmap.x, y: dmap.y, s: dmap.s, op: dmap.op, lock: dmap.lock } : {};
-      commit((p) => ({ ...p, map: { ...dgnMapDefaults(w, h), ...keep, img: id, w, h } }));
+      commit((p) => ({ ...p, map: { ...dgnMapDefaults(w, h, G), ...keep, img: id, w, h } }));
       if (prev) imgDrop(prev);
       setMapMode(true);
       setMapMsg("");
@@ -11059,6 +11152,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
   const dropMap = () => { const id = dmap && dmap.img; commit((p) => ({ ...p, map: null })); setMapMode(false); if (id) imgDrop(id); };
   const placingMap = !!(mapMode && dmap && dmap.img && !dmap.lock);
   const [trace, setTrace] = useState(false); // new rooms are born clear, for tracing over a map
+  const [gridAsk, setGridAsk] = useState(null); // grid the DM wants to switch to, pending a warning
   const traceRef = useRef(trace); traceRef.current = trace;
   // sources for a room's encounter editor: every monster (SRD + custom) and the DM's saved groups
   const monsterList = useMemo(() => fullBestiary().concat(customMonsters || []), [customMonsters]);
@@ -11092,7 +11186,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       const mw = (dg.map.w || 0) * (dg.map.s || 1), mh = (dg.map.h || 0) * (dg.map.s || 1);
       const mx = dg.map.x || 0, my = dg.map.y || 0;
       [[mx - mw / 2, my - mh / 2], [mx + mw / 2, my - mh / 2], [mx - mw / 2, my + mh / 2], [mx + mw / 2, my + mh / 2]]
-        .forEach(([wx, wy]) => { const c = pixToHex(wx, wy); mext = Math.max(mext, Math.abs(c.q), Math.abs(c.r)); });
+        .forEach(([wx, wy]) => { const c = G.fromPix(wx, wy); mext = Math.max(mext, Math.abs(c.q), Math.abs(c.r)); });
       mext = Math.min(mext + 1, 22);
     }
     return Math.max(8, ext + 2, mext);
@@ -11111,15 +11205,15 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
-      const { x, y } = hexToPix(q, r), key = `${q},${r}`, room = rooms[key];
+      const { x, y } = G.toPix(q, r), key = `${q},${r}`, room = rooms[key];
       const bare = room && !roomTouched(room); // an untouched room can be deleted with one tap of its ✕
       out.push(
         <g key={key} style={{ cursor: "pointer" }} onPointerDown={(e) => hexDown(key, e)}
           onClick={() => { if (drag.current && drag.current.moved) return; if (rooms[key]) setEditKey(key); else addRoom(key); }}>
-          <polygon className="dgn-hex" points={hexCorners(x, y)} />
-          {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} editing />}
-          {room && <RoomDoors room={room} cx={x} cy={y} />}
-          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
+          <polygon className="dgn-hex" points={G.corners(x, y)} />
+          {room && <RoomShape room={room} cx={x} cy={y} hexKey={key} editing G={G} />}
+          {room && <RoomDoors room={room} cx={x} cy={y} G={G} />}
+          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} G={G} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLinkMark room={room} cx={x} cy={y} />}
           {bare && showLabels && (() => {
@@ -11135,13 +11229,13 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       );
     }
     return out;
-  }, [rooms, RANGE, showLabels]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rooms, RANGE, showLabels, G]); // eslint-disable-line react-hooks/exhaustive-deps
   const clientToHex = (clientX, clientY) => {
     const el = wrapRef.current; if (!el) return null;
     const rect = el.getBoundingClientRect();
     const wx = (clientX - rect.left - (size.w / 2 + view.x)) / view.z;
     const wy = (clientY - rect.top - (size.h / 2 + view.y)) / view.z;
-    return pixToHex(wx, wy);
+    return G.fromPix(wx, wy);
   };
   const onDown = (e) => {
     if (drag.current && drag.current.mode === "room") return;
@@ -11180,7 +11274,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
   const fitToRooms = () => {
     const keys = Object.keys(dg.rooms || {});
     if (!keys.length) { setView({ x: 0, y: 0, z: 1 }); return; }
-    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return hexToPix(q, r); });
+    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return G.toPix(q, r); });
     const cx = (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2;
     const cy = (Math.min(...pts.map((p) => p.y)) + Math.max(...pts.map((p) => p.y))) / 2;
     const spanX = Math.max(...pts.map((p) => p.x)) - Math.min(...pts.map((p) => p.x)) + HEX_SIZE * 3;
@@ -11197,16 +11291,21 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
         <input className="nm" value={dg.name || ""} placeholder="Dungeon name…" onChange={(e) => commit((prev) => ({ ...prev, name: e.target.value }))} />
         <button className={`btn small ${bgPick ? "" : "ghost"}`} title="Change the whole-map backdrop (grass, water, sand…)" onClick={() => setBgPick((v) => !v)}>🎨 Backdrop</button>
         <button className={`btn small ${mapMode ? "" : "ghost"}`} title="Put a picture of a map underneath and line the grid up with it" onClick={() => { setMapMode((v) => !v); setBgPick(false); }}>🖼 Map</button>
+        {/* Hexes suit a dungeon you draw; squares suit one traced over a published map. */}
+        <button className="btn small ghost" title={`Currently on ${G.cells}. Switch the whole dungeon to ${G.key === "hex" ? "squares" : "hexes"}.`}
+          onClick={() => { const to = G.key === "hex" ? "square" : "hex"; if (Object.keys(rooms).length) setGridAsk(to); else commit((prev) => ({ ...prev, grid: to })); }}>
+          {G.label}
+        </button>
       </div>
       {mapMode && (
         <div className="dgn-mapbar">
           {!dmap || !dmap.img ? (<>
             <button className="btn small primary" onClick={() => mapFileRef.current && mapFileRef.current.click()}>🖼 Upload a map picture…</button>
-            <span className="dgn-maphint">Stays on this device. Line it up under the grid, then trace rooms over it — clear rooms let the picture show through.</span>
+            <span className="dgn-maphint">Stays on this device. Line it up under the grid, then trace rooms over it — clear rooms let the picture show through. {G.key === "hex" ? "Most printed maps are gridded in squares — the ▦ button switches this dungeon over." : ""}</span>
           </>) : (<>
             <label className="dgn-mapctl">Size
-              <input type="range" min="0.15" max="4" step="0.01" value={(dmap.s || 1) / (dgnMapDefaults(dmap.w || 1000, dmap.h || 1000).s || 1)}
-                onChange={(e) => setMap({ s: Number(e.target.value) * dgnMapDefaults(dmap.w || 1000, dmap.h || 1000).s })} />
+              <input type="range" min="0.15" max="4" step="0.01" value={(dmap.s || 1) / (dgnMapDefaults(dmap.w || 1000, dmap.h || 1000, G).s || 1)}
+                onChange={(e) => setMap({ s: Number(e.target.value) * dgnMapDefaults(dmap.w || 1000, dmap.h || 1000, G).s })} />
             </label>
             <label className="dgn-mapctl">Fade
               <input type="range" min="0.15" max="1" step="0.01" value={dmap.op == null ? 0.85 : dmap.op} onChange={(e) => setMap({ op: Number(e.target.value) })} />
@@ -11221,8 +11320,8 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
             </button>
             <span className="dgn-maphint">
               {!dmap.lock ? "Drag anywhere to move the picture. Lock it when it lines up."
-                : trace ? "Tap a hex over a room on the picture — it becomes a clear room you can put notes in, with the map showing through."
-                  : "Locked — drag pans the view. Tap hexes to build over the map."}
+                : trace ? `Tap a ${G.cell} over a room on the picture — it becomes a clear room you can put notes in, with the map showing through.`
+                  : `Locked — drag pans the view. Tap ${G.cells} to build over the map.`}
             </span>
           </>)}
           <input ref={mapFileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/*" style={{ display: "none" }} onChange={pickMap} />
@@ -11248,7 +11347,7 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       )}
       <div className={`dgn-canvas${bg.light ? " dgn-light" : ""}`} ref={wrapRef} style={{ background: bg.grad }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerLeave={onUp}>
         <DgnCompass />
-        <div className="dgn-hint dgn-hint-compass">Tap empty hex to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
+        <div className="dgn-hint dgn-hint-compass">Tap an empty {G.cell} to add · tap room to edit · drag a room to move · ✕ clears an empty room</div>
         <svg width={size.w} height={size.h}>
           <defs><TextureDefs /></defs>
           {bg.tex && <rect width={size.w} height={size.h} fill={`url(#tex-${bg.tex})`} opacity={bg.texOp} />}
@@ -11257,16 +11356,16 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
             {/* while the picture is loose, the whole canvas belongs to it — otherwise every
                 attempt to slide it would drop a room wherever you happened to let go */}
             <g style={placingMap ? { pointerEvents: "none" } : undefined}>{grid}</g>
-            {linkConnectors(rooms)}
+            {linkConnectors(rooms, G)}
             {ghost && (() => {
               const gsrc = rooms[ghost.srcKey]; if (!gsrc) return null;
-              const { x, y } = hexToPix(ghost.tq, ghost.tr);
+              const { x, y } = G.toPix(ghost.tq, ghost.tr);
               const tkey = `${ghost.tq},${ghost.tr}`;
               const blocked = tkey !== ghost.srcKey && !!rooms[tkey];
               return (
                 <g style={{ pointerEvents: "none" }}>
-                  {!blocked && <g opacity="0.55"><RoomShape room={gsrc} cx={x} cy={y} hexKey="dgnghost" editing /></g>}
-                  <polygon points={hexCorners(x, y)} fill={blocked ? "rgba(224,85,85,.18)" : "none"} stroke={blocked ? "#e05555" : "var(--gold)"} strokeWidth="2.5" />
+                  {!blocked && <g opacity="0.55"><RoomShape room={gsrc} cx={x} cy={y} hexKey="dgnghost" editing G={G} /></g>}
+                  <polygon points={G.corners(x, y)} fill={blocked ? "rgba(224,85,85,.18)" : "none"} stroke={blocked ? "#e05555" : "var(--gold)"} strokeWidth="2.5" />
                 </g>
               );
             })()}
@@ -11281,29 +11380,39 @@ function DungeonBuilder({ dungeon, allDungeons = [], party, customMonsters, cust
       {editKey && rooms[editKey] && (() => {
         // the filled edge-neighbours, with pixel offsets relative to the edited hex, for the preview
         const [eq, er] = editKey.split(",").map(Number);
-        const ec = hexToPix(eq, er);
-        const neighbors = HEX_NEIGHBORS.map(([dq, dr]) => {
+        const ec = G.toPix(eq, er);
+        const neighbors = G.neighbors.map(([dq, dr]) => {
           const nr = rooms[`${eq + dq},${er + dr}`];
           if (!nr) return null;
-          const p = hexToPix(eq + dq, er + dr);
+          const p = G.toPix(eq + dq, er + dr);
           return { room: nr, dx: p.x - ec.x, dy: p.y - ec.y };
         }).filter(Boolean);
         // targets a passage/exit can point at: other rooms in this dungeon, and other saved dungeons
         const linkRooms = Object.entries(rooms).filter(([k]) => k !== editKey).map(([k, rm]) => ({ key: k, label: roomLabelText(rm) || `Room ${k}` }));
         const linkDungeons = allDungeons.filter((d) => d.id !== dungeon.id && Object.keys(d.rooms || {}).length).map((d) => ({ id: d.id, name: (d.name || "").trim() || "Untitled dungeon" }));
         return (
-          <RoomEditor room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} party={party} monsterList={monsterList} groupNames={groupNames} customItems={customItems} onSaveCustomItem={onSaveCustomItem}
+          <RoomEditor G={G} room={rooms[editKey]} neighbors={neighbors} linkRooms={linkRooms} linkDungeons={linkDungeons} party={party} monsterList={monsterList} groupNames={groupNames} customItems={customItems} onSaveCustomItem={onSaveCustomItem}
             onChange={(room) => commit((prev) => ({ ...prev, rooms: { ...prev.rooms, [editKey]: room } }))}
             onDelete={() => { commit((prev) => { const nr = { ...prev.rooms }; delete nr[editKey]; return { ...prev, rooms: nr }; }); setEditKey(null); }}
             onClose={() => setEditKey(null)} />
         );
       })()}
+      {/* Both grids key rooms the same way, so nothing is lost by switching — but the cells sit
+          in different places and corridors that lined up will not, so say so before doing it. */}
+      {gridAsk && (
+        <ConfirmModal
+          text={`Switch this dungeon to ${GRIDS[gridAsk].cells}? Every room keeps its name, notes, monsters and loot, and you can switch back. But the cells sit differently, so corridor shapes, rotations and doors will probably need redoing.`}
+          confirmLabel={`Use ${GRIDS[gridAsk].cells}`}
+          onYes={() => { commit((prev) => ({ ...prev, grid: gridAsk })); setGridAsk(null); setEditKey(null); }}
+          onClose={() => setGridAsk(null)} />
+      )}
     </div>
   );
 }
 
 /* ===== Dungeon Play (Phase 2b): a read-only map docked below the roster ===== */
 function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasParty = false, onAssignLoot, onRun, onEdit, onUpdateRoom, onLoadLevel, onResetRun, runKey, backName, onBack, onClose }) {
+  const G = gridOf(dungeon);
   const rooms = dungeon.rooms || {};
   const [view, setView] = useState({ x: 0, y: 0, z: 0.9 });
   const [sel, setSel] = useState(null);      // selected room key
@@ -11336,7 +11445,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   const fitToRooms = (rms) => {
     const keys = Object.keys(rms || {});
     if (!keys.length) { setView({ x: 0, y: 0, z: 0.9 }); return; }
-    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return hexToPix(q, r); });
+    const pts = keys.map((k) => { const [q, r] = k.split(",").map(Number); return G.toPix(q, r); });
     const cx = (Math.min(...pts.map((p) => p.x)) + Math.max(...pts.map((p) => p.x))) / 2;
     const cy = (Math.min(...pts.map((p) => p.y)) + Math.max(...pts.map((p) => p.y))) / 2;
     const z = 0.9;
@@ -11363,7 +11472,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   }, [rooms]);
   const showLabels = view.z >= 0.8;
   // pan so a room's centre sits at the middle of the map (used when a secret passage jumps to it)
-  const centerOn = (key) => { const [q, r] = key.split(",").map(Number); const p = hexToPix(q, r); setView((v) => ({ ...v, x: -p.x * v.z, y: -p.y * v.z })); };
+  const centerOn = (key) => { const [q, r] = key.split(",").map(Number); const p = G.toPix(q, r); setView((v) => ({ ...v, x: -p.x * v.z, y: -p.y * v.z })); };
   const followLink = (rm) => {
     const link = rm && rm.link; if (!link || !link.kind) return;
     if (link.kind === "room") { if (rooms[link.room]) { setSel(link.room); centerOn(link.room); } }
@@ -11372,21 +11481,21 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
   const grid = useMemo(() => {
     const out = [];
     for (let q = -RANGE; q <= RANGE; q++) for (let r = -RANGE; r <= RANGE; r++) {
-      const { x, y } = hexToPix(q, r), key = `${q},${r}`, room = rooms[key];
+      const { x, y } = G.toPix(q, r), key = `${q},${r}`, room = rooms[key];
       out.push(
         <g key={key} style={{ cursor: room ? "pointer" : "default" }} onClick={() => { if (drag.current && drag.current.moved) return; setSel(room ? key : null); }}>
-          <polygon className="dgn-hex" points={hexCorners(x, y)} />
-          {room && <RoomShape room={room} cx={x} cy={y} hexKey={`p-${key}`} />}
-          {room && <RoomDoors room={room} cx={x} cy={y} />}
-          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} />}
+          <polygon className="dgn-hex" points={G.corners(x, y)} />
+          {room && <RoomShape room={room} cx={x} cy={y} hexKey={`p-${key}`} G={G} />}
+          {room && <RoomDoors room={room} cx={x} cy={y} G={G} />}
+          {room && showLabels && <RoomFeature room={room} cx={x} cy={y} G={G} />}
           {room && showLabels && <RoomLabel room={room} cx={x} cy={y} />}
           {room && showLabels && <RoomLinkMark room={room} cx={x} cy={y} onFollow={() => followLink(room)} />}
-          {key === sel && <polygon points={hexCorners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
+          {key === sel && <polygon points={G.corners(x, y)} fill="none" stroke="var(--gold)" strokeWidth="2.5" style={{ pointerEvents: "none" }} />}
         </g>
       );
     }
     return out;
-  }, [rooms, RANGE, showLabels, sel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rooms, RANGE, showLabels, sel, G]); // eslint-disable-line react-hooks/exhaustive-deps
   const onDown = (e) => { drag.current = { sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false }; };
   const onMove = (e) => { const d = drag.current; if (!d) return; const dx = e.clientX - d.sx, dy = e.clientY - d.sy; if (Math.abs(dx) + Math.abs(dy) > 6) d.moved = true; if (d.moved) setView((v) => ({ ...v, x: d.ox + dx, y: d.oy + dy })); };
   const onUp = () => { setTimeout(() => { drag.current = null; }, 0); };
@@ -11421,7 +11530,7 @@ function DungeonPlayPanel({ dungeon, mode, allDungeons = [], players = [], hasPa
             <svg width={size.w} height={size.h}>
               <defs><TextureDefs /></defs>
               {bg.tex && <rect width={size.w} height={size.h} fill={`url(#tex-${bg.tex})`} opacity={bg.texOp} />}
-              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}><DungeonMapLayer map={dungeon.map} />{grid}{linkConnectors(rooms)}</g>
+              <g transform={`translate(${size.w / 2 + view.x} ${size.h / 2 + view.y}) scale(${view.z})`}><DungeonMapLayer map={dungeon.map} />{grid}{linkConnectors(rooms, G)}</g>
             </svg>
             <div className="dgn-zoom">
               <button onClick={() => zoom(1.25)}>＋</button>
