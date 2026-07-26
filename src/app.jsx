@@ -417,6 +417,21 @@ input[type=number]{width:64px}
 .gs-targets{max-height:34vh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px 8px}
 .gs-target{display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}
 .gs-target:last-child{border-bottom:0}
+/* A notebook entry row: portrait, then a name that truncates rather than wrapping, with the
+   tag on its own line beneath. Keeps every row the same height on a phone. */
+/* A floor on the name, not zero: the row already wraps, so on a narrow phone the action
+   buttons drop to a second line instead of squeezing the name down to two letters — they
+   wrap as one cluster rather than one button at a time. */
+.nbrow-txt{flex:1 1 108px;min-width:108px;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.nbrow-acts{flex:none;display:flex;align-items:center;gap:4px;margin-left:auto}
+/* 56px, not stretched to the row. Stretch-plus-aspect-ratio looks right until you measure it:
+   the square's height feeds back into the row's, so it pinned to its maximum and pushed every
+   row taller instead of filling one. 56 is what the two text lines and the wrapped buttons come
+   to on a phone, so it fills the row there without inflating it. */
+.nbrow-art{flex:none;line-height:0;display:flex}
+.nbrow-line{display:flex;align-items:center;gap:3px;min-width:0}
+.nbrow-nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nbrow-tag{font-size:11px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3}
 .gs-row{display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--line)}
 .gs-row:last-child{border-bottom:0}
 .verdict.small{font-size:12px;padding:0 6px}
@@ -8498,8 +8513,22 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
       <div key={e.id} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
         <div className="frow" style={{ alignItems: "center" }}>
           <button className="dgn-fold" title={isOpen ? "Collapse" : "Expand"} style={{ marginRight: 2 }} onClick={() => setOpen({ ...open, [e.id]: !isOpen })} disabled={secs.length === 0}>{secs.length === 0 ? "•" : isOpen ? "▾" : "▸"}</button>
-          {rowTab === "npcs" && hasLook(e.look) && <span style={{ flex: "none", marginRight: 4, lineHeight: 0 }}><NpcPortrait look={e.look} size={26} /></span>}
-          <span style={{ flex: 1, minWidth: 0 }}><b>{e.name}</b>{rowTab === "npcs" && sexOf(e.look) && (() => { const sx = sexOf(e.look); return <span title={sx[2]} style={{ color: sx[3], fontSize: 12, marginLeft: 4 }}>{sx[1]}</span>; })()}{e.deceased && <span title="Deceased" style={{ fontSize: 11 }}> ☠️</span>}{e.tag && <span style={{ color: "var(--faint)", fontSize: 11 }}> · {e.tag}</span>}{e.sb ? <span title="Full statblock" style={{ fontSize: 11 }}> {e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11 }}> ⚔️</span> : null}{(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11 }}> 🎒</span>}</span>
+          {rowTab === "npcs" && hasLook(e.look) && <span className="nbrow-art"><NpcPortrait look={e.look} size={56} /></span>}
+          {/* Name, tag and badges used to be one inline run competing with the portrait and four
+              buttons for what little width a phone leaves. It lost: names wrapped a letter or two
+              per line and rows grew to three or four times their natural height. Name on one line
+              that truncates, tag on a second — rows are now a uniform height the portrait fills. */}
+          <span className="nbrow-txt">
+            <span className="nbrow-line">
+              <b className="nbrow-nm" title={e.name}>{e.name}</b>
+              {rowTab === "npcs" && sexOf(e.look) && (() => { const sx = sexOf(e.look); return <span title={sx[2]} style={{ color: sx[3], fontSize: 12, flex: "none" }}>{sx[1]}</span>; })()}
+              {e.deceased && <span title="Deceased" style={{ fontSize: 11, flex: "none" }}>☠️</span>}
+              {e.sb ? <span title="Full statblock" style={{ fontSize: 11, flex: "none" }}>{e.sb.legendary ? "👑" : "⚔️"}</span> : e.stats ? <span title="Has combat stats" style={{ fontSize: 11, flex: "none" }}>⚔️</span> : null}
+              {(e.loot || []).length > 0 && <span title="Carries items" style={{ fontSize: 11, flex: "none" }}>🎒</span>}
+            </span>
+            {e.tag && <span className="nbrow-tag" title={e.tag}>{e.tag}</span>}
+          </span>
+          <span className="nbrow-acts">
           {rowTab === "npcs" && onAddToBoard && (onBoardIds.includes(e.id)
             ? <span className="ad" style={{ fontSize: 11, color: "var(--ok)", flex: "none" }} title="This NPC is already on the encounter board — an entry is one person, so it gets one row. Use ⧉ to make a separate NPC for a twin or a double.">✓ on board</span>
             : <button className="btn small ghost" title="Add this NPC to the encounter board (drops in neutral)" onClick={() => onAddToBoard(e)}>➕</button>)}
@@ -8508,6 +8537,7 @@ function DMNotebookModal({ party, onSave, onClose, partyLevel, onAddToBoard, onB
           {/* deleting the entry also releases its photo, or the stored image would sit there
               eating a share of a 5MB budget with nothing left pointing at it */}
           <button className="btn small ghost warn" title="Delete" onClick={() => setConfirm({ text: `Delete “${e.name}”? This can't be undone.`, onYes: () => { commitTab(rowTab, get(rowTab).filter((x) => x.id !== e.id)); if (e.look && e.look.img) imgDrop(e.look.img); } })}>✕</button>
+          </span>
         </div>
         {isOpen && readSecs(secs)}
       </div>
