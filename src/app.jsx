@@ -235,8 +235,11 @@ input[type=number]{width:64px}
 .osfield.osdmg{border-color:var(--danger);color:var(--danger);-webkit-text-fill-color:var(--danger);caret-color:var(--danger)}
 .osfield.osheal{border-color:#6bbf7a;color:#6bbf7a;-webkit-text-fill-color:#6bbf7a;caret-color:#6bbf7a}
 .dgn-overlay{position:fixed;inset:0;z-index:70;background:var(--ink);display:flex;flex-direction:column}
-.dgn-top{display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
-.dgn-top input.nm{flex:1;min-width:0;font-family:var(--disp);font-size:16px;background:transparent;border:none;color:var(--text);-webkit-text-fill-color:var(--text)}
+/* Close + a name + three controls do not fit one phone line: the name got whatever was left, which
+   was about 90px, and clipped mid-word. Let the bar wrap and hold a floor under the name instead —
+   a control drops to a second line rather than the dungeon becoming unreadable. */
+.dgn-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top,0px)) 12px 8px;border-bottom:1px solid var(--line);background:var(--panel)}
+.dgn-top input.nm{flex:1 1 130px;min-width:120px;font-family:var(--disp);font-size:16px;background:transparent;border:none;color:var(--text);-webkit-text-fill-color:var(--text)}
 .dgn-canvas{flex:1;position:relative;overflow:hidden;touch-action:none;background:radial-gradient(circle at 35% 20%,#191b23,#0c0d11)}
 /* placing a picture of a map under the grid */
 .dgn-mapbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:7px 10px;background:var(--raised);
@@ -1828,14 +1831,41 @@ const tieRank = (c) => {
   if (TIES.mode === "monsters") return c.type === "player" ? 1 : 0;
   return 0; // dex / ask — no side preference; DEX (or a prompt) decides
 };
+/* Search results used to come back in plain alphabetical order, which buries the thing you typed:
+   "fireball" put Delayed Blast Fireball (7th level, 12d6) above Fireball, and "wolf" put Dire Wolf
+   and Giant Wolf Spider above the Wolf. Mid-fight a DM types a name and taps the first row, so an
+   exact match has to be first. Ranks exact → starts-with → starts a word → anywhere, alphabetical
+   within each tier. */
+const matchRank = (name, q) => {
+  const n = String(name || "").toLowerCase(), s = String(q || "").trim().toLowerCase();
+  if (!s) return 4;
+  if (n === s) return 0;
+  if (n.startsWith(s)) return 1;
+  return new RegExp(`\\b${s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(n) ? 2 : 3;
+};
+const byRelevance = (q, nameOf = (x) => x) => (a, b) => {
+  const na = String(nameOf(a) || ""), nb = String(nameOf(b) || "");
+  return matchRank(na, q) - matchRank(nb, q) || na.localeCompare(nb);
+};
+
+/* Where a creature sits in the initiative count. Nothing about being alive or dead comes into it. */
+const initCmp = (a, b) =>
+  ((b.init ?? -999) - (a.init ?? -999)) ||
+  ((a.tb ?? 0) - (b.tb ?? 0)) ||                       // explicit tie order chosen by the DM
+  (tieRank(a) - tieRank(b)) ||                          // players act first on ties (setting, default on)
+  ((b.mods?.dex ?? 0) - (a.mods?.dex ?? 0)) ||          // RAW: higher DEX acts first on ties
+  (sideRank(a) - sideRank(b)) || 0;
+// For the rail: the fallen sink to the bottom, out of the way of the living.
 function sortOrder(list) {
-  return [...list].sort((a, b) =>
-    ((a.dead ? 1 : 0) - (b.dead ? 1 : 0)) ||             // the fallen sink to the bottom of the rail
-    ((b.init ?? -999) - (a.init ?? -999)) ||
-    ((a.tb ?? 0) - (b.tb ?? 0)) ||                       // explicit tie order chosen by the DM
-    (tieRank(a) - tieRank(b)) ||                          // players act first on ties (setting, default on)
-    ((b.mods?.dex ?? 0) - (a.mods?.dex ?? 0)) ||          // RAW: higher DEX acts first on ties
-    (sideRank(a) - sideRank(b)) || 0);
+  return [...list].sort((a, b) => ((a.dead ? 1 : 0) - (b.dead ? 1 : 0)) || initCmp(a, b));
+}
+/* For walking turns — the same order MINUS the sink. Dying must not move a creature, because
+   advanceTurn finds the active one by its index: if a creature that dies on its own turn drops
+   to the bottom of the list, the next step walks off the end, ticks the round over, and skips
+   everyone below it who had not acted yet. advanceTurn steps over the dead as it goes, so they
+   can keep their initiative slot here without being handed a turn. */
+function turnOrder(list) {
+  return [...list].sort(initCmp);
 }
 
 /* Initiative ties that include a player get a DM prompt only when the app can't
@@ -2510,7 +2540,7 @@ const surpriseAutoSkip = (c, state) => !!c.surprised && state.round === 1 && !OL
 function clearSurprise(c, logs) { c.surprised = false; c.reaction = true; if (logs) logs.push(`😴 <b>${c.name}</b>'s surprised turn passes.`); }
 
 function advanceTurn(state, logs, toasts, dir = 1) {
-  const order = sortOrder(state.combatants);
+  const order = turnOrder(state.combatants);
   if (order.length === 0) return;
   let idx = order.findIndex((c) => c.uid === state.activeUid);
   if (idx === -1) idx = 0;
@@ -4162,6 +4192,8 @@ function SpellBook({ onClose, activeC, onConc }) {
     if (lvl != null && lvlOf(s) !== lvl) return false;
     return true;
   });
+  // browsing by letter or level stays alphabetical; a typed name gets the closest match first
+  if (q.trim()) list.sort(byRelevance(q, (k) => SPELL_REF[k].n));
   return (
     <div className="overlay" onClick={onClose}>
       <div className="modal sbook" onClick={(e) => e.stopPropagation()}>
@@ -4846,9 +4878,9 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
         <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "2px 0" }}>Condition</div>
         <div className="pickgrid">
           {Object.keys(CONDITIONS).sort().map((k) => (
-            <span key={k} className={`lvlchip ${name === k ? "on" : ""}`} onClick={() => setName(k)}><CondIcon name={k} />{k}</span>
+            <button type="button" key={k} className={`lvlchip ${name === k ? "on" : ""}`} onClick={() => setName(k)}><CondIcon name={k} />{k}</button>
           ))}
-          <span className={`lvlchip ${name === "__custom" ? "on" : ""}`} onClick={() => setName("__custom")}>Custom…</span>
+          <button type="button" className={`lvlchip ${name === "__custom" ? "on" : ""}`} onClick={() => setName("__custom")}>Custom…</button>
         </div>
         {name === "__custom" && (
           <div className="frow"><label>Name</label><input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} value={custom} onChange={(e) => setCustom(e.target.value)} autoFocus /></div>
@@ -5851,9 +5883,10 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
   const [ioText, setIoText] = useState("");
   const [ioMsg, setIoMsg] = useState("");
   const ql = q.toLowerCase();
-  const mine = (custom || []).filter((b) => b.name.toLowerCase().includes(ql));
+  const nameOfB = (b) => b.name;
+  const mine = (custom || []).filter((b) => b.name.toLowerCase().includes(ql)).sort(byRelevance(ql, nameOfB));
   const all = fullBestiary();
-  const builtIn = all.filter((b) => b.name.toLowerCase().includes(ql));
+  const builtIn = all.filter((b) => b.name.toLowerCase().includes(ql)).sort(byRelevance(ql, nameOfB));
   const [view, setView] = useState("type");
   const biomeNames = Object.keys(ENCOUNTER_POOLS);
   const biomePool = (bio) => new Set((ENCOUNTER_POOLS[bio] || []).concat(expanded && EXPANDED.list.length ? EXPANDED.pools[bio] || [] : []));
@@ -6675,9 +6708,9 @@ function PartyEditModal({ parties, activeId, onSaveAll, onDeleteParty, onLoad, o
         <h3>Edit parties</h3>
         <div className="sbook-lvls" style={{ marginBottom: 8 }}>
           {st.list.map((x, i) => (
-            <span key={x.id} className={`lvlchip ${x.id === st.sel ? "on" : ""}`} onClick={() => setSt((s) => ({ ...s, sel: x.id }))}>{partyLabel(x, i)}</span>
+            <button type="button" key={x.id} className={`lvlchip ${x.id === st.sel ? "on" : ""}`} onClick={() => setSt((s) => ({ ...s, sel: x.id }))}>{partyLabel(x, i)}</button>
           ))}
-          <span className="lvlchip" onClick={addParty} title="Start another party — handy for DMs running more than one table">＋ New party</span>
+          <button type="button" className="lvlchip" onClick={addParty} title="Start another party — handy for DMs running more than one table">＋ New party</button>
         </div>
         <PartyFields rows={d.rows} setRows={(rows) => upd({ rows })} level={d.level} setLevel={(v) => upd({ level: v })} teamName={d.teamName} setTeamName={(v) => upd({ teamName: v })} />
         {liveCount > 0 ? (
@@ -9254,8 +9287,9 @@ function LootGiveModal({ c, customItems = [], compendium, players = [], hasParty
     : tab === "A" ? itemKindOf(it) === "armor"
     : it.rarity === tab;
   const nameHit = (it) => it.n.toLowerCase().includes(q.toLowerCase());
-  const filtered = ITEMS.filter((i) => inCat(i) && nameHit(i));
-  const mineFiltered = customItems.filter((i) => inCat(i) && nameHit(i));
+  const rankItems = (list) => (q.trim() ? [...list].sort(byRelevance(q, (i) => i.n)) : list);
+  const filtered = rankItems(ITEMS.filter((i) => inCat(i) && nameHit(i)));
+  const mineFiltered = rankItems(customItems.filter((i) => inCat(i) && nameHit(i)));
   const addCustomLine = () => {
     const t = custom.trim(); if (!t) return;
     const mine = customItems.find((i) => i.n.toLowerCase() === t.toLowerCase());
@@ -9790,7 +9824,7 @@ function PlayerCastModal({ c, api, fromItem, initialPick, lockPick, onBack, onCl
   const searching = q.trim().length >= 2;
   const browsing = searching || !!letter;
   const matches = searching
-    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort(byName).slice(0, 40)
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase())).sort(byRelevance(q, (k) => SPELL_REF[k].n)).slice(0, 40)
     : letter
     ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toUpperCase().startsWith(letter)).sort(byName)
     : [];
@@ -10158,7 +10192,7 @@ function SpellbookModal({ c, api, onClose }) {
   const [q, setQ] = useState("");
   const have = (c.spells || []).filter((k) => SPELL_REF[k]);
   const matches = q.trim().length >= 2
-    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase()) && !have.includes(k)).sort((a, b) => SPELL_REF[a].n.localeCompare(SPELL_REF[b].n)).slice(0, 30)
+    ? Object.keys(SPELL_REF).filter((k) => SPELL_REF[k].n.toLowerCase().includes(q.trim().toLowerCase()) && !have.includes(k)).sort(byRelevance(q, (k) => SPELL_REF[k].n)).slice(0, 30)
     : [];
   return (
     <div className="overlay" onClick={onClose}>
@@ -12855,6 +12889,20 @@ export default function App() {
   const [clearMenu, setClearMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [mainMore, setMainMore] = useState(false); // the settings-shaped tail of ⋯, expanded in place
+  /* The header menus had nothing behind them: only their own button could put them away, so an
+     open ⋯ sat over most of the board until you found that button again — and it is a tall menu
+     on a phone. Every other layer in the app closes when you tap past it. The row menus already
+     do this with an outside press (see the roster row); this gives the header ones the same,
+     plus Escape. A press on a menu-anchor is left alone — that is the toggle doing its own job. */
+  useEffect(() => {
+    if (!addMenu && !clearMenu && !moreMenu) return undefined;
+    const shut = () => { setAddMenu(false); setClearMenu(false); setMoreMenu(false); setMainMore(false); };
+    const away = (e) => { if (!(e.target instanceof Element) || !e.target.closest(".menu-anchor")) shut(); };
+    const esc = (e) => { if (e.key === "Escape") shut(); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [addMenu, clearMenu, moreMenu]);
   const [restoreBanner, setRestoreBanner] = useState(null);
   /* A failed write is the one error a DM must not miss — the app keeps working and
      silently stops persisting. The banner stays up until some later write succeeds. */
@@ -16044,13 +16092,13 @@ export default function App() {
             </div>
             <div className="pickgrid">
               {[["bite", "🦷 Bite"], ["claw", "🐾 Claw"], ["slam", "💥 Slam"], ["gore", "🐗 Gore"], ["sting", "🦂 Sting"], ["ranged", "🏹 Ranged"], ["hit", "⚔ Any hit"]].map(([k, lbl]) => (
-                <span key={k} className="lvlchip" onClick={() => fireScreenFx(k, 0, true)}>{lbl}</span>
+                <button type="button" key={k} className="lvlchip" onClick={() => fireScreenFx(k, 0, true)}>{lbl}</button>
               ))}
             </div>
             <div className="pickgrid">
               {[["cone", "🔥 Cone", "fire"], ["bolt", "⚡ Bolt", "lightning"], ["burst", "💥 Burst", "fire"], ["cone", "❄ Cone", "cold"], ["burst", "☣ Burst", "acid"],
                 ["missiles", "🌟 Missiles", "force"], ["storm", "🌧 Storm", "cold"], ["beam", "☀ Beam", "radiant"], ["column", "🔆 Column", "fire"], ["wave", "〰 Wave", "thunder"]].map(([k, lbl, ty], i) => (
-                <span key={i} className="lvlchip" onClick={() => fireScreenFx(k, 0, true, DTYPE_COLORS[ty])}>{lbl}</span>
+                <button type="button" key={i} className="lvlchip" onClick={() => fireScreenFx(k, 0, true, DTYPE_COLORS[ty])}>{lbl}</button>
               ))}
             </div>
             <div className="lbl" style={{ fontSize: 11, color: "var(--gold)", margin: "10px 0 4px" }}>Screen recording</div>
