@@ -12996,20 +12996,6 @@ export default function App() {
   const [clearMenu, setClearMenu] = useState(false);
   const [moreMenu, setMoreMenu] = useState(false);
   const [mainMore, setMainMore] = useState(false); // the settings-shaped tail of ⋯, expanded in place
-  /* The header menus had nothing behind them: only their own button could put them away, so an
-     open ⋯ sat over most of the board until you found that button again — and it is a tall menu
-     on a phone. Every other layer in the app closes when you tap past it. The row menus already
-     do this with an outside press (see the roster row); this gives the header ones the same,
-     plus Escape. A press on a menu-anchor is left alone — that is the toggle doing its own job. */
-  useEffect(() => {
-    if (!addMenu && !clearMenu && !moreMenu) return undefined;
-    const shut = () => { setAddMenu(false); setClearMenu(false); setMoreMenu(false); setMainMore(false); };
-    const away = (e) => { if (!(e.target instanceof Element) || !e.target.closest(".menu-anchor")) shut(); };
-    const esc = (e) => { if (e.key === "Escape") shut(); };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
-  }, [addMenu, clearMenu, moreMenu]);
   const [restoreBanner, setRestoreBanner] = useState(null);
   /* A failed write is the one error a DM must not miss — the app keeps working and
      silently stops persisting. The banner stays up until some later write succeeds. */
@@ -13146,6 +13132,24 @@ export default function App() {
     else stDel("dm5e:dungeonPlay");
   }, [dungeonPlayId, dungeonNav]);
   const [tutorial, setTutorial] = useState(null); // guided-tour step index, or null
+  /* The header menus had nothing behind them: only their own button could put them away, so an
+     open ⋯ sat over most of the board until you found that button again — and it is a tall menu
+     on a phone. Every other layer in the app closes when you tap past it. The row menus already
+     do this with an outside press (see the roster row); this gives the header ones the same,
+     plus Escape. A press on a menu-anchor is left alone — that is the toggle doing its own job. */
+  useEffect(() => {
+    if (!addMenu && !clearMenu && !moreMenu) return undefined;
+    /* The guided tour opens these menus itself and spotlights what is inside them, so while it is
+       running it owns them: a press anywhere would otherwise shut the menu the current step is
+       pointing into, and the spotlight would be left aiming at something no longer on screen. */
+    if (tutorial != null) return undefined;
+    const shut = () => { setAddMenu(false); setClearMenu(false); setMoreMenu(false); setMainMore(false); };
+    const away = (e) => { if (!(e.target instanceof Element) || !e.target.closest(".menu-anchor")) shut(); };
+    const esc = (e) => { if (e.key === "Escape") shut(); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [addMenu, clearMenu, moreMenu, tutorial]);
   const tutorialRef = useRef(tutorial); tutorialRef.current = tutorial; // read the live value inside combat closures
   // add the ready-made starter dungeons, with fresh ids (level-exit links remapped to match)
   const addSampleDungeons = () => {
@@ -15850,7 +15854,6 @@ export default function App() {
               <button key="pm" onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>,
               <button key="ties" onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>,
               <button key="ed" onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>,
-              <button key="tut" disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>,
               <button key="lic" onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>,
             ];
             return (
@@ -15866,8 +15869,11 @@ export default function App() {
                   {mainMore ? "▾" : "▸"} More…
                 </button>
                 {mainMore && tail}
-                {/* Old School Mode changes how every roll in the app is made, and a DM who works that
-                    way reaches for it constantly — it stays out here at the foot, one tap deep. */}
+                {/* Two that stay out of the folded tail, at the foot where they are always one tap deep:
+                    the tutorial, which is the first thing a new DM wants and the last place they should
+                    have to go hunting for, and Old School Mode, which changes how every roll in the app
+                    is made and gets reached for constantly by the DMs who work that way. */}
+                <button data-tut="tutorial" disabled={state.mode === "combat"} title={state.mode === "combat" ? "End or clear combat first — both options load their own demo fight." : undefined} onClick={() => setModal({ type: "tutorial-pick" })}>🎓 Tutorial &amp; demo fight…</button>
                 <button data-tut="oldschool" onClick={(e) => { e.stopPropagation(); if (!oldSchool && !oldSchoolIntroSeen) { setMoreMenu(false); setModal({ type: "oldschool-intro" }); } else setOldSchool(!oldSchool); }} title="The app never rolls for monsters — you roll physical dice and it just tracks HP. Monster attacks show as reference, initiative is entered by hand, and each combatant gets quick damage/heal fields.">🕯 Old School Mode{oldSchool ? " ✓" : ""}</button>
               </div>
             );
