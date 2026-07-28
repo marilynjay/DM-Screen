@@ -8419,14 +8419,15 @@ function NpcPortrait({ look, size = 64, frame = true }) {
    about 26 and is read just as fast. The round it happened in sits on the left, because the
    failure mode of any "last X" display is not knowing whether you are looking at now or at
    something three rounds stale. */
-const LastBlood = React.forwardRef(function LastBlood({ hit, round }, ref) {
+// plain prop rather than forwardRef: it is our own component, and the smoke harness stubs React
+function LastBlood({ hit, round, dockRef }) {
   const heal = hit.kind === "heal";
   const one = hit.hits.length === 1 ? hit.hits[0] : null;
   const total = hit.hits.reduce((n, h) => n + h.amt, 0);
   const downs = hit.hits.filter((h) => h.dropped).length;
   const stale = round - hit.round;
   return (
-    <div className="lastblood-dock" ref={ref}>
+    <div className="lastblood-dock" ref={dockRef}>
     <div className={`lastblood ${heal ? "heal" : ""}`} key={hit.id} role="status" aria-live="polite"
       title={heal ? "The most recent healing" : "The most recent damage — who hit whom, for how much, and where it left them"}>
       <span className="lb-tag">{heal ? "LAST HEAL" : "LAST BLOOD"}</span>
@@ -8448,7 +8449,7 @@ const LastBlood = React.forwardRef(function LastBlood({ hit, round }, ref) {
     </div>
     </div>
   );
-});
+}
 
 /* swatch + chip helpers for the appearance builder. Every colour row ends in a "+" that
    opens the device colour picker — the palettes are a shortcut, not the limit, and a DM
@@ -15874,7 +15875,7 @@ export default function App() {
         </span>
       </div>
 
-      {lastBlood && state.mode === "combat" && state.lastHit && <LastBlood ref={lbRef} hit={state.lastHit} round={state.round} />}
+      {lastBlood && state.mode === "combat" && state.lastHit && <LastBlood dockRef={lbRef} hit={state.lastHit} round={state.round} />}
 
       {restoreBanner && (
         <div className="main" style={{ paddingBottom: 0 }}>
