@@ -544,7 +544,7 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .rail{background:var(--panel);border-bottom:1px solid var(--line)}
 .rail.collapsed{display:none}
 .railbar{display:flex;align-items:center;gap:8px;padding:4px 14px;background:var(--panel);
-  border-bottom:1px solid var(--line);position:sticky;top:49px;z-index:31;font-size:12px;color:var(--dim)}
+  border-bottom:1px solid var(--line);position:sticky;top:calc(49px + var(--lb-h,0px));z-index:31;font-size:12px;color:var(--dim)}
 .row{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:2px 10px 3px;border-bottom:1px solid var(--line);
   min-height:0}
 .rline{display:flex;align-items:center;gap:6px;min-width:0}
@@ -736,6 +736,29 @@ input.sbook-search,textarea.sbook-search,select.sbook-search{color:var(--text) !
 .pips{display:flex;gap:2px;align-items:center;flex-shrink:0;font-size:10px;color:var(--dim)}
 .pip{width:8px;height:8px;transform:rotate(45deg);border:1px solid var(--gold);cursor:pointer}
 .pip.full{background:var(--gold)}
+/* Last Blood — a single line under the header, in the same place every time so it can be read
+   without looking for it. Ringed and lettered in red for damage, green when the last thing that
+   happened was healing (a stale hit still labelled "last" would be a lie).
+
+   It rides in the sticky stack with the header: left in normal flow it scrolled away the moment
+   the roster moved, which is exactly when a DM looking up from the dice needs it. The dock is the
+   sticky, opaque part so the roster cannot show through the gap either side of the pill, and the
+   rail below is pushed down by the dock's measured height. */
+.lastblood-dock{position:sticky;top:49px;z-index:33;background:var(--ink);padding:5px 10px;border-bottom:1px solid var(--line)}
+.lastblood{display:flex;align-items:center;gap:8px;padding:4px 9px;
+  border:1px solid var(--bad,#c2453c);border-radius:8px;
+  background:linear-gradient(rgba(194,69,60,.12),rgba(194,69,60,.12)),var(--ink);
+  color:#e8776c;font-size:12.5px;line-height:1.35;animation:lbin .28s ease both}
+.lastblood.heal{border-color:#3f9a4e;background:linear-gradient(rgba(63,154,78,.12),rgba(63,154,78,.12)),var(--ink);color:#7fc98b}
+@keyframes lbin{0%{opacity:0;transform:translateY(-3px)}100%{opacity:1;transform:none}}
+.lb-tag{flex:none;font-size:9.5px;letter-spacing:.11em;font-weight:700;opacity:.85}
+.lb-body{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb-body b{color:inherit}
+.lb-amt{font-weight:700;font-variant-numeric:tabular-nums}
+.lb-hp{opacity:.72;font-variant-numeric:tabular-nums}
+.lb-flag{margin-left:6px;font-size:9.5px;font-weight:700;letter-spacing:.06em;border:1px solid currentColor;border-radius:4px;padding:0 3px}
+.lb-flag.up{color:#7fc98b}
+.lb-when{flex:none;font-size:10px;opacity:.6;font-variant-numeric:tabular-nums}
 .menu-anchor{position:relative;flex-shrink:0;margin-left:auto}
 .menu{position:absolute;right:0;top:24px;background:var(--raised);border:1px solid var(--line2);
   border-radius:8px;min-width:170px;z-index:60;box-shadow:0 8px 24px rgba(0,0,0,.5);
@@ -2050,7 +2073,54 @@ function grantTempHp(c, amt, logs) {
   }
 }
 
+/* ── Last Blood ──────────────────────────────────────────────────────────────
+   The roster row flashes a "−7" next to the HP, but it is an animation on a 1.5s timer, and the
+   log sits collapsed. Look down to roll dice and by the time you look up there is nothing on
+   screen saying what just happened. So every hit is recorded here.
+
+   Everything that deals damage or healing goes through applyDamage/applyHeal — the damage dialog,
+   spell resolution, group saves, burning at turn start, monster attacks, items — so wrapping those
+   two is the one place that sees them all, and a damage path added later is covered without anyone
+   remembering to feed it. mutate() drains the sink, which also means the record is part of the
+   undoable state: ↩ rewinds the readout along with the hit points. */
+const HIT_SINK = [];
 function applyDamage(c, amt, dtype, logs, toasts) {
+  const hp0 = c.hp, dead0 = !!c.dead, out0 = !!c.unconscious;
+  applyDamageCore(c, amt, dtype, logs, toasts);
+  HIT_SINK.push({
+    uid: c.uid, name: c.name, kind: "dmg", dtype: dtype || null,
+    // what the DM is tracking is hit points gone; the raw roll is kept for the case where a temp-HP
+    // shell ate all of it and "0 lost" alone would read as if nothing happened
+    amt: hp0 == null ? amt : Math.max(0, hp0 - c.hp), raw: amt,
+    hp: c.hp, maxHp: c.maxHp,
+    dropped: (!!c.dead && !dead0) || (!!c.unconscious && !out0), dead: !!c.dead && !dead0,
+  });
+}
+function applyHeal(c, amt, logs) {
+  const hp0 = c.hp, up0 = !(c.dead || c.unconscious);
+  applyHealCore(c, amt, logs);
+  HIT_SINK.push({
+    uid: c.uid, name: c.name, kind: "heal",
+    amt: hp0 == null ? amt : Math.max(0, c.hp - hp0), raw: amt,
+    hp: c.hp, maxHp: c.maxHp,
+    revived: !up0 && !(c.dead || c.unconscious),
+  });
+}
+/* One mutate is one event: a fireball across four creatures reads as a single line rather than
+   four flickering past too fast to catch. */
+function summariseHits(hits, draft) {
+  const real = hits.filter((h) => h.amt > 0 || h.raw > 0);
+  if (!real.length) return null;
+  const src = draft.combatants.find((x) => x.uid === draft.activeUid);
+  // no arrow when whatever is acting is also what got hit (burning at turn start, a failed save)
+  const by = src && !(real.length === 1 && real[0].uid === src.uid) ? src.name : null;
+  return {
+    id: Math.random(), round: draft.round, by,
+    kind: real.every((h) => h.kind === "heal") ? "heal" : "dmg",
+    hits: real.map((h) => ({ name: h.name, amt: h.amt, raw: h.raw, hp: h.hp, maxHp: h.maxHp, dropped: !!h.dropped, dead: !!h.dead, revived: !!h.revived })),
+  };
+}
+function applyDamageCore(c, amt, dtype, logs, toasts) {
   if (c.type === "player" && c.hp == null) {
     logs.push(`${amt}${dtype ? " " + dtype : ""} → <b>${c.name}</b> — players track their own HP.`);
     if (c.concentration) {
@@ -2113,7 +2183,7 @@ function applyDamage(c, amt, dtype, logs, toasts) {
   }
 }
 
-function applyHeal(c, amt, logs) {
+function applyHealCore(c, amt, logs) {
   if (c.type === "player" && c.hp == null) { logs.push(`${amt} healing → <b>${c.name}</b> — players track their own HP.`); return; }
   const before = c.hp;
   c.hp = Math.min(c.maxHp, c.hp + amt);
@@ -8344,6 +8414,42 @@ function NpcPortrait({ look, size = 64, frame = true }) {
   );
 }
 
+/* The Last Blood readout: one line, fixed spot, so a glance answers "what did I just miss?"
+   without expanding the log. A box with a heading would eat 60-70px of a phone; a line costs
+   about 26 and is read just as fast. The round it happened in sits on the left, because the
+   failure mode of any "last X" display is not knowing whether you are looking at now or at
+   something three rounds stale. */
+const LastBlood = React.forwardRef(function LastBlood({ hit, round }, ref) {
+  const heal = hit.kind === "heal";
+  const one = hit.hits.length === 1 ? hit.hits[0] : null;
+  const total = hit.hits.reduce((n, h) => n + h.amt, 0);
+  const downs = hit.hits.filter((h) => h.dropped).length;
+  const stale = round - hit.round;
+  return (
+    <div className="lastblood-dock" ref={ref}>
+    <div className={`lastblood ${heal ? "heal" : ""}`} key={hit.id} role="status" aria-live="polite"
+      title={heal ? "The most recent healing" : "The most recent damage — who hit whom, for how much, and where it left them"}>
+      <span className="lb-tag">{heal ? "LAST HEAL" : "LAST BLOOD"}</span>
+      <span className="lb-body">
+        {hit.by && <><b>{hit.by}</b> → </>}
+        {one ? (<>
+          <b>{one.name}</b> <span className="lb-amt">{heal ? "+" : "−"}{one.amt || one.raw}</span>
+          {one.maxHp != null && one.hp != null && <span className="lb-hp"> {one.hp}/{one.maxHp}</span>}
+          {one.dead && <span className="lb-flag">DEAD</span>}
+          {one.dropped && !one.dead && <span className="lb-flag">DOWN</span>}
+          {one.revived && <span className="lb-flag up">UP</span>}
+        </>) : (<>
+          <b>{hit.hits.length} hit</b> <span className="lb-amt">{heal ? "+" : "−"}{total}</span>
+          <span className="lb-hp"> total</span>
+          {downs > 0 && <span className="lb-flag">{downs} DOWN</span>}
+        </>)}
+      </span>
+      <span className="lb-when" title={`Happened in round ${hit.round}`}>{stale > 0 ? `R${hit.round}` : "now"}</span>
+    </div>
+    </div>
+  );
+});
+
 /* swatch + chip helpers for the appearance builder. Every colour row ends in a "+" that
    opens the device colour picker — the palettes are a shortcut, not the limit, and a DM
    matching a specific character shouldn't have to settle for the nearest chip. */
@@ -12934,6 +13040,12 @@ export default function App() {
   const setDmgFxAll = (v) => { setDmgFxAllState(v); stSet("dm5e:dmgFxAll", v ? 1 : 0); };
   const [dmgSfx, setDmgSfxState] = useState(true);
   const setDmgSfx = (v) => { setDmgSfxState(v); stSet("dm5e:dmgSfx", v ? 1 : 0); };
+  /* On by default: the DM who needs this is the one who does not know to go looking for a switch.
+     Anyone tracking every roll themselves will find it soon enough and turn it off. */
+  const [lastBlood, setLastBloodState] = useState(true);
+  const setLastBlood = (v) => { setLastBloodState(v); stSet("dm5e:lastBlood", v ? 1 : 0); };
+  const lbRef = useRef(null);
+  const [lbH, setLbH] = useState(0);
   const [spellSfx, setSpellSfxState] = useState(true);
   const setSpellSfx = (v) => { setSpellSfxState(v); stSet("dm5e:spellSfx", v ? 1 : 0); };
   const [screenFx, setScreenFx] = useState(null);
@@ -12994,6 +13106,13 @@ export default function App() {
                  : "calc(92px + env(safe-area-inset-bottom, 0px))") // clears the fixed bottom turn bar
     : "calc(24px + env(safe-area-inset-bottom, 0px))";
   TIES.mode = tieMode;
+  /* The rail sticks directly under Last Blood, so it needs the dock's real height — measured, not
+     assumed, because a long name can wrap the line and a hardcoded offset would leave a gap or
+     overlap. Zero when the bar is not showing, which puts the rail back against the header. */
+  useEffect(() => {
+    const h = lbRef.current ? lbRef.current.offsetHeight : 0;
+    setLbH((prev) => (prev === h ? prev : h));
+  });
   FX.on = dmgFx;
   FX.all = dmgFxAll;
   SFX.on = dmgSfx;
@@ -13338,7 +13457,12 @@ export default function App() {
     setState((prev) => {
       const draft = structuredClone(prev);
       const logs = [], tst = [];
+      HIT_SINK.length = 0;
       fn(draft, logs, tst);
+      // Last Blood: whatever this one action did to hit points, as a single readout
+      const hit = summariseHits(HIT_SINK, draft);
+      HIT_SINK.length = 0;
+      if (hit) draft.lastHit = hit;
       // strip any condition a creature is immune to — a static immunity (undead vs Poisoned, etc.) or one
       // granted by another condition (Petrified → Poisoned). Catches conditions from any source: spell,
       // attack rider, or manual, so immunities are always honored.
@@ -13403,6 +13527,8 @@ export default function App() {
       if (dfxa != null) setDmgFxAllState(!!dfxa); // mixed-type sequence default ON
       const dsx = await stGet("dm5e:dmgSfx");
       if (dsx != null) setDmgSfxState(!!dsx); // whole-screen attack effects default ON
+      const lbd = await stGet("dm5e:lastBlood");
+      if (lbd != null) setLastBloodState(!!lbd); // Last Blood readout default ON
       const spx = await stGet("dm5e:spellSfx");
       if (spx != null) setSpellSfxState(!!spx); // whole-screen spell/breath effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
@@ -14601,7 +14727,7 @@ export default function App() {
   const loadPlaytest = (enc) => {
     setModal(null);
     mutate((d, L) => {
-      d.combatants = []; d.log = []; d.mode = "setup"; d.round = 0; d.activeUid = null;
+      d.combatants = []; d.log = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.lastHit = null;
       L.push(`— 🧪 Playtest: <b>${enc.name}</b> —`);
     });
     if (enc.special) { addPlaytest(); pushToasts([{ kind: "good", text: `Playtest loaded: ${enc.name}` }]); return; }
@@ -14733,7 +14859,7 @@ export default function App() {
 
   const reallyStart = () => mutate((d, L, T) => {
     if (d.combatants.length === 0) return;
-    d.mode = "combat"; d.round = 1;
+    d.mode = "combat"; d.round = 1; d.lastHit = null;
     const ordered = sortOrder(d.combatants).filter((c) => !c.dead && c.type !== "object");
     let fi = 0;
     // surprised creatures (2014, non-Old-School) at the top of the order lose their first turn
@@ -14824,7 +14950,7 @@ export default function App() {
         c.reaction = true; c.surprised = false; c.acBoost = 0; c.atkUsed = 0; c.atkUsedBy = {}; c.atkGrant = 0; c.advMode = "none"; c.advVs = "none";
       });
       d.combatants = kept;
-      d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null;
+      d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null; d.lastHit = null;
       L.push(`— <b>Combat ends.</b> The party presses on${kept.some((c) => c.unconscious) ? " (someone's being carried…)" : ""}. —`);
     });
   };
@@ -14872,10 +14998,10 @@ export default function App() {
           fresh.baseName = c.baseName;
           return fresh;
         });
-        d.mode = "setup"; d.round = 0; d.activeUid = null; d.log = [];
+        d.mode = "setup"; d.round = 0; d.activeUid = null; d.log = []; d.lastHit = null;
         L.push("Combat reset — monsters kept with fresh HP and rerolled initiative.");
       } else {
-        d.combatants = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.log = [];
+        d.combatants = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.log = []; d.lastHit = null;
         L.push("Combat cleared.");
       }
     });
@@ -15203,7 +15329,7 @@ export default function App() {
   const loadTutorialSandbox = () => {
     setModal(null);
     mutate((d, L) => {
-      d.combatants = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null; d.log = [];
+      d.combatants = []; d.mode = "setup"; d.round = 0; d.activeUid = null; d.startSnap = null; d.log = []; d.lastHit = null;
       TUT_HEROES.forEach((h) => d.combatants.push(makePlayer(h)));
       const gsb = fullBestiary().find((b) => b.name === TUT_MONSTER);
       if (gsb) for (let i = 0; i < TUT_MONSTER_N; i++) d.combatants.push(makeMonster(gsb, d, { side: "enemy" }));
@@ -15571,7 +15697,7 @@ export default function App() {
   /* ================= render ================= */
   if (pmOn) return <PlayerModeBoard onExit={() => setPmOn(false)} />;
   return (
-    <div className="dm-app" style={{ paddingBottom: botPad }}>
+    <div className="dm-app" style={{ paddingBottom: botPad, "--lb-h": `${lbH}px` }}>
       <style>{CSS}</style>
       <Toasts toasts={toasts} />
       {storeTrouble && (
@@ -15716,6 +15842,9 @@ export default function App() {
             ].filter(Boolean);
             const tail = [
               <button key="log" onClick={toggleLog}>{showLog ? "Hide log" : "Show log"}</button>,
+              <button key="lastblood" onClick={() => setLastBlood(!lastBlood)}
+                title="A line under the header showing what the last hit did — who hit whom, for how much, and where it left them. For when you look up from the dice and the row's flash has already gone.">
+                🩸 Last Blood{lastBlood ? " \u2713" : ""}</button>,
               <button key="anim" onClick={() => setModal({ type: "anim" })}>🎲 Dice &amp; animations…</button>,
               <button key="pm" onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>,
               <button key="ties" onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>,
@@ -15744,6 +15873,8 @@ export default function App() {
           })()}
         </span>
       </div>
+
+      {lastBlood && state.mode === "combat" && state.lastHit && <LastBlood ref={lbRef} hit={state.lastHit} round={state.round} />}
 
       {restoreBanner && (
         <div className="main" style={{ paddingBottom: 0 }}>
