@@ -2020,7 +2020,22 @@ const dmgPartsText = (parts, target) => {
 };
 
 /* death saving throws (2024 rules) — kind: success | fail | crit | nat20 | stabilize | reset */
+/* ── How many death saves does this one get? ──────────────────────────────────
+   Players get the three-and-three of the rules. NPCs mostly should not: a hired torchbearer is
+   not a main character, and the app used to hand every ally and neutral the full PC track. The
+   number is symmetric — N failures kills, N successes stabilises — so 1 means the very next roll
+   settles it either way, and 0 means they simply die at 0 HP with no dying state at all.
+   null means nobody has said yet, and the DM is asked once when they drop. */
+const NPCDS = { def: "ask" }; // campaign default for NPCs: "ask" | 0 | 1 | 2 | 3; App assigns from the setting
+const dsNum = (v) => (v === 0 || v === "0" ? 0 : [1, 2, 3, "1", "2", "3"].includes(v) ? Number(v) : null);
+function dsMaxOf(c) {
+  if (!c) return 3;
+  if (c.type === "player") return 3;                 // the rules, for the people the rules are about
+  const own = dsNum(c.dsMax);
+  return own == null ? dsNum(NPCDS.def) : own;       // null = still unresolved, so ask
+}
 function applyDeathSave(c, kind, logs, toasts) {
+  const need = Math.max(1, dsMaxOf(c) ?? 3);         // 0 never reaches here — they die at 0 HP
   c.ds = c.ds || { s: 0, f: 0 };
   if (kind === "reset") { c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> death saves reset.`); return; }
   if (kind === "stabilize") { c.stable = true; c.ds = { s: 0, f: 0 }; logs.push(`<b>${c.name}</b> is <b>stable</b> (unconscious at 0 HP, no more death saves).`); toasts.push({ kind: "good", text: `${c.name} is stable.` }); return; }
@@ -2032,16 +2047,16 @@ function applyDeathSave(c, kind, logs, toasts) {
   }
   if (kind === "success") {
     c.ds.s += 1;
-    if (c.ds.s >= 3) { c.stable = true; c.ds = { s: 0, f: 0 }; logs.push(`<b>${c.name}</b>: 3 successes — <b>stable</b>.`); toasts.push({ kind: "good", text: `${c.name} is stable.` }); }
+    if (c.ds.s >= need) { c.stable = true; c.ds = { s: 0, f: 0 }; logs.push(`<b>${c.name}</b>: ${need} success${need === 1 ? "" : "es"} — <b>stable</b>.`); toasts.push({ kind: "good", text: `${c.name} is stable.` }); }
     else logs.push(`<b>${c.name}</b> death save success (${c.ds.s}✓ ${c.ds.f}✗).`);
     return;
   }
   const n = kind === "crit" ? 2 : 1;
   c.stable = false;
   c.ds.f += n;
-  if (c.ds.f >= 3) {
+  if (c.ds.f >= need) {
     c.dead = true;
-    logs.push(`<b>${c.name}</b>: 3 death save failures — <b>dies</b>.`);
+    logs.push(`<b>${c.name}</b>: ${need} death save failure${need === 1 ? "" : "s"} — <b>dies</b>.`);
     toasts.push({ kind: "bad", text: `${c.name} has died.` });
   } else logs.push(`<b>${c.name}</b> death save failure${n === 2 ? " ×2 (crit)" : ""} (${c.ds.s}✓ ${c.ds.f}✗).`);
 }
@@ -2165,7 +2180,22 @@ function applyDamageCore(c, amt, dtype, logs, toasts) {
       logs.push(`<b>${c.name}</b> — <b>massive damage</b> (${through - before} past 0 ≥ ${c.maxHp} max HP): <b>dies instantly</b>, no death saves.`);
       toasts.push({ kind: "bad", text: `${c.name} — massive damage, dies instantly!` });
     }
-    else { c.unconscious = true; c.concentration = null; c.ds = { s: 0, f: 0 }; c.stable = false; logs.push(`<b>${c.name}</b> falls unconscious.`); toasts.push({ kind: "bad", text: `${c.name} is unconscious — death saves!` }); }
+    else {
+      /* Allies and neutrals used to fall straight into the PC death-save track. How many saves
+         they get is the DM's call: 0 dies here and now, like the enemy side above. */
+      const need = dsMaxOf(c);
+      if (need === 0) {
+        c.dead = true; c.thp = 0; c.concentration = null; c.unconscious = false; c.ds = { s: 0, f: 0 }; c.stable = false;
+        logs.push(`<b>${c.name}</b> drops to 0 and <b>dies</b> — no death saves.`);
+        toasts.push({ kind: "bad", text: `${c.name} is dead.` });
+        return;
+      }
+      c.unconscious = true; c.concentration = null; c.ds = { s: 0, f: 0 }; c.stable = false;
+      // nobody has said how many this one gets — flag it and the board asks once, for everyone who fell
+      if (need == null) c.dsAsk = true;
+      logs.push(`<b>${c.name}</b> falls unconscious.`);
+      toasts.push({ kind: "bad", text: `${c.name} is unconscious — death saves!` });
+    }
     return;
   }
   if (finalDmg > 0 && c.concentration) {
@@ -4979,24 +5009,64 @@ function ConditionModal({ state, presetUid, onAdd, onClose }) {
   );
 }
 
+/* Asked once, the first time an NPC with no answer on file drops. Batched on purpose: a fireball
+   that puts three of them down should not ask three times. Whatever is chosen is written back onto
+   the NPC and onto its notebook entry, so these particular characters never ask again. */
+function NpcDeathSavesModal({ names, onPick, onAlways }) {
+  const many = names.length > 1;
+  const [always, setAlways] = useState(false);
+  const choose = (n) => { if (always) onAlways(n); onPick(n); };
+  return (
+    <div className="overlay">
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>💀 {many ? `${names.length} NPCs are down` : `${names[0]} is down`}</h3>
+        <div className="trait" style={{ margin: "6px 0 10px" }}>
+          How many death saves {many ? "do they" : "does this one"} get? The number works both ways — that many
+          failures {many ? "kill them" : "kills them"}, that many successes {many ? "stabilise them" : "stabilises them"}.
+          {many && <><br /><span style={{ color: "var(--faint)" }}>{names.join(", ")}</span></>}
+        </div>
+        <div className="pick">
+          <button className="btn" onClick={() => choose(0)}>0 — dies now</button>
+          <button className="btn" onClick={() => choose(1)}>1 — one roll decides</button>
+          <button className="btn" onClick={() => choose(2)}>2</button>
+          <button className="btn primary" onClick={() => choose(3)}>3 — like a player</button>
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 10, fontSize: 12 }}>
+          <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} />
+          Use this for every NPC from now on — stop asking
+        </label>
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>
+          Either way this is remembered on {many ? "these NPCs" : "this NPC"}, so you won't be asked about {many ? "them" : "them"} again.
+          Set it up front on any NPC under ⚔️ combat stats.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DeathSavesModal({ c, onRecord, onClose }) {
   // this modal auto-opens under the DM's Next tap — swallow tap echoes for the
   // first beat so a bounced tap can't record a result (or dismiss) by accident
   const openedAt = useRef(Date.now());
   const armed = () => Date.now() - openedAt.current > 300;
   const record = (kind) => { if (armed()) onRecord(kind); };
+  const need = Math.max(1, dsMaxOf(c) ?? 3);
   return (
     <div className="overlay" onClick={() => { if (armed()) onClose(); }}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h3>Death saves — {c.name}</h3>
+        {/* Pips count to however many this one gets, not always three — an NPC on 1 shows one box. */}
         <div className="statline" style={{ fontSize: 14 }}>
           {c.stable ? <b>Stable</b> : (<>
-            Successes: <b>{"●".repeat(c.ds?.s ?? 0)}{"○".repeat(3 - (c.ds?.s ?? 0))}</b> ·
-            Failures: <b style={{ color: "var(--danger)" }}> {"●".repeat(c.ds?.f ?? 0)}{"○".repeat(3 - (c.ds?.f ?? 0))}</b>
+            Successes: <b>{"●".repeat(Math.min(need, c.ds?.s ?? 0))}{"○".repeat(Math.max(0, need - (c.ds?.s ?? 0)))}</b> ·
+            Failures: <b style={{ color: "var(--danger)" }}> {"●".repeat(Math.min(need, c.ds?.f ?? 0))}{"○".repeat(Math.max(0, need - (c.ds?.f ?? 0)))}</b>
           </>)}
         </div>
         <div className="trait" style={{ marginBottom: 10 }}>
-          Player rolls a d20: 10+ is a success, 9 or less a failure. Nat 1 = two failures. Nat 20 = back up with 1 HP. Three successes = stable; three failures = death. Damage while down = one failure (two if it was a crit).
+          Rolls a d20: 10+ is a success, 9 or less a failure. Nat 1 = two failures. Nat 20 = back up with 1 HP.
+          {need === 3 ? " Three successes = stable; three failures = death." : ` ${need} success${need === 1 ? "" : "es"} = stable; ${need} failure${need === 1 ? "" : "s"} = death.`}
+          {" "}Damage while down = one failure (two if it was a crit).
+          {need !== 3 && <span style={{ color: "var(--faint)" }}> {c.name} is set to {need}.</span>}
         </div>
         <div className="pick">
           <button className="btn" onClick={() => record("success")}>✓ Success</button>
@@ -5249,8 +5319,8 @@ const NPC_PRESETS = [
   { key: "mage", name: "Mage", icon: "🔮", spd: "30 ft", ac: [12, 13, 15, 15], hp: [22, 40, 67, 99], atk: "Staff", dt: "bludgeoning", hit: [2, 4, 6, 8], dmg: ["1d6", "1d6+2", "2d6+3", "3d6+4"], mods: { str: -1, dex: 2, con: 1, int: 3, wis: 1, cha: 0 } },
   { key: "spy", name: "Spy", icon: "🕵️", spd: "30 ft", ac: [12, 13, 14, 15], hp: [27, 45, 71, 99], atk: "Shortsword", dt: "piercing", hit: [4, 6, 8, 10], dmg: ["1d6+2", "2d6+3", "3d6+4", "4d6+5"], mods: { str: 0, dex: 3, con: 1, int: 1, wis: 1, cha: 2 } },
 ];
-const blankNpcStats = () => ({ ac: 12, hp: 10, spd: "30 ft", atkN: 1, mods: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, attacks: [{ n: "", hit: 3, dmg: "1d6+1", dtype: "bludgeoning" }] });
-const presetToStats = (p, t) => ({ ac: p.ac[t], hp: p.hp[t], spd: p.spd, atkN: 1, mods: { ...p.mods }, attacks: [{ n: p.atk, hit: p.hit[t], dmg: p.dmg[t], dtype: p.dt }] });
+const blankNpcStats = () => ({ ac: 12, hp: 10, spd: "30 ft", ds: null, atkN: 1, mods: { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 }, attacks: [{ n: "", hit: 3, dmg: "1d6+1", dtype: "bludgeoning" }] });
+const presetToStats = (p, t) => ({ ac: p.ac[t], hp: p.hp[t], spd: p.spd, ds: null, atkN: 1, mods: { ...p.mods }, attacks: [{ n: p.atk, hit: p.hit[t], dmg: p.dmg[t], dtype: p.dt }] });
 // Build a monster-shaped statblock from an NPC so the existing combat engine can run it.
 // A monster-backed NPC (npc.sb — e.g. a dragon saved as a duke) keeps its full statblock,
 // legendary/lair actions and all; otherwise we assemble a light block from the stats panel.
@@ -8805,6 +8875,18 @@ function NpcStatsPanel({ stats, onChange, onRemove, partyLevel }) {
         <label style={{ minWidth: 0 }}>AC</label><input type="number" style={{ width: 60 }} value={stats.ac} onChange={(e) => set("ac", e.target.value)} />
         <label style={{ minWidth: 0 }}>HP</label><input type="number" style={{ width: 66 }} value={stats.hp} onChange={(e) => set("hp", e.target.value)} />
         <label style={{ minWidth: 0 }}>Speed</label><input type="text" style={{ width: 70 }} value={stats.spd} onChange={(e) => set("spd", e.target.value)} />
+      </div>
+      {/* Death saves are a property of the character, not of the fight: a sworn companion is worth
+          three, a hired torchbearer usually none. Left unset, the DM is asked once when they drop. */}
+      <div className="frow" style={{ flexWrap: "wrap", marginTop: 4 }}>
+        <label style={{ minWidth: 0 }} title="How many death saves this NPC gets at 0 HP. The number works both ways — that many failures kills, that many successes stabilises.">Death saves</label>
+        <select style={{ width: 148 }} value={stats.ds == null ? "" : String(stats.ds)} onChange={(e) => set("ds", e.target.value === "" ? null : Number(e.target.value))}>
+          <option value="">Ask me when they drop</option>
+          <option value="0">0 — dies at 0 HP</option>
+          <option value="1">1 — one roll decides</option>
+          <option value="2">2</option>
+          <option value="3">3 — like a player</option>
+        </select>
       </div>
       <div className="lbl" style={{ fontSize: 11, color: "var(--faint)", margin: "8px 0 2px" }}>Attacks</div>
       {stats.attacks.map((a, i) => (
@@ -13031,6 +13113,12 @@ export default function App() {
      Anyone tracking every roll themselves will find it soon enough and turn it off. */
   const [lastBlood, setLastBloodState] = useState(true);
   const setLastBlood = (v) => { setLastBloodState(v); stSet("dm5e:lastBlood", v ? 1 : 0); };
+  /* What an NPC gets when nobody has said. "ask" prompts once the first time one drops and then
+     remembers the answer on that NPC; a DM who always wants the same thing sets it here instead
+     and is never asked. */
+  const [npcDS, setNpcDSState] = useState("ask");
+  const setNpcDS = (v) => { setNpcDSState(v); stSet("dm5e:npcDeathSaves", String(v)); };
+  NPCDS.def = npcDS;
   const lbRef = useRef(null);
   const [lbH, setLbH] = useState(0);
   const [spellSfx, setSpellSfxState] = useState(true);
@@ -13116,6 +13204,8 @@ export default function App() {
      whole new NPC, and dropped it on Save. Both sides go through this now. */
   const activePartyIdEff = resolvePartyId(parties, activePartyId);
   const activeRoster = parties.find((p) => p.id === activePartyIdEff) || null;
+  // whoever fell without an answer on file; drives the one-and-only prompt
+  const dsAskList = state.combatants.filter((c) => c.dsAsk && c.unconscious && !c.dead);
   // the same resolution from inside a callback, where partiesRef is fresher than the render's copy
   const livePartyId = () => resolvePartyId(partiesRef.current, activePartyId);
   const [dungeons, setDungeonsState] = useState([]); // saved dungeons (hex-grid maps of rooms)
@@ -13534,6 +13624,8 @@ export default function App() {
       if (dsx != null) setDmgSfxState(!!dsx); // whole-screen attack effects default ON
       const lbd = await stGet("dm5e:lastBlood");
       if (lbd != null) setLastBloodState(!!lbd); // Last Blood readout default ON
+      const nds = await stGet("dm5e:npcDeathSaves");
+      if (nds != null && ["ask", "0", "1", "2", "3"].includes(String(nds))) setNpcDSState(String(nds));
       const spx = await stGet("dm5e:spellSfx");
       if (spx != null) setSpellSfxState(!!spx); // whole-screen spell/breath effects default ON
       setShowTouchesState(!!(await stGet("dm5e:showTouches")));
@@ -14450,6 +14542,8 @@ export default function App() {
       mutate((d, L, T) => {
         const c = makeMonster(npcToSb(npc), d, { side, name: npc.name });
         c.npc = true; c.npcTag = npc.tag || ""; c.npcId = npc.id;
+        c.dsMax = dsNum(npc.stats?.ds);   // null when unset, which makes the board ask once
+
         if (Array.isArray(npc.loot)) c.loot = JSON.parse(JSON.stringify(npc.loot)); // seed the persistent bag
         if (npc.deceased) { c.dead = true; c.hp = 0; } // stays dead until the DM revives it here
         d.combatants.push(c);
@@ -15715,7 +15809,10 @@ export default function App() {
       )}
       <GhostRows rows={ghostRows} combatants={state.combatants} holds={hpHoldsRef.current} fxs={rowFxs} api={api} />
       {screenFx && <ScreenFx key={screenFx.id} kind={screenFx.kind} color={screenFx.color} />}
-      {victory && (
+      {/* The flourish is z-index 190, well above every dialog, so it would bury a question the DM
+          still has to answer — and the last enemy falling in the same blast that drops two allies
+          is exactly when that happens. Hold it until they have said who lives. */}
+      {victory && dsAskList.length === 0 && (
         <div className={`vic-overlay ${victory.out ? "out" : ""}`} key={victory.id} onClick={dismissVictory}>
           <div className="vic-inner">
             <div className="vic-row">
@@ -15853,6 +15950,7 @@ export default function App() {
               <button key="anim" onClick={() => setModal({ type: "anim" })}>🎲 Dice &amp; animations…</button>,
               <button key="pm" onClick={() => { setMoreMenu(false); setPmOn(true); }} title="A stripped, player-facing board: track your party's HP and log damage onto simple enemies without seeing any monster stats.">🙂 Player Mode…</button>,
               <button key="ties" onClick={() => setModal({ type: "init-ties-settings" })}>⚑ Initiative ties…</button>,
+              <button key="npcds" onClick={() => setModal({ type: "npc-ds-settings" })} title="How many death saves an NPC gets when its own entry does not say.">💀 NPC death saves · {npcDS === "ask" ? "ask" : npcDS}…</button>,
               <button key="ed" onClick={() => setModal({ type: "edition" })} title="Switch between the 2024 rules (SRD 5.2.1) and the 2014 rules (SRD 5.1) — different monsters, spells, and rules handling.">📜 Rules edition · {edition === "2014" ? "2014" : "2024"}…</button>,
               <button key="lic" onClick={() => setModal({ type: "licenses" })}>ⓘ Attribution &amp; licenses</button>,
             ];
@@ -16141,6 +16239,33 @@ export default function App() {
       )}
       {modal?.type === "init-ties" && (
         <InitTieModal groups={modal.groups} onConfirm={resolveTies} />
+      )}
+      {modal?.type === "npc-ds-settings" && (
+        <div className="overlay" onClick={() => setModal(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>💀 NPC death saves</h3>
+            <div className="trait" style={{ margin: "6px 0 10px" }}>
+              What an NPC gets at 0 HP when its own entry does not say. The number works both ways — that many
+              failures kills, that many successes stabilises. Players always get the rules' three.
+            </div>
+            {[["ask", "Ask me when one drops", "The default. You are asked once per NPC and the answer is kept on them."],
+              ["0", "0 — dies at 0 HP", "Like the enemy side: no dying state, no saves."],
+              ["1", "1 — one roll decides", "One failure kills, one success stabilises."],
+              ["2", "2", "A little more room than one roll."],
+              ["3", "3 — like a player", "How the app used to treat every ally and neutral."]].map(([v, t, sub]) => (
+              <button key={v} className={`btn w100 ${npcDS === v ? "primary" : ""}`} style={{ width: "100%", textAlign: "left", margin: "3px 0" }}
+                onClick={() => { setNpcDS(v); setModal(null); }}>
+                {t}{npcDS === v ? " ✓" : ""}<br /><span style={{ fontSize: 11, color: npcDS === v ? "inherit" : "var(--faint)" }}>{sub}</span>
+              </button>
+            ))}
+            <div className="trait" style={{ fontSize: 11, color: "var(--faint)", marginTop: 8 }}>
+              Any single NPC can override this under ⚔️ combat stats in the notebook.
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+              <button className="btn small" onClick={() => setModal(null)}>Done</button>
+            </div>
+          </div>
+        </div>
       )}
       {modal?.type === "init-ties-settings" && (
         <InitTieSettingsModal mode={tieMode} onSet={setTieMode} onClose={() => setModal(null)} />
@@ -16925,6 +17050,33 @@ export default function App() {
           onScroll={() => setModal({ type: "player-cast", uid: modal.uid, fromItem: "scroll" })}
           onAoe={(preset) => setModal({ type: "group-save", preset })}
           onClose={() => setModal(null)} />
+      )}
+      {/* Something fell with nobody having said how many saves it gets — ask once, for all of them. */}
+      {dsAskList.length > 0 && (
+        <NpcDeathSavesModal names={dsAskList.map((c) => c.name)}
+          onAlways={(n) => setNpcDS(String(n))}
+          onPick={(n) => {
+            const uids = dsAskList.map((c) => c.uid);
+            const npcIds = dsAskList.map((c) => c.npcId).filter(Boolean);
+            mutate((d, L, T) => {
+              d.combatants.forEach((c) => {
+                if (!uids.includes(c.uid)) return;
+                c.dsMax = n; c.dsAsk = false;
+                // 0 means they were never really dying — settle it now rather than leaving them down
+                if (n === 0 && c.unconscious && !c.dead) {
+                  c.dead = true; c.unconscious = false; c.thp = 0; c.concentration = null; c.ds = { s: 0, f: 0 }; c.stable = false;
+                  L.push(`<b>${c.name}</b> gets no death saves — <b>dies</b>.`);
+                  T.push({ kind: "bad", text: `${c.name} is dead.` });
+                } else L.push(`<b>${c.name}</b> gets <b>${n}</b> death save${n === 1 ? "" : "s"}.`);
+              });
+            });
+            // and remember it on the notebook entries, so these characters never ask again
+            if (npcIds.length && activeRoster?.notebook) {
+              const npcs = (activeRoster.notebook.npcs || []).map((x) => (npcIds.includes(x.id)
+                ? { ...x, stats: { ...(x.stats || blankNpcStats()), ds: n } } : x));
+              saveNotebook({ ...activeRoster.notebook, npcs });
+            }
+          }} />
       )}
       {modal?.type === "deathsaves" && modalC && (
         <DeathSavesModal c={modalC} onClose={() => setModal(null)}
