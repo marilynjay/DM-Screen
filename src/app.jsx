@@ -5446,6 +5446,60 @@ const Capped = ({ cap, width, children }) => (
   </label>
 );
 
+/* ── Quick add ────────────────────────────────────────────────────────────────
+   Custom monster asks for a CR, a role, seven numbers and an attack. That is the right form for
+   building a creature and the wrong one for a DM reading a statblock off a page who only wants the
+   app to count hit points. This is the two-field version: a name and an HP total, everything else
+   optional. No stats are needed for initiative — the app rolls a flat d20 for anything without a
+   DEX modifier, which is exactly what these have. They die at 0 HP; a bare HP tally has no dying
+   state to prompt about. Nothing is remembered unless the DM ticks the box. */
+function QuickAddModal({ onAdd, onClose }) {
+  const [name, setName] = useState("");
+  const [hp, setHp] = useState("");
+  const [ac, setAc] = useState("");
+  const [count, setCount] = useState(1);
+  const [autoInit, setAutoInit] = useState(true);
+  const [saveToo, setSaveToo] = useState(false);
+  const hpN = parseInt(hp, 10);
+  const ready = name.trim() !== "" && !isNaN(hpN) && hpN > 0;
+  const submit = () => { if (ready) onAdd({ name: name.trim(), hp: hpN, ac, count: Math.max(1, Math.min(20, count)), autoInit, saveToo }); };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>⚡ Quick add</h3>
+        <div className="trait" style={{ marginBottom: 8 }}>Name and hit points, nothing else — for when you're reading the statblock off the page and just want the app to keep the tally.</div>
+        <div className="frow"><label>Name</label>
+          <input type="text" autoComplete="off" autoCorrect="off" spellCheck={false} placeholder="Bandit" value={name} autoFocus
+            onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} /></div>
+        <div className="frow"><label>HP</label>
+          <input type="number" min={1} value={hp} onChange={(e) => setHp(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} />
+          <label style={{ minWidth: 0 }}>×</label>
+          <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(parseInt(e.target.value, 10) || 1)} style={{ maxWidth: 64 }} /></div>
+        <div className="frow"><label>AC (optional)</label>
+          <input type="number" value={ac} title="Only needed if you want the app to work out whether an attack hits — leave it blank and you'll see “AC ?”." onChange={(e) => setAc(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} /></div>
+        <div className="frow"><label style={{ minWidth: 0 }}>
+          <input type="checkbox" checked={autoInit} onChange={(e) => setAutoInit(e.target.checked)} /> Roll their initiative for me
+        </label></div>
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 8px" }}>
+          {autoInit
+            ? "A flat d20 when combat starts — no ability scores needed. Untick to type their initiative in yourself alongside the party's."
+            : "You'll be asked for their initiative alongside the party's when combat starts."}
+        </div>
+        <div className="frow"><label style={{ minWidth: 0 }}>
+          <input type="checkbox" checked={saveToo} onChange={(e) => setSaveToo(e.target.checked)} /> Also save to my bestiary
+        </label></div>
+        <div className="trait" style={{ fontSize: 11, color: "var(--faint)", margin: "0 0 8px" }}>
+          Otherwise they're tonight's only — nothing is filed away. Either way they die at 0 HP: a bare hit-point tally has no dying state, so nothing is asked about death saves. If one of them turns out to matter that much, build them as an <b>👤 NPC</b> instead.
+        </div>
+        <div className="frow" style={{ justifyContent: "flex-end" }}>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn primary" disabled={!ready} onClick={submit}>Add{count > 1 ? ` ${count}` : ""}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CustomMonsterForm({ onAdd, onSaveEdit, onClose, initial, mode = "create", existingNames = [] }) {
   const src = initial || null;
   const editing = mode === "edit";
@@ -5936,7 +5990,7 @@ function StatblockBody({ sb }) {
   return (
     <>
       <div className="statline">
-        <b>AC</b> {sb.ac} · <b>HP</b> {sb.hp}{sb.hpF ? ` (${sb.hpF})` : ""} · <b>Speed</b> {sb.spd || "30 ft."}
+        <b>AC</b> {sb.ac ?? "?"} · <b>HP</b> {sb.hp}{sb.hpF ? ` (${sb.hpF})` : ""} · <b>Speed</b> {sb.spd || "30 ft."}
         {sb.senses ? <> · <b>Senses</b> {sb.senses}</> : null}
         {sb.langs ? <> · <b>Languages</b> {sb.langs}</> : null}
       </div>
@@ -5991,7 +6045,7 @@ function MiniStatCard({ sb, count, rollHp, onAdd, onCancel, onFull, onSaveAsNpc,
   return (
     <div>
       <h3 style={{ marginTop: 4 }}>{sb.name} <span style={{ color: "var(--faint)", fontSize: 11 }}>{sb.cr ? `CR ${sb.cr}` : ""}{sb.src === "tob" ? " · ToB" : ""}</span></h3>
-      <div className="statline"><b>AC</b> {sb.ac} · <b>HP</b> {sb.hp} · <b>Speed</b> {sb.spd || "30 ft."}</div>
+      <div className="statline"><b>AC</b> {sb.ac ?? "?"} · <b>HP</b> {sb.hp} · <b>Speed</b> {sb.spd || "30 ft."}</div>
       {sb.multi && <div className="trait" style={{ marginTop: 4 }}>⚔ {sb.multi}</div>}
       {(sb.actions || []).slice(0, 5).map((a, i) => (
         <div className="trait" key={i}>
@@ -6098,7 +6152,7 @@ function BestiaryModal({ custom, browse, expanded, expandedReady, onToggleExpand
             {mine.map((b) => (
               <span key={b.name} style={{ position: "relative" }}>
                 <button className={`btn w100 ${demo?.pressResult === b.name ? "demo-press" : ""}`} style={{ width: "100%" }} onClick={() => pick(b)}>
-                  {b.name}<br /><span className="cr">{b.cr ? `CR ${b.cr} · ` : ""}AC {b.ac} · {b.hp} HP</span>
+                  {b.name}<br /><span className="cr">{b.cr ? `CR ${b.cr} · ` : ""}AC {b.ac ?? "?"} · {b.hp} HP</span>
                 </button>
                 <button className="btn small ghost" style={{ position: "absolute", top: 2, right: 2, padding: "0 5px" }}
                   title="Delete from my bestiary"
@@ -14814,6 +14868,26 @@ export default function App() {
     });
     if (saveToo) { upsertBestiary([sb]); pushToasts([{ kind: "good", text: `"${sb.name}" saved to your bestiary.` }]); }
   };
+  /* Quick add: a name and an HP total, on the board. Everything the fuller builder asks for is left
+     null, which the app already copes with everywhere (AC renders as "AC ?", no actions means no
+     attack picker). dsMax 0 is set explicitly rather than leaned on: enemies already die at 0, but
+     these get flipped to ally often enough that the death-save prompt would otherwise appear for a
+     creature that was never meant to have one. */
+  const addQuick = ({ name, hp, ac, count, autoInit, saveToo }) => {
+    const acN = String(ac).trim() === "" || isNaN(parseInt(ac, 10)) ? null : parseInt(ac, 10);
+    const sb = { name, ac: acN, hp };
+    mutate((d, L) => {
+      for (let i = 0; i < count; i++) {
+        const m = makeMonster(sb, d);
+        m.dsMax = 0;
+        if (!autoInit) m.manualInit = true;
+        d.combatants.push(m);
+        L.push(`⚡ Added <b>${m.name}</b> — ${hp} HP${acN != null ? ` · AC ${acN}` : ""}`);
+      }
+    });
+    // stored with whatever the DM actually typed — a blank AC stays blank rather than becoming a made-up 10
+    if (saveToo) { upsertBestiary([{ name, ac: acN, hp }]); pushToasts([{ kind: "good", text: `"${name}" saved to your bestiary.` }]); }
+  };
   const saveEditedMonster = (sb, originalName) => {
     const list = bestRef.current.filter((x) => x.name.toLowerCase() !== originalName.toLowerCase());
     const i = list.findIndex((x) => x.name.toLowerCase() === sb.name.toLowerCase());
@@ -15003,11 +15077,13 @@ export default function App() {
       return; // the tour's cue script opens the Roll initiative dialogue on the next beat
     }
     const cur = stateRef.current;
-    // monsters without initiative auto-roll — EXCEPT in Old School Mode, where the DM enters them by hand
-    if (!OLDSCHOOL.on && cur.combatants.some((c) => !c.dead && c.init == null && c.type === "monster")) {
+    // monsters without initiative auto-roll — EXCEPT in Old School Mode, where the DM enters them by
+    // hand, and except quick-adds whose DM unticked "roll their initiative for me"
+    const autoRolls = (c) => !c.dead && c.init == null && c.type === "monster" && !c.manualInit;
+    if (!OLDSCHOOL.on && cur.combatants.some(autoRolls)) {
       mutate((d, L) => {
         d.combatants.forEach((c) => {
-          if (!c.dead && c.init == null && c.type === "monster") {
+          if (autoRolls(c)) {
             const r = d20(c.mods?.dex ?? 0, "none");
             c.init = r.total; c.initText = `Initiative ${r.text}`;
             L.push(`<b>${c.name}</b> rolls initiative: ${r.text}`);
@@ -15016,7 +15092,7 @@ export default function App() {
       });
     }
     // Old School: every combatant needs a hand-entered initiative; otherwise just the players
-    const needsInit = (c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (OLDSCHOOL.on || c.type === "player");
+    const needsInit = (c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (OLDSCHOOL.on || c.type === "player" || c.manualInit);
     if (cur.combatants.some(needsInit)) { setModal({ type: "roll-init" }); return; }
     setModal({ type: "init-ties-check" });
   };
@@ -15095,6 +15171,9 @@ export default function App() {
           const sb = { ...c, hp: c.maxHp };
           const fresh = makeMonster({ ...c, hp: c.maxHp, hpF: c.hpF, legendary: c.legendary ? { count: c.legendary.max, options: c.legendary.options } : null, legRes: c.legRes ? c.legRes.max : null }, { combatants: [] }, { name: c.name, side: c.side, notes: c.notes });
           fresh.baseName = c.baseName;
+          // rebuilt from a statblock, so the two things that aren't statblock fields need carrying over
+          if (c.manualInit) fresh.manualInit = true;
+          if (c.dsMax != null) fresh.dsMax = c.dsMax;
           return fresh;
         });
         d.mode = "setup"; d.round = 0; d.activeUid = null; d.log = []; d.lastHit = null;
@@ -15855,6 +15934,12 @@ export default function App() {
           <button className="btn small" data-tut="add" onClick={() => { setAddMenu(!addMenu); setClearMenu(false); setMoreMenu(false); }}>+ Add</button>
           {addMenu && (
             <div className="menu" onClick={() => setAddMenu(false)}>
+              {/* Heads the list because it is the fastest path onto the board — the fuller builders
+                  below are for creatures you are inventing, not ones you are reading off a page. */}
+              <button onClick={() => setModal({ type: "quickadd" })}>
+                ⚡ Quick add — name &amp; HP…
+                <span className="menu-sub">for using this as a plain HP tracker</span>
+              </button>
               <button data-tut="addbestiary" className={tutPress === "addbestiary" ? "demo-press" : ""} onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
               <button onClick={() => setModal({ type: "notebook" })}>👤 NPC (build or add)…</button>
@@ -16182,6 +16267,7 @@ export default function App() {
       {modal?.type === "damage" && <DamageModal state={state} presetUid={modal.uid} initMode={modal.mode} onApply={applyDamageModal} onClose={() => setModal(null)} />}
       {modal?.type === "save" && modalC && <SaveRollModal c={modalC} rolled={modal.rolled} onRoll={applySaveRoll} onClose={() => setModal(null)} />}
       {modal?.type === "cond" && <ConditionModal state={state} presetUid={modal.uid} onAdd={applyCondModal} onClose={() => setModal(null)} />}
+      {modal?.type === "quickadd" && <QuickAddModal onAdd={(q) => { addQuick(q); setModal(null); }} onClose={() => setModal(null)} />}
       {modal?.type === "custom" && <CustomMonsterForm
         initial={modal.edit || modal.from || null}
         mode={modal.edit ? "edit" : modal.from ? "clone" : "create"}
@@ -16397,7 +16483,7 @@ export default function App() {
         </div>
       )}
       {modal?.type === "roll-init" && (
-        <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (oldSchool || c.type === "player"))}
+        <RollInitModal list={state.combatants.filter((c) => !c.dead && c.init == null && c.type !== "effect" && c.type !== "object" && (oldSchool || c.type === "player" || c.manualInit))}
           full={state.combatants.filter((c) => !c.dead && c.type !== "effect" && c.type !== "object")}
           edition={edition}
           demo={modal.demo}
@@ -16416,9 +16502,9 @@ export default function App() {
                   // 2014: a surprised creature loses its whole first turn and can't react until then
                   c.surprised = true; c.reaction = false;
                   L.push(`😴 <b>${c.name}</b> is surprised — will lose its first turn.`);
-                } else if (c.type === "monster" && !oldSchool) {
+                } else if (c.type === "monster" && !oldSchool && !c.manualInit) {
                   // 2024: initiative with disadvantage. Re-roll the ones the app rolls (monsters) —
-                  // but not in Old School Mode, where the DM hand-enters every initiative.
+                  // but not in Old School Mode, nor a quick-add the DM is rolling for themselves.
                   const r = d20(c.mods?.dex ?? 0, "dis");
                   c.init = r.total; c.initText = `Initiative ${r.text}`;
                   L.push(`😴 <b>${c.name}</b> is surprised — initiative re-rolled with disadvantage: ${r.text}`);
