@@ -2335,10 +2335,12 @@ const ENC_TEMPLATES = {
   "Pyramid": [["strong", 1], ["mid", 2], ["weak", 3]],
   "Solo boss": [["solo", 1]],
 };
-function suggestEncounter({ biome, level, size, difficulty, template, balanced, rng }) {
+function suggestEncounter({ biome, poolNames, level, size, difficulty, template, balanced, rng }) {
   const R = rng || Math.random;
   const all = fullBestiary();
-  const names = (ENCOUNTER_POOLS[biome] || []).concat(EXPANDED.on && EXPANDED.list.length ? EXPANDED.pools[biome] || [] : []);
+  // poolNames: a caller-mixed monster list (the dungeon generator's themes cross biome lines —
+  // a cult shrine wants Cultists AND devils). Without it, the biome's pool as before.
+  const names = poolNames || (ENCOUNTER_POOLS[biome] || []).concat(EXPANDED.on && EXPANDED.list.length ? EXPANDED.pools[biome] || [] : []);
   const pool = names.map((n) => {
     const sb = all.find((b) => b.name === n);
     return sb ? { name: n, cr: crNumOf(sb.cr), leg: !!sb.legendary, xp: XP_BY_CR[crNumOf(sb.cr)] || 10 } : null;
@@ -10670,6 +10672,495 @@ const SAMPLE_DUNGEONS = [
     },
   },
 ];
+/* ── Dungeon generator ────────────────────────────────────────────────────────
+   Produces the same structure the sample dungeons are written in by hand: a spine of rooms
+   from an entrance to a boss chamber with a branch or two, each room carrying art, read-aloud
+   text, an encounter budgeted by suggestEncounter() against the party, and loot. A theme is a
+   monster pool + an art palette + prose tables; a premise (who made this place, what went
+   wrong) is rolled once and threaded through the text so six rooms read as one place.
+
+   Prose tables use two slots: {B} the boss's rolled name, {M} the boss monster's kind
+   ("Graznak the Goblin Boss" reads like the samples' hand-written villains). */
+const DGN_GEN_THEMES = [
+  {
+    key: "lair", name: "Goblin & bandit lair", icon: "😈", bg: "cavern",
+    pool: ["Goblin Minion", "Goblin Warrior", "Goblin Boss", "Bandit", "Bandit Captain", "Wolf", "Worg", "Dire Wolf", "Hobgoblin Warrior", "Hobgoblin Captain", "Bugbear Warrior", "Ogre", "Tough", "Tough Boss", "Berserker", "Scout", "Mastiff", "Warrior Veteran", "Assassin"],
+    colors: ["#453424", "#5a3b3b", "#4a4433", "#3d3226"], textures: ["dirt", "gravel", "mud", "cobble"], edge: "cave", glow: "#e8b23a",
+    bosses: ["Graznak", "Skarn", "Yeela One-Eye", "Mordo", "Threk", "Big Nasha", "Ruk", "Old Snagtooth"],
+    titles: ["{B}'s Warren", "The {B} Gang's Den", "{B}'s Hollow", "The Hideout of {B}"],
+    premises: [
+      "Raids on the road have worsened for a month, and every survivor speaks the same name: {B}. The trail ends here.",
+      "Stolen livestock, a burned wagon, a ransom note signed {B} — the village scraped together a reward, and this hole is where it leads.",
+      "Deserters and worse have gathered under {B}, and last week they took a prisoner worth rescuing.",
+      "Something has made the local vermin bold. The culprit is {B}, who found this old den and filled it with muscle.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "Sentry Hollow", n: "Entrance", icons: ["🪤"], desc: "A low tunnel of packed earth, reeking of woodsmoke and wet fur. A tripwire strung with tin cans (DC 12 Perception) rings an alarm deeper in." },
+        { t: "Broken Gate", n: "Gate", icons: ["🚪"], desc: "A stolen farm gate has been wedged across the passage and hung with bones. It creaks badly — opening it quietly needs a DC 12 Dexterity check." },
+        { t: "Bonefield Door", n: "Entrance", icons: ["💀"], desc: "Gnawed bones and rusted scraps of armor litter the approach — warnings, or leftovers. Crude eyes are daubed on the rock in old blood." },
+      ],
+      fight: [
+        { t: "Guard Post", n: "Guards", icons: ["😈"], desc: "Sentries bicker over a haunch of meat by a smoldering firepit. They shriek the alarm the instant they spot intruders.", encnotes: "If any escape this room, the next fight starts alerted." },
+        { t: "The Common Den", n: "The Den", icons: ["🍖"], desc: "Filthy bedrolls, a cookfire, and a pot of something grey. The whole den turns as one when the fight starts." },
+        { t: "Beast Pen", n: "Pens", icons: ["🍖"], feature: "skeletons", desc: "A reeking pit strewn with cracked bones, where the camp's beasts are chained. A DC 13 Animal Handling calms them; otherwise they snap free when combat starts." },
+        { t: "The Toll Chamber", n: "Toll", icons: ["💰", "😈"], desc: "Loot from a dozen robberies is heaped and squabbled over here. The guards fight harder in front of their shares." },
+        { t: "Collapsed Gallery", n: "Gallery", icons: ["🪨"], desc: "Half this chamber came down years ago. Attackers scramble over rubble — the floor is difficult terrain — while defenders hold the high slab." },
+        { t: "The Watch Ledge", n: "Ledge", icons: ["😈"], desc: "A ledge overlooks the passage below. Whoever holds it starts the fight with the drop — ranged attackers up here have half cover." },
+      ],
+      quiet: [
+        { t: "The Prisoner's Nook", n: "Prisoner", icons: ["🙂"], desc: "A frightened prisoner is tied to a stake among empty casks. Freed, they can name {B}, sketch the den's layout, and beg to be walked out.", npcs: "The prisoner knows the way to the boss and one thing the gang fears." },
+        { t: "Stolen Stores", n: "Stores", icons: ["📦"], desc: "Crates and barrels stamped with merchant marks — last month's robberies, mostly ruined. A DC 12 Investigation turns up something the gang missed." },
+        { t: "Shrine of Teeth", n: "Shrine", icons: ["🗿"], desc: "A crude idol of stacked skulls and teeth. Offerings — buttons, knucklebones, a child's shoe — say the gang is more frightened of something than they let on." },
+      ],
+      vault: [
+        { t: "The Buried Cache", n: "Cache", desc: "A dry hollow the gang never found, older than their tenancy. Dust lies thick over a strongbox and the bones of whoever hid it." },
+        { t: "{B}'s Private Stash", n: "Stash", desc: "Behind a false wall of stacked stone: the take {B} skimmed off the top, hidden even from the gang." },
+      ],
+      boss: [
+        { t: "{B}'s Hall", n: "Boss", feature: "chest", desc: "Furs and stolen finery carpet the floor. {B} the {M} rules from a seat of lashed spears and broken shields, and rises unhurried — this fight was expected.", encnotes: "{B} lets minions absorb the first charge, then picks off whoever looks hurt. At 10 HP, {B} tries to flee and rally any survivors." },
+        { t: "The Deep Den", n: "Boss", feature: "brazier", desc: "The den's deepest chamber, warm and close, lit by one great brazier. {B} the {M} waits behind a wall of loyal muscle with escape already planned.", encnotes: "{B} fights to escape, not to die — the tunnel behind the brazier is the bolt-hole." },
+        { t: "The Trophy Cave", n: "Boss", feature: "statue", desc: "Trophies of every robbery hang on cords from the ceiling. {B} the {M} counts them aloud while the guards close in — and joins the fight only when the count is done.", encnotes: "{B} enters the fight on round 2, furious, with advantage on the first attack." },
+      ],
+    },
+    flavor: ["a sack of mixed coin", "a merchant's strongbox, lock smashed", "bolts of good cloth, slightly burned", "a keg of dwarven ale, half gone", "boots, belts and blades of the robbed"],
+    trophy: ["{B}'s notched blade (trophy)", "{B}'s iron torque (trophy)", "the gang's banner (proof for the reward)"],
+  },
+  {
+    key: "crypt", name: "Crypt", icon: "🪦", bg: "dark",
+    pool: ["Skeleton", "Zombie", "Warhorse Skeleton", "Shadow", "Ghoul", "Swarm of Crawling Claws", "Ghast", "Ogre Zombie", "Specter", "Minotaur Skeleton", "Wight", "Mummy", "Will-o'-Wisp", "Ghost", "Wraith", "Vampire Spawn", "Mummy Lord", "Vampire"],
+    colors: ["#3b3f52", "#3b4a5a", "#2c2c30", "#4a3b5a"], textures: ["stone", "marble", "cobble", "mist"], edge: null, glow: "#3f7be0",
+    bosses: ["Maalveth", "Serane the Pale", "Ordrek", "Lady Vhessa", "Kurn Barrow-Born", "the Unremembered King", "Mother Halewen", "Duke Ferro"],
+    titles: ["The Tomb of {B}", "The Sunken Crypt", "{B}'s Barrow", "The Resting Place of {B}"],
+    premises: [
+      "The dead of this crypt were quiet for a century — until grave-robbers broke the seal and woke {B}.",
+      "Villagers bury their dead here no longer: those interred walk home by the third night. The rot spreads from {B}'s tomb.",
+      "An old treaty bound {B} to sleep. The last signatory died this winter, and the crypt remembers.",
+      "A scholar paid handsomely for a rubbing of {B}'s tomb-script. The scholar never came back.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "Crypt Threshold", n: "Entrance", icons: ["🪦"], desc: "Weathered steps descend to a bronze door hanging off one hinge. The air is cold and smells of stagnant water and old dust." },
+        { t: "The Mourning Arch", n: "Arch", icons: ["🪦"], desc: "Names beyond counting are chiselled into this arch, oldest at the top. The newest line is fresh, and it is still being carved — by no visible hand." },
+        { t: "Sunken Stair", n: "Stairs", icons: ["⬇️"], desc: "A spiral stair corkscrews down, its lower steps lost under black water. Cold air rises from below." },
+      ],
+      fight: [
+        { t: "Bone Gallery", n: "Gallery", icons: ["💀"], desc: "Loculi line both walls, each holding a shrouded corpse. Halfway down, the dead clatter free of their niches.", encnotes: "The corridor is cramped — no more than two attackers can reach one target at a time." },
+        { t: "The Ossuary", n: "Ossuary", feature: "skeletons", icons: ["💀"], desc: "Skulls are stacked floor to ceiling. When anyone disturbs the central cairn, the bones knit themselves together and stand." },
+        { t: "Flooded Chapel", n: "Chapel", feature: "pool", icons: ["💦"], desc: "Black water fills this pillared hall to the knee — difficult terrain for the living. What waits here does not need to breathe.", encnotes: "The water douses dropped torches. Track light sources." },
+        { t: "Hall of Effigies", n: "Effigies", feature: "statue", icons: ["🗿"], desc: "Stone knights line the processional way. Two of the plinths are empty, and the dust says the vacancy is recent." },
+        { t: "The Weeping Gallery", n: "Weeping", icons: ["💧"], desc: "Water seeps eternally down these walls, and the dead here drowned. They remember it, and they are angry." },
+        { t: "Charnel Crossing", n: "Charnel", icons: ["💀", "💥"], desc: "Bones are heaped waist-deep across this chamber; wading through is slow, loud, and wakes what sleeps beneath.", encnotes: "Creatures starting their turn in the bone-drifts are at half speed." },
+      ],
+      quiet: [
+        { t: "The Emberlight Shrine", n: "Shrine", feature: "brazier", icons: ["🕯️"], desc: "One brazier burns here with a flame that needs no fuel — the crypt's last consecrated ground. The dead do not enter this room.", npcs: "A short rest taken here is safe; the flame gutters if {B} is destroyed — or if it is stolen." },
+        { t: "Keeper's Cell", n: "Keeper", icons: ["📜"], desc: "The crypt-keeper's little room: ledger, lamp, narrow cot. The ledger's last entry records exactly which tomb was opened, and when." },
+        { t: "Garden of Stone Flowers", n: "Garden", icons: ["🌿"], desc: "Carved marble flowers fill this chamber — grave-offerings of a richer age. Utterly silent. A DC 13 Religion check reads the iconography: this place was built to keep something in, not out." },
+      ],
+      vault: [
+        { t: "The Reliquary", n: "Reliquary", desc: "A hidden reliquary behind the funerary wall, untouched by robbers and the dead alike. Grave-goods of the honored dead lie in ordered rows." },
+        { t: "The False Tomb", n: "False Tomb", desc: "A decoy tomb built to fool robbers — and it worked: the real grave-goods were bricked in behind it. The bricks have loosened with the centuries." },
+      ],
+      boss: [
+        { t: "Tomb of {B}", n: "The Tomb", feature: "altar", desc: "A sealed royal tomb, its lid shattered from within. {B} the {M} rises in the wreck of old finery and levels a grave-cold gaze at the living.", encnotes: "{B} targets whoever carries light or holy symbols first." },
+        { t: "The Descending Court", n: "The Court", feature: "circle", desc: "Dead courtiers stand in silent audience around a sunken floor. On the lowest step waits {B} the {M}, holding court over nothing, furious at the interruption.", encnotes: "The courtiers do not fight — unless someone touches them. Then they all do." },
+        { t: "The Last Vigil", n: "Vigil", feature: "statue", desc: "{B} the {M} kneels before a defaced statue in a posture of prayer, and speaks without turning: the dead were promised rest, and the living broke the promise first.", encnotes: "A DC 15 Persuasion before blood is drawn earns one question answered honestly. Then it fights regardless." },
+      ],
+    },
+    flavor: ["grave-goods of tarnished silver", "a silver holy symbol", "funerary wrappings sewn with coin", "an urn of ancient coins", "a mourning ring set with jet"],
+    trophy: ["{B}'s grave-crown (trophy)", "{B}'s barrow-blade (trophy)", "the tomb-seal of {B} (proof it is done)"],
+  },
+  {
+    key: "cult", name: "Cult shrine", icon: "🔥", bg: "night",
+    pool: ["Cultist", "Cultist Fanatic", "Priest Acolyte", "Priest", "Imp", "Quasit", "Dretch", "Hell Hound", "Bearded Devil", "Shadow", "Specter", "Magma Mephit", "Fire Elemental", "Salamander", "Nightmare", "Barbed Devil", "Chain Devil", "Mage", "Succubus", "Warrior Veteran", "Tough"],
+    colors: ["#5a3b3b", "#5a3b52", "#2c2c30", "#453424"], textures: ["brick", "runes", "blood", "stone"], edge: null, glow: "#e0483a",
+    bosses: ["Vharos", "Mother Ilsette", "Brother Kael", "the Ashen Voice", "Serelith", "High Thane Moru", "Whisper-of-Coals", "Dredha"],
+    titles: ["The Shrine of the {B}", "The {B} Circle", "Sanctum of {B}", "The Hidden Chapel of {B}"],
+    premises: [
+      "People have been disappearing on new-moon nights. The trail of red wax and ash leads here, to the congregation of {B}.",
+      "The cult bought the old shrine legally, smiled at the neighbors, and bricked up the windows. {B} preaches below at midnight.",
+      "A frightened initiate defected and drew a map with a shaking hand. The rite {B} is preparing completes at the next dark of the moon.",
+      "It started as a funeral society. By the time anyone noticed what {B} had turned it into, half the town's cellars connected to this place.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "Ashen Threshold", n: "Threshold", icons: ["🔥"], desc: "Scorched flagstones and drifting ash mark the way in. Heat breathes up from somewhere below." },
+        { t: "The False Chapel", n: "Chapel", icons: ["📜"], desc: "A perfectly ordinary wayside chapel — almost. The offering bowl holds fresh coins, the candles are lit, and a DC 12 Investigation finds the stair behind the altar." },
+        { t: "Processional Stair", n: "Stairs", icons: ["⬇️"], desc: "A narrow stair descends between walls painted with a procession of robed figures. The deeper the paintings go, the fewer faces they have." },
+      ],
+      fight: [
+        { t: "Hall of the Congregation", n: "Congregation", feature: "brazier", icons: ["😈"], desc: "Robed figures chant around a central brazier, faces hidden behind ash-grey masks. They break off to attack, calling on {B} by name.", encnotes: "Fanatics fight to the death; ordinary cultists flee at half strength." },
+        { t: "The Vigil of Flame", n: "Vigil", feature: "statue", icons: ["🔥", "😈"], desc: "A basalt idol looms over kneeling worshippers. Its tenders will not let it be defiled while any of them stand." },
+        { t: "The Binding Cages", n: "Cages", icons: ["🧨"], desc: "Things the cult has called and caged pace behind cold-iron bars. The keeper's first act in a fight is to throw the cages open.", encnotes: "Round 1: the keeper opens a cage. Anything still caged when it dies stays caged." },
+        { t: "Gallery of Masks", n: "Masks", icons: ["😈"], desc: "Hundreds of ash-grey masks hang on the walls, one per member sworn. The guards here wear red ones, and they were expecting you." },
+        { t: "The Scalded Causeway", n: "Causeway", icons: ["🔥", "💥"], desc: "A narrow causeway crosses a channel of scalding runoff. Guards hold the far end — crossing under fire is the whole problem.", encnotes: "A creature knocked into the channel takes 3 (1d6) fire damage and climbs out prone." },
+        { t: "The Rehearsal Hall", n: "Rehearsal", feature: "circle", icons: ["⭐️"], desc: "A practice ritual circle, chalk rather than blood — the understudies drill the rite here, and defend it as if it were real." },
+      ],
+      quiet: [
+        { t: "Initiates' Dormitory", n: "Dormitory", icons: ["📜"], desc: "Rows of hard cots, each with a folded robe and a copied prayer. One journal, hidden badly (DC 10 Investigation), names {B} and second-guesses everything.", npcs: "The journal's author might be turned, if found alive." },
+        { t: "The Vestry", n: "Vestry", icons: ["📜"], desc: "Robes, masks, ritual regalia in careful ranks. Dressing the part grants one automatic pass on a disguise before the deception unravels." },
+        { t: "Refectory", n: "Refectory", icons: ["🍖"], desc: "Long tables, cold stew, a duty roster on the wall. The roster is legible — a DC 12 Investigation works out how many faithful remain, and where." },
+      ],
+      vault: [
+        { t: "The Tithe Vault", n: "Tithe", desc: "The congregation's tithes, locked behind a door only {B} was meant to open. The faithful gave everything; it is all still here." },
+        { t: "The Confiscarium", n: "Confiscarium", desc: "Everything taken from initiates at the door — weapons, charms, heirlooms — labelled and shelved. Some of it is genuinely good." },
+      ],
+      boss: [
+        { t: "The Circle of Summoning", n: "The Circle", feature: "circle", desc: "A great binding-circle scored into the floor blazes with heat-light. {B} the {M} completes the rite as you enter — and the circle answers.", encnotes: "Destroying the circle (AC 13, 20 HP) before round 3 removes the summoned creature from the fight." },
+        { t: "The Inner Sanctum", n: "Sanctum", feature: "altar", desc: "Candles by the hundred, and an altar that has been used. {B} the {M} turns from it almost politely — the rite needed one more heart, and you have brought several.", encnotes: "{B} spends the first round monologuing only if left alone; interrupting is free." },
+        { t: "The Voice's Pulpit", n: "Pulpit", feature: "statue", icons: ["⭐️"], desc: "{B} the {M} preaches from a high pulpit to an empty room — empty, until the shadows of the congregation stand up out of the floor.", encnotes: "Reinforcements arrive in waves; killing {B} stops them." },
+      ],
+    },
+    flavor: ["a bowl of tithed coin", "ritual regalia of silver thread", "votive candles of black wax", "incense worth a fair sum", "confiscated valuables, carefully labelled"],
+    trophy: ["{B}'s ash-grey mask (proof for the magistrate)", "{B}'s ritual dagger (trophy)", "the cult's member roll (names half the town)"],
+  },
+  {
+    key: "cavern", name: "Wild cavern", icon: "🕸️", bg: "cavern",
+    pool: ["Giant Bat", "Swarm of Bats", "Giant Centipede", "Darkmantle", "Grimlock", "Gray Ooze", "Grick", "Rust Monster", "Ochre Jelly", "Gargoyle", "Gelatinous Cube", "Basilisk", "Black Pudding", "Giant Wolf Spider", "Giant Spider", "Phase Spider", "Bulette", "Troll", "Ettin", "Cloaker", "Roper", "Behir"],
+    colors: ["#2c2c30", "#3d3226", "#243024", "#3b4a5a"], textures: ["dirt", "gravel", "fungus", "web"], edge: "cave", glow: "#57c94a",
+    bosses: ["the Pale Maw", "Old Rumble", "the Mother Below", "the Silent Knot", "Gnaws-the-Root", "the Long Dark", "Chitterling Prime", "the Patient One"],
+    titles: ["The Gullet of {B}", "The Deep Hollows", "The Lair of {B}", "The Under-Warrens"],
+    premises: [
+      "Miners broke into open dark last month and downed tools the same day. Something in the deep galleries answers to no name they gave it — the survivors just call it {B}.",
+      "Livestock first, then a shepherd, then the search party. The drag-marks all lead into this cave mouth, down toward {B}.",
+      "The old maps mark these caverns 'unquiet' and route around them. The new road cannot — someone must deal with {B} first.",
+      "Every few winters the valley loses someone to the hollows. This year it took the wrong person, and now there is a purse for whoever ends {B}.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Cave Mouth", n: "Mouth", icons: ["🕳️"], desc: "Cold air breathes out of the hillside. Bones and droppings by the threshold — something uses this way in and out, regularly." },
+        { t: "Miners' Adit", n: "Adit", icons: ["⛏️"], desc: "Abandoned mine timbers frame the way in; tools lie where they were dropped, not stored. The lamps went with their owners. The dark did not." },
+        { t: "The Sinkhole", n: "Sinkhole", icons: ["🕳️"], desc: "A rope descent into a collapsed gallery (DC 10 Athletics, or twice as long rigging it safely). Daylight ends ten feet down." },
+      ],
+      fight: [
+        { t: "The Chittering Gallery", n: "Chittering", icons: ["🕸️"], desc: "The ceiling moves. Every sound skitters back doubled from the dark overhead, and then the dark comes down.", encnotes: "The first attack comes from above — DC 13 Perception or the ambusher acts first." },
+        { t: "Web-Choked Hollow", n: "Webs", icons: ["🕸️"], desc: "Sheets of old web layer this chamber wall to wall. Cutting through is slow; burning it is fast, bright, and tells everything below exactly where you are.", encnotes: "Webbed ground is difficult terrain for everyone without a climb speed." },
+        { t: "The Ooze Runnel", n: "Runnel", icons: ["🧪"], desc: "Everything here is wet, and some of the wet is not water. A DC 12 Nature check spots the difference before someone steps in it." },
+        { t: "The Bone Midden", n: "Midden", feature: "skeletons", icons: ["💀"], desc: "The lair's refuse heap: bones of everything the deep has eaten for a generation. Rooting through it is loud, and watched." },
+        { t: "Glowcap Forest", n: "Glowcaps", icons: ["🍄"], desc: "Phosphorescent fungus lights this cavern a sickly green — dim light throughout, and the stalks block sight lines. Perfect ambush country, and both sides know it." },
+        { t: "The Narrow Squeeze", n: "Squeeze", icons: ["🪨"], desc: "The passage pinches to shoulder width. What lives here likes it that way — one meal at a time.", encnotes: "Only one creature can fight in the squeeze at once; Medium creatures attack at disadvantage inside it." },
+      ],
+      quiet: [
+        { t: "The Survivor's Camp", n: "Camp", icons: ["🙂"], desc: "A guttered lamp, a bedroll, tally scratches on stone — someone has survived down here for weeks, and they know the safe paths.", npcs: "If found alive, they will trade the safe route for an escort out." },
+        { t: "The Echo Chamber", n: "Echoes", icons: ["🔮"], desc: "Sound behaves wrongly here — whispers return as words, footsteps as drums. A DC 13 Perception through the noise learns what is moving in the next chamber, and how many." },
+        { t: "Crystal Grotto", n: "Grotto", icons: ["💎"], desc: "Quartz veins catch the lamplight and throw it back a hundredfold. Beautiful, calm — and the crystals ring faintly when anything large moves nearby. A natural alarm, for whoever holds the room." },
+      ],
+      vault: [
+        { t: "The Prospector's Cache", n: "Cache", desc: "A dead prospector's claim, walled in and marked with a private sign: pack, tools, and everything they had assayed before the deep took them." },
+        { t: "The Swallowed Shrine", n: "Old Shrine", desc: "The cavern swallowed a wayside shrine whole in some ancient collapse. Its offering box is intact under the flowstone." },
+      ],
+      boss: [
+        { t: "The Feeding Dark", n: "The Dark", desc: "The great chamber at the bottom of everything, floor polished by use. {B} — the {M} the valley whispers about — is at home, and you are expected for dinner.", encnotes: "{B} fights in its own larder: it knows the ground, retreats through squeezes the party cannot follow, and comes back." },
+        { t: "The Nesting Hollow", n: "The Nest", desc: "Warm, foul, and carpeted with the makings of a nest. {B} the {M} will not retreat from this room, whatever it costs.", encnotes: "Cornered in its nest, {B} fights to the death and gains advantage while below half HP." },
+        { t: "The Drowned Cathedral", n: "Cathedral", feature: "pool", desc: "A vaulted cavern of flowstone columns above a black pool. {B} the {M} rises from the water without a ripple.", encnotes: "{B} dives between turns — attacks against it in the water are at disadvantage." },
+      ],
+    },
+    flavor: ["raw ore worth good coin", "a dead adventurer's pack", "uncut crystals", "a prospector's assay kit and claim deed", "old coins in the flowstone"],
+    trophy: ["a fang of {B} (proof for the purse)", "{B}'s hide (trophy)", "the swallowed shrine's icon (the temple will pay)"],
+  },
+  {
+    key: "ruin", name: "Haunted ruin", icon: "👻", bg: "night",
+    pool: ["Rat", "Giant Rat", "Skeleton", "Zombie", "Animated Flying Sword", "Animated Armor", "Shadow", "Ghoul", "Mimic", "Animated Rug of Smothering", "Ghast", "Gargoyle", "Specter", "Wight", "Doppelganger", "Ghost", "Flesh Golem", "Vampire Spawn", "Oni", "Wraith"],
+    colors: ["#3b3f52", "#453424", "#4a3b5a", "#2c2c30"], textures: ["stone", "wood", "tile", "web"], edge: "rubble", glow: "#a24de0",
+    bosses: ["Lord Aldemar", "Lady Wren", "Castellan Voss", "the Governess", "Master Elgin", "the Widow Harrow", "Sir Bredan", "Madame Ancilla"],
+    titles: ["{B}'s Keep", "The Ruin of House {B}", "The Fall of {B} Manor", "{B}'s Folly"],
+    premises: [
+      "The house has stood empty since the night every window lit at once and every servant walked out. {B} never left.",
+      "Three buyers, three fled surveyors, one vanished caretaker. The deed is cheap for a reason, and the reason is {B}.",
+      "Lights in the ruin again, after forty years. The village drew lots, and the lot says someone must go and ask {B} to stop.",
+      "It was the finest house in the valley until the night of the fire. What {B} did — or what was done to {B} — kept the ashes walking.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Fallen Gatehouse", n: "Gatehouse", icons: ["🚪"], desc: "The gates stand open, rusted onto their hinges mid-swing — arrested in the act of closing, forty years ago." },
+        { t: "The Overgrown Court", n: "Courtyard", icons: ["🌿"], desc: "Ivy has taken the courtyard, but a path through it is worn fresh. Something walks here nightly, heel to toe, the same circuit." },
+        { t: "The Servants' Door", n: "Back Door", icons: ["🗝️"], desc: "The grand entrance is choked with rubble; the servants' door is not, and it is unlocked. It always is. The house prefers guests who come in quietly." },
+      ],
+      fight: [
+        { t: "The Great Hall", n: "Great Hall", feature: "pillar", icons: ["👻"], desc: "A table set for a feast no one ate, under dust like snowfall. The guests are still here, after a fashion, and they resent the interruption." },
+        { t: "The Long Gallery", n: "Gallery", icons: ["🗿"], desc: "Portraits of the household line the gallery. Their faces are all wrong — scratched out, or turned, or watching. Some of the frames are empty. Those are the problem.", encnotes: "Count the empty frames — that is how many are already in the room." },
+        { t: "The Kitchens", n: "Kitchens", icons: ["🍖"], desc: "Copper pots verdigris-green, a cold hearth — and one cauldron still warm. The things that eat in this house are eating still." },
+        { t: "The Armory", n: "Armory", feature: "statue", icons: ["⚔️"], desc: "Racked arms and standing harness, forty years unpolished yet not one speck of rust. The suits keep themselves ready. For what, you are about to learn.", encnotes: "The armor animates one suit at a time until all stand — or the room's banner is torn down." },
+        { t: "The Nursery", n: "Nursery", icons: ["👻"], desc: "The worst room in the house, and the house knows it. Toys arranged mid-game. A rocking chair rocking. Cold that bites through coats.", encnotes: "Anything hostile here fights with utter silence — no cries, no warning to the rest of the house." },
+        { t: "The Collapsed Wing", n: "Ruined Wing", icons: ["🪨"], desc: "Fire took this wing the night everything ended; sky shows through the rafters. Footing is treacherous, and things nest in the fallen timbers.", encnotes: "The floor is difficult terrain; a DC 12 Acrobatics on a shove sends a combatant through it." },
+      ],
+      quiet: [
+        { t: "The Library", n: "Library", icons: ["📜"], desc: "Rot took the cheap books; the good ones were loved enough to last. The household ledger's final pages, read carefully (DC 12 Investigation), tell the whole story — and name {B}'s unfinished business.", npcs: "Knowing the story grants advantage on the first check or save against {B}." },
+        { t: "The Chapel", n: "Chapel", feature: "altar", icons: ["🕯️"], desc: "A small consecrated chapel, dusty but intact — the one room nothing haunts. Rest here is safe. The dead of the house crowd the threshold and do not cross." },
+        { t: "The Music Room", n: "Music Room", icons: ["🔮"], desc: "A spinet with one sprung string plays itself at intervals — always the same eleven notes. A DC 13 Performance completes the phrase; somewhere deeper in the house, a door unlocks." },
+      ],
+      vault: [
+        { t: "The Master's Strongroom", n: "Strongroom", desc: "Behind the study panelling: the household strongroom, sealed since the end. The family's portable wealth waits in ordered coffers." },
+        { t: "The Dowry Chest", n: "Dowry", desc: "Bricked into the chimney breast — a dowry chest hidden in a happier decade and never retrieved. The house kept it safe. The house keeps everything." },
+      ],
+      boss: [
+        { t: "The Master Bedchamber", n: "Bedchamber", icons: ["👑"], desc: "The heart of the haunting. {B} — the {M} the house has been protecting all along — turns from the window where the vigil has been kept for forty years.", encnotes: "The house fights with {B}: doors slam, floors tilt. Resolving {B}'s unfinished business (see the library) ends the fight without a killing blow." },
+        { t: "The Burned Study", n: "Study", feature: "brazier", icons: ["🔥"], desc: "Everything burned here except the desk, the chair, and what sits in it. {B} the {M} has been finishing the same letter since the fire, and visitors mean it will never be finished.", encnotes: "{B} is bound to the desk's letter — burn or complete it and {B}'s defenses fall." },
+        { t: "The Ballroom", n: "Ballroom", feature: "circle", icons: ["👻"], desc: "Music with no source; dust rising in pairs. {B} the {M} holds the eternal last dance of the house, and cutting in is a challenge in the oldest sense.", encnotes: "Round 1, {B} marks one dancer-partner: that character is the only one {B} attacks — until someone cuts in." },
+      ],
+    },
+    flavor: ["household silver, black with tarnish", "a jewelled letter-opener", "portrait miniatures in gold frames", "a service of good porcelain, intact", "wine from a cellar forty years shut"],
+    trophy: ["{B}'s signet ring (settles the estate)", "{B}'s portrait miniature (trophy)", "the deed to the ruin (someone will want it)"],
+  },
+];
+
+// Door slot i sits at angle 60°·i (0 = east, y-down SVG), so slot → axial step. Opposite slot = (i+3)%6.
+const DGN_GEN_DIR = [[1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1], [1, -1]];
+const dgnGenPick = (R, arr) => arr[Math.floor(R() * arr.length)];
+// deal prose variants without repeats until the pile runs dry (then reshuffle — only very big maps reuse)
+const dgnGenDealer = (R, arr) => { let pile = []; return () => { if (!pile.length) pile = [...arr].sort(() => R() - 0.5); return pile.pop(); }; };
+const dgnGenCoin = (R, level, mult) => {
+  const tier = level >= 17 ? 2000 : level >= 11 ? 600 : level >= 5 ? 150 : 40;
+  const gp = Math.max(5, Math.round((tier * mult * (0.6 + R() * 0.8)) / 5) * 5);
+  return { n: `${gp} gp` };
+};
+/* One magic item, rarity gated by level. kind "consumable" = potions/scrolls and the like (loose in
+   fight rooms); "keeper" = a permanent item (the boss / vault reward). Items come from the same SRD
+   list the compendium uses, deep-copied so charges and effects ride along into the loot tab. */
+function dgnGenItem(R, level, kind) {
+  const tier = level >= 17 ? 4 : level >= 11 ? 3 : level >= 5 ? 2 : 1;
+  const rarity = kind === "keeper"
+    ? { 1: "U", 2: "R", 3: "V", 4: "L" }[tier]
+    : { 1: "C", 2: "U", 3: "U", 4: "R" }[tier];
+  const isCons = (i) => i.c === 1 || /potion|scroll|oil|elixir|dust|bead|feather token/i.test(i.n);
+  let pool = ITEMS.filter((i) => i.rarity === rarity && (kind === "consumable" ? isCons(i) : !isCons(i)));
+  if (!pool.length) pool = ITEMS.filter((i) => i.rarity === rarity);
+  return pool.length ? JSON.parse(JSON.stringify(dgnGenPick(R, pool))) : null;
+}
+/* The generator. Returns { dungeon, summary, totalXp, premise, boss } — the dungeon slots straight
+   into saveDungeons(); summary/premise/totalXp feed the preview so the DM sees what they rolled
+   before keeping it. Encounters go through suggestEncounter() (strict-XP mode) so a generated fight
+   is budgeted exactly like a suggested one; the ramp hands early rooms a lower tier than the boss. */
+function generateDungeon({ themeKey, roomsN, level, size, difficulty, rng }) {
+  const R = rng || Math.random;
+  const theme = DGN_GEN_THEMES.find((t) => t.key === themeKey) || DGN_GEN_THEMES[0];
+  const N = Math.max(4, Math.min(12, roomsN || 6));
+  const boss = dgnGenPick(R, theme.bosses);
+  const fill = (s2) => String(s2 || "").replace(/\{B\}/g, boss);
+  const premise = fill(dgnGenPick(R, theme.premises));
+
+  // roles: entrance + boss always; a quiet room from 5; a hidden vault from 6; a second branch fight from 8
+  const hasVault = N >= 6, branchFight = N >= 8, quiets = N >= 10 ? 2 : N >= 5 ? 1 : 0;
+  const spineLen = N - (hasVault ? 1 : 0) - (branchFight ? 1 : 0);
+  const spineRoles = ["entrance"];
+  const midFights = spineLen - 2 - quiets;
+  for (let i = 0; i < midFights; i++) spineRoles.push("fight");
+  // quiet rooms sit between fights, not adjacent to the boss door
+  for (let i = 0; i < quiets; i++) spineRoles.splice(1 + Math.floor((i + 1) * (spineRoles.length - 1) / (quiets + 1)), 0, "quiet");
+  spineRoles.push("boss");
+
+  // walk the spine east-ish; E/NE/SE only, which can never revisit a cell
+  const cells = [{ q: 0, r: 0 }];
+  for (let i = 1; i < spineLen; i++) {
+    const p = cells[i - 1];
+    const dir = dgnGenPick(R, [0, 0, 1, 5]); // lean east, wander a little
+    const [dq, dr] = DGN_GEN_DIR[dir];
+    cells.push({ q: p.q + dq, r: p.r + dr, from: dir });
+  }
+  const key = (c) => `${c.q},${c.r}`;
+  const used = new Set(cells.map(key));
+  // branches hang off mid-spine rooms in any free direction
+  const attach = (avoidBossSide) => {
+    const order = [...Array(spineLen - 2).keys()].map((i) => i + 1).sort(() => R() - 0.5);
+    for (const si of order) {
+      const dirs = [...Array(6).keys()].sort(() => R() - 0.5);
+      for (const d of dirs) {
+        if (avoidBossSide && d === 0) continue;
+        const c = { q: cells[si].q + DGN_GEN_DIR[d][0], r: cells[si].r + DGN_GEN_DIR[d][1] };
+        if (!used.has(key(c))) { used.add(key(c)); return { cell: c, parent: si, dir: d }; }
+      }
+    }
+    return null;
+  };
+  const vaultAt = hasVault ? attach(true) : null;
+  const branchAt = branchFight ? attach(false) : null;
+
+  // encounter tiers ramp toward the boss instead of sitting flat
+  const ramp = { low: ["low", "moderate"], moderate: ["low", "moderate", "high"], high: ["moderate", "high", "high"] }[difficulty] || ["low", "moderate", "high"];
+  const fightTier = (frac) => ramp[Math.min(ramp.length - 2, Math.floor(frac * (ramp.length - 1)))];
+  const bossTier = ramp[ramp.length - 1];
+  const fightTemplates = ["Horde", "Skirmish", "Skirmish", "Elites"];
+
+  const deal = {}; ["entrance", "fight", "quiet", "vault", "boss"].forEach((k) => { deal[k] = dgnGenDealer(R, theme.rooms[k]); });
+  const flavorDeal = dgnGenDealer(R, theme.flavor);
+  const rooms = {}; const summary = []; let totalXp = 0; let bossMon = null;
+  let fightIdx = 0;
+  const fightsTotal = spineRoles.filter((x) => x === "fight").length + (branchAt ? 1 : 0);
+  let consumableDropped = false;
+
+  const buildRoom = (role, cell, spineIdx) => {
+    const v = deal[role]();
+    const room = {
+      shape: role === "entrance" ? "hall" : role === "vault" ? "square" : dgnGenPick(R, role === "boss" ? ["hex", "round", "square"] : role === "quiet" ? ["round", "square", "diamond"] : ["hex", "round", "hex", "ytee", "square"]),
+      color: dgnGenPick(R, theme.colors), texture: dgnGenPick(R, theme.textures),
+      title: fill(v.t), dname: fill(v.n).slice(0, DNAME_MAX), icons: v.icons ? [...v.icons] : undefined,
+      notes: { desc: fill(v.desc) },
+    };
+    if (room.shape === "hall") room.orient = "h";
+    if (theme.edge && R() < 0.55) { room.edge = theme.edge; room.caveSeed = Math.floor(R() * 40); }
+    if (v.feature) { room.feature = v.feature; room.featurePos = Math.floor(R() * 6); }
+    if (v.npcs) room.notes.npcs = fill(v.npcs);
+
+    if (role === "fight" || role === "boss") {
+      const isBoss = role === "boss";
+      const tier = isBoss ? bossTier : fightTier(fightsTotal <= 1 ? 0 : fightIdx / (fightsTotal - 1));
+      const template = isBoss ? (level >= 5 && R() < 0.35 ? "Solo boss" : "Boss + minions") : dgnGenPick(R, fightTemplates);
+      const sugg = suggestEncounter({ poolNames: theme.pool, level, size, difficulty: tier, template, balanced: false, rng: R });
+      if (sugg.picks.length) {
+        const byName = {};
+        sugg.picks.forEach((p) => { byName[p.name] = (byName[p.name] || 0) + 1; });
+        room.enc = { mons: Object.entries(byName).map(([n, c]) => ({ n, c, side: "enemy" })), group: null };
+        totalXp += sugg.spent || 0;
+        if (isBoss) {
+          bossMon = sugg.picks.reduce((a, b) => (b.xp > a.xp ? b : a), sugg.picks[0]).name;
+          room.notes.desc = room.notes.desc.replace(/\{M\}/g, bossMon);
+          if (v.encnotes) room.notes.encnotes = fill(v.encnotes).replace(/\{M\}/g, bossMon);
+        } else if (v.encnotes) room.notes.encnotes = fill(v.encnotes);
+        if (!isBoss) fightIdx++;
+        summary.push({ role, title: room.title, tier, xp: sugg.spent || 0, mons: room.enc.mons.map((m) => `${m.c}× ${m.n}`).join(", ") });
+      }
+      // loot: minor coin in most fights, one consumable somewhere, the real reward on the boss
+      const loot = [];
+      if (isBoss) {
+        loot.push(dgnGenCoin(R, level, 3));
+        const it = dgnGenItem(R, level, "keeper"); if (it) loot.push(it);
+        loot.push({ n: fill(dgnGenPick(R, theme.trophy)) });
+      } else if (R() < 0.7) {
+        loot.push(dgnGenCoin(R, level, 1));
+        if (!consumableDropped && (R() < 0.5 || fightIdx === fightsTotal - 1)) {
+          const it = dgnGenItem(R, level, "consumable"); if (it) { loot.push(it); consumableDropped = true; }
+        } else if (R() < 0.4) loot.push({ n: flavorDeal() });
+      }
+      if (loot.length) room.loot = loot;
+    } else if (role === "vault") {
+      room.feature = "chest"; room.featurePos = Math.floor(R() * 6);
+      room.glow = true; room.glowColor = theme.glow;
+      room.loot = [dgnGenCoin(R, level, 2.5)];
+      const it = dgnGenItem(R, level, "keeper"); if (it) room.loot.push(it);
+      room.loot.push({ n: flavorDeal() });
+      room.icons = ["💰"];
+      summary.push({ role, title: room.title });
+    } else if (role === "quiet" && R() < 0.5) {
+      room.loot = [{ n: flavorDeal() }];
+    }
+    if (role === "boss") { room.glow = true; room.glowColor = theme.glow; room.icons = [...new Set(["👑", ...(room.icons || [])])].slice(0, ROOM_ICON_MAX); }
+    if (role === "quiet" || role === "entrance") summary.push({ role, title: room.title });
+    return room;
+  };
+
+  // spine rooms + doors along the connections (both sides of each shared edge)
+  cells.forEach((c, i) => { rooms[key(c)] = buildRoom(spineRoles[i], c, i); });
+  cells.forEach((c, i) => {
+    if (!i) return;
+    const prevK = key(cells[i - 1]), thisK = key(c), d = c.from;
+    rooms[prevK].doors = [...new Set([...(rooms[prevK].doors || []), d])];
+    rooms[thisK].doors = [...new Set([...(rooms[thisK].doors || []), (d + 3) % 6])];
+  });
+  if (branchAt) {
+    const k = key(branchAt.cell);
+    rooms[k] = buildRoom("fight", branchAt.cell, branchAt.parent);
+    const pk = key(cells[branchAt.parent]);
+    rooms[pk].doors = [...new Set([...(rooms[pk].doors || []), branchAt.dir])];
+    rooms[k].doors = [(branchAt.dir + 3) % 6];
+  }
+  if (vaultAt) {
+    // the vault is secret: no doors — the parent room's notes carry the way in, plus a tap-through link
+    const k = key(vaultAt.cell);
+    rooms[k] = buildRoom("vault", vaultAt.cell, vaultAt.parent);
+    const parent = rooms[key(cells[vaultAt.parent])];
+    parent.notes = parent.notes || {};
+    parent.notes.loot = `${parent.notes.loot ? parent.notes.loot + " " : ""}A DC ${12 + (level >= 11 ? 3 : level >= 5 ? 1 : 0)} Investigation notices cold air moving where no passage shows — a hidden way into ${rooms[k].title.toLowerCase().startsWith("the") ? rooms[k].title : "the " + rooms[k].title}.`;
+    parent.link = { kind: "room", room: k };
+  }
+
+  const dungeon = { id: newUid(), name: fill(dgnGenPick(R, theme.titles)), bg: theme.bg, rooms };
+  // a boss room whose encounter came up empty would leave "{M}" in the read-aloud text
+  Object.values(rooms).forEach((rm) => {
+    if (rm.notes?.desc) rm.notes.desc = rm.notes.desc.replace(/\{M\}/g, "master of this place");
+    if (rm.notes?.encnotes) rm.notes.encnotes = rm.notes.encnotes.replace(/\{M\}/g, "boss");
+  });
+  return { dungeon, summary, totalXp, premise, boss: bossMon ? `${boss} the ${bossMon}` : boss };
+}
+
+/* The generator's front door: pick a theme, a size, and the party, roll, read, keep or reroll.
+   Party level/size prefill from the same remembered numbers Suggest encounter uses. Nothing is
+   saved until "Keep it" — rerolling discards freely. */
+function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
+  const [themeKey, setThemeKey] = useState("lair");
+  const [roomsN, setRoomsN] = useState(6);
+  const [level, setLevel] = useState(party.set ? String(party.level) : "");
+  const [size, setSize] = useState(party.set ? String(party.size) : playerCount ? String(playerCount) : "");
+  const [difficulty, setDifficulty] = useState(party.difficulty || "moderate");
+  const [gen, setGen] = useState(null);
+  const ready = parseInt(size, 10) > 0 && parseInt(level, 10) > 0;
+  const roll = () => setGen(generateDungeon({ themeKey, roomsN, level: parseInt(level, 10) || 3, size: parseInt(size, 10) || 4, difficulty }));
+  const ROLE_ICON = { entrance: "🚪", fight: "⚔️", quiet: "🕯️", vault: "💰", boss: "👑" };
+  const TIER_COLOR = { low: "var(--ok)", moderate: "var(--gold)", high: "var(--danger)" };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal peekmodal" onClick={(e) => e.stopPropagation()}>
+        <h3>🎲 Generate a dungeon</h3>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0" }}>
+          {DGN_GEN_THEMES.map((t) => (
+            <button key={t.key} className={`lvlchip ${themeKey === t.key ? "on" : ""}`} onClick={() => { setThemeKey(t.key); setGen(null); }}>{t.icon} {t.name}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <span className="ad" style={{ fontSize: 11 }}>Rooms:</span>
+          <input type="range" min={4} max={12} value={roomsN} onChange={(e) => { setRoomsN(parseInt(e.target.value, 10)); setGen(null); }} style={{ flex: 1, minWidth: 90, maxWidth: 160 }} />
+          <b style={{ minWidth: 18, textAlign: "center" }}>{roomsN}</b>
+          <span className="ad" style={{ fontSize: 10.5, color: "var(--faint)" }}>{roomsN >= 8 ? "spine + side rooms + hidden vault" : roomsN >= 6 ? "spine + a hidden vault" : "a straight crawl"}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <span className="ad" style={{ fontSize: 11 }}>Party:</span>
+          <select className="sbook-search" style={{ width: 108, margin: 0, color: size ? "var(--text)" : "var(--faint)", WebkitTextFillColor: size ? "var(--text)" : "var(--faint)", background: "var(--panel)", WebkitAppearance: "none", appearance: "none" }}
+            value={size} onChange={(e) => { setSize(e.target.value); setGen(null); }}>
+            <option value="">players…</option>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={String(n)}>{n} player{n === 1 ? "" : "s"}</option>)}
+          </select>
+          <select className="sbook-search" style={{ width: 96, margin: 0, color: level ? "var(--text)" : "var(--faint)", WebkitTextFillColor: level ? "var(--text)" : "var(--faint)", background: "var(--panel)", WebkitAppearance: "none", appearance: "none" }}
+            value={level} onChange={(e) => { setLevel(e.target.value); setGen(null); }}>
+            <option value="">level…</option>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => <option key={n} value={String(n)}>Level {n}</option>)}
+          </select>
+          {["low", "moderate", "high"].map((d) => (
+            <button key={d} className={`lvlchip ${difficulty === d ? "on" : ""}`} onClick={() => { setDifficulty(d); setGen(null); }}>{d}</button>
+          ))}
+        </div>
+        <div className="ad" style={{ margin: "0 0 8px", fontSize: 11.5 }}>
+          Fights ramp from easy rooms to a hard boss — the dial shifts the whole ramp. Loot (coins, an item or two, a trophy) is placed as it rolls; everything is editable in the builder afterwards.
+        </div>
+        {!gen && <button className="btn primary" disabled={!ready} title={ready ? undefined : "Pick player count and level first"} onClick={roll}>Generate</button>}
+        {gen && (
+          <>
+            <div style={{ border: "1px solid var(--line2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8 }}>
+              <div style={{ fontFamily: "var(--disp)", fontSize: 16, color: "var(--gold)" }}>{gen.dungeon.name}</div>
+              <div className="trait" style={{ fontStyle: "italic", margin: "4px 0 8px" }}>{gen.premise}</div>
+              {gen.summary.map((s2, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "baseline", fontSize: 12.5, padding: "2px 0", flexWrap: "wrap" }}>
+                  <span>{ROLE_ICON[s2.role]}</span>
+                  <b style={{ minWidth: 0 }}>{s2.title}</b>
+                  {s2.tier && <span style={{ fontSize: 10.5, color: TIER_COLOR[s2.tier] || "var(--faint)", textTransform: "uppercase", letterSpacing: ".06em" }}>{s2.tier}</span>}
+                  {s2.mons && <span style={{ color: "var(--faint)", fontSize: 11.5, flexBasis: "100%", paddingLeft: 22 }}>{s2.mons}{s2.xp ? ` · ${s2.xp} XP` : ""}</span>}
+                  {s2.role === "vault" && <span style={{ color: "var(--faint)", fontSize: 11.5 }}>hidden — found from the room it adjoins</span>}
+                </div>
+              ))}
+              <div className="trait" style={{ marginTop: 6, fontSize: 12 }}>
+                <b>{gen.boss}</b> waits at the end · ≈ <b>{gen.totalXp.toLocaleString()} XP</b> of fighting all told
+              </div>
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button className="btn" onClick={onClose}>Cancel</button>
+              <button className="btn" onClick={roll}>🎲 Reroll</button>
+              <button className="btn primary" onClick={() => onCreate(gen.dungeon, { level: parseInt(level, 10) || 3, size: parseInt(size, 10) || 4, difficulty })}>✓ Keep it</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
 const ROOM_ICONS = ["😈", "📜", "⭐️", "💰", "🙂", "💥", "🧨", "🍖", "💦", "🌿", "🔥", "🍄", "🪦", "💀", "🚪", "🗝️", "⚔️", "🔮", "🧪", "👑", "🕸️", "🗿", "🕳️", "💎"];
 const ROOM_ICON_MAX = 3; // how many icons a single hex may show
@@ -16634,12 +17125,23 @@ export default function App() {
                 <button className="btn small ok" onClick={addSampleDungeons}>✨ Add sample dungeons</button>
               </div>
             )}
-            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10 }}>
+            <div className="frow" style={{ justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
               <button className="btn" onClick={() => setModal(null)}>Close</button>
+              <button className="btn ok" title="Roll a themed dungeon — rooms, encounters scaled to your party, and loot — then edit it like any other" onClick={() => setModal({ type: "dgn-generate" })}>🎲 Generate…</button>
               <button className="btn primary" onClick={() => { const id = newUid(); saveDungeons([...dungeons, { id, name: "", rooms: {} }]); setDungeonEditId(id); setModal(null); }}>＋ New dungeon</button>
             </div>
           </div>
         </div>
+      )}
+      {modal?.type === "dgn-generate" && (
+        <GenerateDungeonModal party={party} playerCount={state.combatants.filter((c) => c.type === "player" && !c.dead).length}
+          onClose={() => setModal({ type: "dungeons" })}
+          onCreate={(dg, meta) => {
+            saveDungeons([...dungeonsRef.current, dg]);
+            setParty((p) => ({ ...p, level: meta.level, size: meta.size, difficulty: meta.difficulty, set: true }));
+            setDungeonEditId(dg.id); // straight into the builder, so the map is the first thing seen
+            setModal(null);
+          }} />
       )}
       {dungeonEditId && dungeons.find((d) => d.id === dungeonEditId) && (
         <DungeonBuilder key={dungeonEditId} dungeon={dungeons.find((d) => d.id === dungeonEditId)} allDungeons={dungeons} party={party} customMonsters={myBestiary} customItems={myItems} onSaveCustomItem={saveCustomItem}
