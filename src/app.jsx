@@ -10723,6 +10723,11 @@ const DGN_GEN_THEMES = [
         { t: "The Trophy Cave", n: "Boss", feature: "statue", desc: "Trophies of every robbery hang on cords from the ceiling. {B} the {M} counts them aloud while the guards close in — and joins the fight only when the count is done.", encnotes: "{B} enters the fight on round 2, furious, with advantage on the first attack." },
       ],
     },
+    challenge: [
+      { t: "The Rope Bridge", n: "Rope Bridge", icons: ["🧗"], desc: "The gang's rope bridge sways over a ravine, two planks in three rotten. Crossing takes a DC {DC} Dexterity (Acrobatics) check — a rope tied off first grants advantage. A fall is {DMG} bludgeoning onto the scree below, and a climb back up." },
+      { t: "The Crawlway", n: "Crawlway", icons: ["🪨"], desc: "The old escape tunnel has half-collapsed to a belly-crawl. DC {DC} Strength (Athletics) to shift the fallen prop-beam, or DC {DC} Dexterity to wriggle the gap in armor's worth of time. Failing loudly means the next room hears you coming — no surprise there." },
+      { t: "The Kennel Run", n: "Kennel Run", icons: ["🍖"], desc: "The only way on is through the sleeping kennel — straw, chains, and things that hunt by ear. A DC {DC} group Dexterity (Stealth) crosses quietly. On a failure the pack wakes: the next fight starts alerted and reinforced by a beast or two." },
+    ],
     flavor: ["a sack of mixed coin", "a merchant's strongbox, lock smashed", "bolts of good cloth, slightly burned", "a keg of dwarven ale, half gone", "boots, belts and blades of the robbed"],
     trophy: ["{B}'s notched blade (trophy)", "{B}'s iron torque (trophy)", "the gang's banner (proof for the reward)"],
   },
@@ -10767,6 +10772,11 @@ const DGN_GEN_THEMES = [
         { t: "The Last Vigil", n: "Vigil", feature: "statue", desc: "{B} the {M} kneels before a defaced statue in a posture of prayer, and speaks without turning: the dead were promised rest, and the living broke the promise first.", encnotes: "A DC 15 Persuasion before blood is drawn earns one question answered honestly. Then it fights regardless." },
       ],
     },
+    challenge: [
+      { t: "The Sunken Sluice", n: "Sluice", icons: ["💦"], feature: "pool", desc: "The passage dips under black, grave-cold water for forty feet. A DC {DC} Strength (Athletics) swim gets through on one breath; failure means surfacing back where you started, taking {DMG} cold from the chill. Light does not survive the crossing — plan for the far side being dark." },
+      { t: "The Rotten Gallery", n: "Rotten Floor", icons: ["🕳️"], desc: "The floor here is a crust over the lower catacombs — it drums hollow underfoot. Crossing light-footed is a DC {DC} Dexterity (Acrobatics) check; carrying a heavy load imposes disadvantage. A failure drops you {DMG} bludgeoning into the bone-pit below, and it is a DC {DC2} climb back out of the dark." },
+      { t: "The Warded Door", n: "Warded Door", icons: ["🗝️"], desc: "A door sealed with funerary scripture bars the way. A DC {DC} Intelligence (Religion) check reads the rite that opens it clean. It can be forced with DC {DC2} Strength instead — but the ward answers force with {DMG} necrotic through whoever pushes." },
+    ],
     flavor: ["grave-goods of tarnished silver", "a silver holy symbol", "funerary wrappings sewn with coin", "an urn of ancient coins", "a mourning ring set with jet"],
     trophy: ["{B}'s grave-crown (trophy)", "{B}'s barrow-blade (trophy)", "the tomb-seal of {B} (proof it is done)"],
   },
@@ -10775,7 +10785,7 @@ const DGN_GEN_THEMES = [
     pool: ["Cultist", "Cultist Fanatic", "Priest Acolyte", "Priest", "Imp", "Quasit", "Dretch", "Hell Hound", "Bearded Devil", "Shadow", "Specter", "Magma Mephit", "Fire Elemental", "Salamander", "Nightmare", "Barbed Devil", "Chain Devil", "Mage", "Succubus", "Warrior Veteran", "Tough"],
     colors: ["#5a3b3b", "#5a3b52", "#2c2c30", "#453424"], textures: ["brick", "runes", "blood", "stone"], edge: null, glow: "#e0483a",
     bosses: ["Vharos", "Mother Ilsette", "Brother Kael", "the Ashen Voice", "Serelith", "High Thane Moru", "Whisper-of-Coals", "Dredha"],
-    titles: ["The Shrine of the {B}", "The {B} Circle", "Sanctum of {B}", "The Hidden Chapel of {B}"],
+    titles: ["The Shrine of {B}", "The Circle of {B}", "Sanctum of {B}", "The Hidden Chapel of {B}"],
     premises: [
       "People have been disappearing on new-moon nights. The trail of red wax and ash leads here, to the congregation of {B}.",
       "The cult bought the old shrine legally, smiled at the neighbors, and bricked up the windows. {B} preaches below at midnight.",
@@ -10811,6 +10821,11 @@ const DGN_GEN_THEMES = [
         { t: "The Voice's Pulpit", n: "Pulpit", feature: "statue", icons: ["⭐️"], desc: "{B} the {M} preaches from a high pulpit to an empty room — empty, until the shadows of the congregation stand up out of the floor.", encnotes: "Reinforcements arrive in waves; killing {B} stops them." },
       ],
     },
+    challenge: [
+      { t: "The Brand Floor", n: "Brand Floor", icons: ["🔥"], desc: "The floor of this hall is one great sigil, and it is heating. Picking a path across the cool lines is a DC {DC} Dexterity (Acrobatics) check — a DC {DC} Intelligence (Arcana) read of the sigil first grants advantage. A misstep takes {DMG} fire as the brand answers." },
+      { t: "The Bell Corridor", n: "Bells", icons: ["🔔"], desc: "Hair-fine threads cross the corridor, strung with dozens of tiny bells — the cult's alarm. A DC {DC} group Dexterity (Stealth) threads them silently. One failure rings the shrine: the next fight starts warned and armed." },
+      { t: "The Confession Gate", n: "The Gate", icons: ["🚪"], desc: "A masked gate asks each traveller one question, and opens only for a truth. Answering costs each character an honest admission — or a DC {DC} Charisma (Deception) check to lie well enough. A caught lie slams the gate for an hour and marks the liar: {DMG} psychic as the mask stares through them." },
+    ],
     flavor: ["a bowl of tithed coin", "ritual regalia of silver thread", "votive candles of black wax", "incense worth a fair sum", "confiscated valuables, carefully labelled"],
     trophy: ["{B}'s ash-grey mask (proof for the magistrate)", "{B}'s ritual dagger (trophy)", "the cult's member roll (names half the town)"],
   },
@@ -10855,6 +10870,11 @@ const DGN_GEN_THEMES = [
         { t: "The Drowned Cathedral", n: "Cathedral", feature: "pool", desc: "A vaulted cavern of flowstone columns above a black pool. {B} the {M} rises from the water without a ripple.", encnotes: "{B} dives between turns — attacks against it in the water are at disadvantage." },
       ],
     },
+    challenge: [
+      { t: "The Broken Bridge", n: "Broken Bridge", icons: ["🧗"], desc: "A natural stone bridge once crossed the chasm here; its middle third is gone. Leaping the gap is a DC {DC} Strength (Athletics) check — rigging a rope line first lets the rest cross with advantage. A fall is {DMG} bludgeoning onto a ledge twenty feet down, then a DC {DC2} climb out while the dark below listens." },
+      { t: "The Underground River", n: "The River", icons: ["💦"], feature: "pool", desc: "A fast black river cuts the passage. Swimming the crossing is DC {DC} Strength (Athletics); a rope round the anchor stone gives advantage. Anyone who fails is swept {DMG} bludgeoning along the rocks and hauls out on the wrong side, alone." },
+      { t: "The Chimney Climb", n: "The Chimney", icons: ["🧗"], desc: "The way on is straight up a flowstone chimney, slick with seep. A DC {DC} Strength (Athletics) climb reaches the gallery above; the first climber hauls the rest up with advantage. A fall costs {DMG} bludgeoning — and every loose pebble rings down the cave like a bell." },
+    ],
     flavor: ["raw ore worth good coin", "a dead adventurer's pack", "uncut crystals", "a prospector's assay kit and claim deed", "old coins in the flowstone"],
     trophy: ["a fang of {B} (proof for the purse)", "{B}'s hide (trophy)", "the swallowed shrine's icon (the temple will pay)"],
   },
@@ -10899,8 +10919,209 @@ const DGN_GEN_THEMES = [
         { t: "The Ballroom", n: "Ballroom", feature: "circle", icons: ["👻"], desc: "Music with no source; dust rising in pairs. {B} the {M} holds the eternal last dance of the house, and cutting in is a challenge in the oldest sense.", encnotes: "Round 1, {B} marks one dancer-partner: that character is the only one {B} attacks — until someone cuts in." },
       ],
     },
+    challenge: [
+      { t: "The Grand Stair", n: "Grand Stair", icons: ["🧗"], desc: "The sweeping staircase is rot from banister to stringer. Reading the safe treads is a DC {DC} Wisdom (Perception) check, then a light-footed DC {DC} Dexterity (Acrobatics) climb. A failure punches through for {DMG} bludgeoning — and the whole house hears the crash." },
+      { t: "The Battlement Ledge", n: "The Ledge", icons: ["🧗"], desc: "The corridor is collapsed; the way past is outside, along a crumbling battlement ledge in the wind. A DC {DC} Dexterity (Acrobatics) crossing, disadvantage in rain or dark. A fall is {DMG} bludgeoning into the courtyard — where something walks its circuit nightly." },
+      { t: "The Chandelier Hall", n: "Chandeliers", icons: ["🕯️"], desc: "The ballroom floor fell into the cellars years ago; the way across is the ceiling beams and three great chandeliers. DC {DC} Dexterity (Acrobatics) beam to beam. A failure is {DMG} bludgeoning into the dark below — and the chandeliers ring like struck bells as the house takes notice." },
+    ],
     flavor: ["household silver, black with tarnish", "a jewelled letter-opener", "portrait miniatures in gold frames", "a service of good porcelain, intact", "wine from a cellar forty years shut"],
     trophy: ["{B}'s signet ring (settles the estate)", "{B}'s portrait miniature (trophy)", "the deed to the ruin (someone will want it)"],
+  },
+  {
+    key: "sea", name: "Sea cave", icon: "🌊", bg: "coast",
+    pool: ["Giant Crab", "Reef Shark", "Merfolk Skirmisher", "Sahuagin Warrior", "Swarm of Piranhas", "Harpy", "Sea Hag", "Merrow", "Pirate", "Giant Octopus", "Water Elemental", "Hunter Shark", "Plesiosaurus", "Pirate Captain", "Killer Whale", "Giant Shark", "Crocodile", "Ghoul"],
+    colors: ["#3b4a5a", "#2c3e46", "#3d3226", "#243838"], textures: ["water", "sand", "stone", "cobble"], edge: "cave", glow: "#3f7be0",
+    bosses: ["Mother Brine", "Captain Redwake", "Old Undertow", "Salt-Queen Morva", "the Drowned Bell", "Grandmother Tide", "Blacktooth Harrow", "the Harbormaster"],
+    titles: ["The Grotto of {B}", "{B}'s Cove", "The Drowning Caves", "The Anchorage of {B}"],
+    premises: [
+      "Ships founder on this coast in fair weather, always at the same headland, always stripped clean by dawn. The wreckers answer to {B}.",
+      "The fishing fleet pays a tithe to something in the caves and does not speak of it. This month the tithe doubled — and the fleet has begun paying in people. {B} collects.",
+      "A cave only reachable at low tide, a smuggler's fortune supposedly still in it — and three crews gone after it. The tide is not what keeps them from coming back. {B} is.",
+      "Salvage from a wreck forty years lost has started washing ashore, piece by piece, as if something below were emptying the hold. Divers say the wreck is guarded by {B}.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Tide Mouth", n: "Tide Mouth", icons: ["🌊"], desc: "The cave mouth breathes with the swell, swallowing and spitting foam. High tide seals it — mind the hour, going in and coming out." },
+        { t: "The Wreckers' Beach", n: "The Beach", icons: ["⚓"], desc: "A shingle beach inside the headland, strewn with ship's timber, cargo netting, and a cold fire-ring. Someone sorts wrecks here, and recently." },
+        { t: "The Smugglers' Stair", n: "The Stair", icons: ["🗝️"], desc: "Steps cut into the cliff descend into the dark, worn hollow by generations of quiet feet. Iron mooring rings line the wall — some still hold rotted rope." },
+      ],
+      fight: [
+        { t: "The Drowned Larder", n: "Larder", icons: ["🍖"], desc: "Nets hang from the ceiling, heavy with what the sea gave up — fish, mostly. The things feeding here don't share.", encnotes: "Cut nets spill slippery catch: the ground under them becomes difficult terrain." },
+        { t: "The Surge Channel", n: "The Channel", icons: ["💦"], desc: "A long channel where the swell funnels through waist-deep. Every seventh beat the surge comes — creatures in the water when it hits are shoved off their feet.", encnotes: "On initiative 20, the surge: everyone in the water makes a DC 12 Strength save or is knocked prone and pushed 10 ft." },
+        { t: "The Barnacle Gallery", n: "Barnacles", icons: ["🕸️"], desc: "Every surface is armored in barnacles sharp as knives. Fighting here is careful work — a shove into the walls draws blood.", encnotes: "A creature pushed or knocked prone against the walls takes 1d4 slashing." },
+        { t: "The Wreck Hold", n: "The Wreck", icons: ["⚓"], desc: "A ship's stern half, wedged and rotting in the cavern shallows. Its hold is worth searching — and defended by what nests in it." },
+        { t: "The Brine Pools", n: "Brine Pools", feature: "pool", icons: ["💦"], desc: "Tide pools deep enough to hide what waits in them. The path threads between; ambush comes from the water on both sides.", encnotes: "The first attack comes from a pool — DC 13 Perception or the ambusher acts first." },
+        { t: "The Bell Chamber", n: "The Bell", icons: ["🔔"], desc: "A ship's bell, salvaged and hung, green with verdigris. The garrison rings it when intruders come — unless they are stopped before reaching the rope.", encnotes: "If the bell rings, the boss room fights reinforced." },
+      ],
+      quiet: [
+        { t: "The Castaway's Shelter", n: "Castaway", icons: ["🙂"], desc: "A survivor of the wrecks has made a den of flotsam here — driftwood walls, a tally of tides. They know the caves, the timings, and what {B} keeps below.", npcs: "The castaway trades the safe route for passage out on the party's boat." },
+        { t: "The Salt Garden", n: "Salt Garden", icons: ["💎"], desc: "Salt crystals bloom over everything here in white flowers. Utterly still, utterly silent — the one place the water's sound doesn't reach. A DC 13 Nature check realises why: the sea itself avoids this chamber." },
+        { t: "The Charthouse", n: "Charthouse", icons: ["📜"], desc: "Salvaged charts, a brass instrument or two, and a log kept in more than one hand. A DC 12 Investigation reconstructs the wreckers' method — and which ship they mean to take next." },
+      ],
+      vault: [
+        { t: "The Smugglers' Hole", n: "The Hole", desc: "The hole the smugglers dug and never came back for, dry above the tide line. Oilcloth bundles, sealed casks, and a strongbox with a rusted lock." },
+        { t: "The Tithe Cave", n: "Tithe Cave", desc: "Where the fleet's tithe has piled for a generation — the sea took what it wanted and left the rest. The rest is considerable." },
+      ],
+      boss: [
+        { t: "The Drowning Pool", n: "The Pool", feature: "pool", desc: "The great flooded chamber at the caves' heart, lit green from below. {B} — the {M} the coast whispers about — rises from the pool without a sound.", encnotes: "{B} retreats underwater between turns; attacks against it there are at disadvantage. It surfaces to attack." },
+        { t: "The Wreck Throne", n: "The Throne", desc: "A throne built of figureheads and anchor chain, and on it {B} the {M}, wearing salvage like regalia. The court of drowned trophies watches you arrive.", encnotes: "{B} fights among obstacles it knows — the chain piles are difficult terrain for everyone else." },
+        { t: "The Undertow Gate", n: "Undertow", desc: "The sea gate where the current runs hardest. {B} the {M} holds it, and the water fights alongside — every round, the undertow drags at whoever stands closest to the gate.", encnotes: "On initiative 20: the creature nearest the gate makes a DC 13 Strength save or is pulled 10 ft toward it." },
+      ],
+      challenge: [
+        { t: "The Tide Race", n: "Tide Race", icons: ["💦"], desc: "The passage floods to the ceiling between swells — the crossing must be timed and swum. A DC {DC} Strength (Athletics) check gets through on one breath; failure means being slammed along the rocks for {DMG} bludgeoning and washed back to the start." },
+        { t: "The Blowhole Shaft", n: "Blowhole", icons: ["🧗"], desc: "A slick shaft climbs past a blowhole that fires with every heavy swell. The climb is DC {DC} Strength (Athletics), timed between blasts — a DC 12 Perception read of the rhythm first grants advantage. Caught by the blast: {DMG} bludgeoning and the climb starts over." },
+        { t: "The Kelp Run", n: "Kelp Run", icons: ["🌿"], desc: "The flooded gallery is a forest of kelp. Swimming it clean is DC {DC} Strength (Athletics); a blade in hand grants advantage. A failure means tangling — {DMG} as breath runs short before the knife finds the strand." },
+      ],
+    },
+    flavor: ["a crate of salvaged cargo, seals intact", "pearls in an oilcloth twist", "a ship's chronometer, still running", "coin fused by salt into a brick", "an admiralty flag, worth more than it looks"],
+    trophy: ["{B}'s figurehead crown (proof for the harbormaster)", "the wreckers' false beacon (end of the matter)", "{B}'s bell-clapper (trophy)"],
+  },
+  {
+    key: "forge", name: "Fire-mountain forge", icon: "🌋", bg: "lavafield",
+    pool: ["Magma Mephit", "Steam Mephit", "Magmin", "Hell Hound", "Azer Sentinel", "Fire Elemental", "Salamander", "Gargoyle", "Red Dragon Wyrmling", "Fire Giant", "Efreeti", "Young Red Dragon"],
+    colors: ["#5a3b3b", "#453424", "#2c2c30", "#5a4a33"], textures: ["lava", "brick", "metal", "stone"], edge: "rubble", glow: "#e0483a",
+    bosses: ["Forgemaster Vulkh", "Emberqueen Saskra", "Old Cinderjaw", "the Slagged King", "Hessa Nine-Hammers", "the White-Hot Word", "Krazzek of the Coals", "Mother Furnace"],
+    titles: ["The Forge of {B}", "{B}'s Foundry", "The Ember Deep", "The Anvilworks of {B}"],
+    premises: [
+      "The old forge under the mountain has lit again after a hundred cold years. The smoke rises in working-day rhythms, and the hammering answers to {B}.",
+      "Weapons of unfamiliar make have reached the wrong hands, all bearing the same maker's mark. The mark belongs to {B}, and the forge is this way.",
+      "The mountain's heat is rising — springs boiling, tremors nightly. Something is stoking it from below, and the miners' word for it is {B}.",
+      "A caravan of raw ore vanished between the pass and the smelter. The trail doesn't go over the mountain. It goes in, down to {B}.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Slag Gate", n: "Slag Gate", icons: ["🔥"], desc: "The entrance is framed in poured slag, still warm to the touch. Cart tracks run inward, freshly used. The air tastes of iron and coal." },
+        { t: "The Cooling Tunnels", n: "Cooling Run", icons: ["🌫️"], desc: "Steam vents hiss along this tunnel, built to bleed the forge's heat. Visibility comes and goes with the venting — ten feet, then forty, then ten." },
+        { t: "The Ore Tip", n: "Ore Tip", icons: ["⛏️"], desc: "A spoil heap of worked-out ore spills from the mountain's flank around the entrance proper. Fresh tailings on top — the forge is eating well." },
+      ],
+      fight: [
+        { t: "The Anvil Hall", n: "Anvil Hall", feature: "brazier", icons: ["🔥"], desc: "Ranks of anvils under a ceiling lost in smoke. The smiths do not stop working when you enter — the guards handle interruptions.", encnotes: "The hammering covers all sound: neither side hears the other's reinforcements coming." },
+        { t: "The Bellows Gallery", n: "Bellows", icons: ["💨"], desc: "Bellows the size of houses breathe along this gallery, feeding the great furnace. In the wind of their exhale, ranged shots fly wild.", encnotes: "Ranged attacks across the gallery are at disadvantage while the bellows work." },
+        { t: "The Quench Pools", n: "Quench Pools", feature: "pool", icons: ["💦"], desc: "Rows of steaming quench pools between here and the far door. The water is scalding — a shove means something here.", encnotes: "A creature pushed into a pool takes 2d6 fire and climbs out prone." },
+        { t: "The Chain Hoist", n: "The Hoist", icons: ["⚙️"], desc: "Ore buckets swing overhead on a moving chain hoist, crossing the room in slow procession. Cover, weapon, and hazard all at once.", encnotes: "Once per round a bucket passes: a creature may ride it 20 ft, or tip it — 2d6 bludgeoning in a 5-ft square." },
+        { t: "The Crucible Walk", n: "Crucible", icons: ["🔥", "💥"], desc: "The walkway crosses above an open crucible of melt. Handrails were never installed. The garrison knows exactly where to stand.", encnotes: "A creature knocked off the walk catches the lip: DC 12 Strength save or fall — 4d6 fire and out of the fight until it climbs back." },
+        { t: "The Armory Cage", n: "Armory", feature: "statue", icons: ["⚔️"], desc: "Finished work waits in a barred cage — racked blades, stacked shields, all bearing the maker's mark. The watch here defends the stock like kin." },
+      ],
+      quiet: [
+        { t: "The Tally Room", n: "Tally Room", icons: ["📜"], desc: "Ledgers of ore in and steel out, in a neat firm hand. A DC 12 Investigation works out the buyer — and that the next shipment leaves in two days." },
+        { t: "The Old Shrine", n: "Old Shrine", feature: "altar", icons: ["🗿"], desc: "A soot-blackened shrine to the forge-god of the mountain's first tenants. The current tenants leave it alone — a DC 13 Religion check says they're right to." },
+        { t: "The Foreman's Rest", n: "Foreman's Rest", icons: ["🍖"], desc: "A cool-room dug off the main heat: bunks, a water barrel, and the only quiet in the mountain. Safe enough for a short rest — the shift bell gives warning before anyone comes." },
+      ],
+      vault: [
+        { t: "The Master's Locker", n: "The Locker", desc: "Behind a false wall of firebrick: the forgemaster's private locker. The best of every batch never went to the buyers." },
+        { t: "The First Vein", n: "First Vein", desc: "The original strike that built the forge, walled off and hoarded when the mountain's owners changed. The ore in it is still rich." },
+      ],
+      boss: [
+        { t: "The Great Furnace", n: "The Furnace", feature: "brazier", desc: "The heart of the mountain: a furnace like a standing sun. {B} the {M} works before it, unhurried, and finishes the piece in hand before turning to deal with you.", encnotes: "The furnace roars: creatures ending their turn within 10 ft of it take 3 (1d6) fire. {B} is immune, and knows it." },
+        { t: "The Casting Floor", n: "Casting Floor", desc: "Channels of glowing melt vein the floor in a pattern only the caster knows. {B} the {M} crosses them like garden paths and lets you guess.", encnotes: "The melt channels are difficult terrain that deal 2d6 fire to end a turn in — {B} ignores both." },
+        { t: "The Trophy Forge", n: "Trophy Forge", feature: "statue", desc: "Every blade {B} has bested hangs re-forged into one terrible sculpture. {B} the {M} adds a hammer-tap of welcome, and the sculpture rings like a bell as the fight begins.", encnotes: "{B} fights to disarm first — a surrendered weapon joins the sculpture, not the loot." },
+      ],
+      challenge: [
+        { t: "The Stepping Stones", n: "Stepping Stones", icons: ["🔥"], desc: "The floor is melt; the way across is a line of cooling slag islands. Timing the hops is a DC {DC} Dexterity (Acrobatics) check — watching a full cycle first (one round) grants advantage. A slip is {DMG} fire and a scramble back to the last stone." },
+        { t: "The Heat Gallery", n: "Heat Gallery", icons: ["🌫️"], desc: "The long gallery runs beside the furnace flue, and the air itself sears. Crossing at a run is a DC {DC} Constitution check; soaked cloth over the face grants advantage. Failure costs {DMG} fire, breath by breath, before the cool of the far arch." },
+        { t: "The Chain Crossing", n: "Chains", icons: ["🧗"], desc: "The bridge is gone; the hoist chains remain, crossing the melt hand over hand. DC {DC} Strength (Athletics) — bare hands take {DMG} fire from the hot links unless gloved or wrapped, and a fall doubles it." },
+      ],
+    },
+    flavor: ["a bar of forge-marked steel", "a crate of finished blades, unhilted", "raw ore, assay-rich", "the forgemaster's tool roll", "a buyer's letter of credit"],
+    trophy: ["{B}'s maker's-mark stamp (proof the forge is done)", "{B}'s hammer (trophy)", "the mold of the last commission (someone paid for this)"],
+  },
+  {
+    key: "frost", name: "Frozen fastness", icon: "❄️", bg: "snow",
+    pool: ["Wolf", "Giant Owl", "Ice Mephit", "Dire Wolf", "Polar Bear", "Winter Wolf", "Giant Elk", "Saber-Toothed Tiger", "Werebear", "Mammoth", "Frost Giant", "Remorhaz", "White Dragon Wyrmling", "Young White Dragon"],
+    colors: ["#3b4a5a", "#2c3540", "#4a5a66", "#38404d"], textures: ["ice", "snow", "stone", "mist"], edge: "cave", glow: "#6db9e8",
+    bosses: ["Old Whiteout", "Jarl Hrimnir", "the Silence", "Mother Rime", "Skadvar the Blue", "the Last Winter", "Auntie Frostbite", "King Under-Ice"],
+    titles: ["The Fastness of {B}", "{B}'s Ice", "The White Deep", "The Winter Court of {B}"],
+    premises: [
+      "The pass closed early this year and will not reopen — the ice across it is worked, not weathered. The herders name the maker {B}.",
+      "A hunting lodge went silent above the snowline. The rescue party found it empty, the hearth ash frozen mid-scatter, and one word scratched on the door: {B}.",
+      "Winter is arriving from the wrong direction — down from the old ice caves, not the sky. Whatever is breathing it out, the valley calls it {B}.",
+      "An expedition took the maps into the ice fields last autumn and did not come back. Their last cairn-note says the beautiful blue cave system was 'occupied'. It names {B}.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Blue Mouth", n: "Blue Mouth", icons: ["❄️"], desc: "The cave mouth glows glacier-blue, exhaling cold that bites through furs. Old snow at the threshold holds tracks — big ones, going in." },
+        { t: "The Frozen Lodge", n: "The Lodge", icons: ["🚪"], desc: "A hunters' lodge stands against the cliff, rimed solid, its door frozen ajar. The way onward is through it and out the back, into the ice." },
+        { t: "The Cairn Field", n: "Cairns", icons: ["🪦"], desc: "Marker cairns dot the approach, raised by travellers who wanted the next party warned. The newest one is this season's, and its note is short: turn back." },
+      ],
+      fight: [
+        { t: "The Glitter Hall", n: "Glitter Hall", icons: ["💎"], desc: "Every surface is faceted ice, throwing lamplight in a thousand directions. Telling a shape from its reflections is the whole fight.", encnotes: "First round: attacks against the defenders are at disadvantage until each attacker succeeds on a DC 12 Perception check." },
+        { t: "The Breathing Crevasse", n: "Crevasse", icons: ["🕳️"], desc: "A crevasse splits the gallery, exhaling fog with the mountain's slow breath. What hunts here uses the fog as a curtain.", encnotes: "The fog line is heavy obscurement; it shifts 10 ft each round on initiative 20." },
+        { t: "The Frozen Menagerie", n: "Menagerie", feature: "statue", icons: ["🗿"], desc: "Beasts stand frozen mid-stride in walls of clear ice — collected, not caught by chance. Some of the ice is thinner than it looks.", encnotes: "When the fight starts, one exhibit is already thawing — it joins the loudest side on round 3." },
+        { t: "The Wind Gallery", n: "Wind Gallery", icons: ["💨"], desc: "The mountain's breath funnels through this gallery in a standing gale. Arrows curve, cloaks drag, and the defenders fight with the wind at their backs.", encnotes: "Ranged attacks into the wind are at disadvantage; with it, +10 ft range bands." },
+        { t: "The Melt Chapel", n: "Melt Chapel", feature: "pool", icons: ["💦"], desc: "A dome where meltwater drips into a black pool that never quite freezes. The dripping counts the seconds. Things drink here, and defend it.", encnotes: "The pool's rim is glare ice: difficult terrain, and a shove onto it means a DC 12 Dexterity save or prone." },
+        { t: "The Bone Drift", n: "Bone Drift", feature: "skeletons", icons: ["💀"], desc: "A snowdrift of bones — the larder's leavings of many winters. Wading it is slow and loud, and the larder's owner objects.", encnotes: "The drift is difficult terrain; creatures fighting in it can't take reactions." },
+      ],
+      quiet: [
+        { t: "The Expedition Camp", n: "The Camp", icons: ["🙂"], desc: "The lost expedition's forward camp, preserved perfectly by the cold: tents, gear, and a journal that maps everything up to the door they shouldn't have opened.", npcs: "The journal's map grants advantage on the party's next navigation or Perception check in the fastness." },
+        { t: "The Aurora Chamber", n: "Aurora", icons: ["🔮"], desc: "Light moves through the ice ceiling in slow curtains of green and violet — the sky's aurora, carried down through a hundred feet of glacier. The cold here is gentler. Nothing hunts by this light." },
+        { t: "The Hot Spring", n: "Hot Spring", feature: "pool", icons: ["💦"], desc: "A volcanic spring keeps one impossible pocket of warmth in all the ice. Steam, moss, running water. A short rest here shrugs off the cold's grip — and everything in the fastness knows where the warmth is." },
+      ],
+      vault: [
+        { t: "The Ice-Locked Hoard", n: "The Hoard", desc: "Treasure locked in clear ice like flies in amber — the fastness's keeper stores its taking where only it can reach. Cutting it free takes time, not skill." },
+        { t: "The Frozen Strongroom", n: "Strongroom", desc: "A fortress strongroom from whatever this place was before the ice came, its door frozen a hand's width open. Thin adventurers first." },
+      ],
+      boss: [
+        { t: "The Heart of Winter", n: "The Heart", desc: "The deepest chamber, where the cold is a pressure on the eyes. {B} — the {M} the valley fears — regards you from the centre of it, entirely at home.", encnotes: "The cold fights for {B}: creatures ending their turn here make a DC 10 Constitution save or their speed drops 10 ft until they warm. {B} is immune." },
+        { t: "The Throne of Rime", n: "Rime Throne", feature: "statue", desc: "A throne grown from hoarfrost, and around it kneel figures of ice that were not sculpted. {B} the {M} rises from it and the whole room creaks.", encnotes: "The kneeling figures are {B}'s previous visitors. Breaking one free of the ice mid-fight is a DC 15 Strength check — and earns an ally, or at least a distraction." },
+        { t: "The Under-Ice Lake", n: "Under-Ice", feature: "pool", desc: "A lake roofed in ice thick enough to walk — mostly. {B} the {M} moves beneath the surface as a shadow, and chooses where the floor breaks.", encnotes: "Once per round {B} shatters a 10-ft square of floor under a creature: DC 13 Dexterity save or fall in — 2d6 cold and climbing out costs half a turn's movement." },
+      ],
+      challenge: [
+        { t: "The Ice Bridge", n: "Ice Bridge", icons: ["🧗"], desc: "A bridge of clear blue ice spans the crevasse — beautiful, and creaking. Crossing one at a time, light-footed, is a DC {DC} Dexterity (Acrobatics) check; spiked boots or a rope line grant advantage. A collapse is {DMG} cold and bludgeoning on the ledge below, and a DC {DC2} climb out." },
+        { t: "The White Chute", n: "White Chute", icons: ["❄️"], desc: "The way down is a polished chute of ice — fast, dark, and curved. Steering the descent is a DC {DC} Dexterity check; failure means the wall takes its toll, {DMG} bludgeoning, and the gear that comes loose arrives separately." },
+        { t: "The Frozen Falls", n: "Frozen Falls", icons: ["🧗"], desc: "A waterfall frozen mid-plunge is the only way up. The climb is DC {DC} Strength (Athletics) — axes or pitons grant advantage. A fall is {DMG} bludgeoning, and the crash echoes through the fastness like a struck drum." },
+      ],
+    },
+    flavor: ["furs worth good coin, perfectly kept", "the expedition's silver instruments", "amber with something old inside", "a jarl's arm-ring, blue with cold", "trade goods flash-frozen in transit"],
+    trophy: ["a shard of {B}'s ice that will not melt (proof)", "{B}'s frost-crusted torque (trophy)", "the expedition's map case (the guild will pay)"],
+  },
+  {
+    key: "tower", name: "Wizard's tower", icon: "🪄", bg: "night",
+    pool: ["Rat", "Giant Rat", "Animated Flying Sword", "Animated Armor", "Animated Rug of Smothering", "Mimic", "Shadow", "Specter", "Gargoyle", "Imp", "Quasit", "Doppelganger", "Flesh Golem", "Clay Golem", "Stone Golem", "Shield Guardian", "Mage", "Archmage", "Oni"],
+    colors: ["#4a3b5a", "#3b3f52", "#2c2c30", "#453450"], textures: ["marble", "runes", "tile", "stars"], edge: null, glow: "#a24de0",
+    bosses: ["Ilvazar the Unfinished", "Magister Wrenn", "the Caretaker", "Ozmandine", "Doctor Elsevier", "the Ninth Apprentice", "Vashtel of the Locks", "Grand Theurge Immla"],
+    titles: ["The Tower of {B}", "{B}'s Spire", "The Locked College", "{B}'s Working"],
+    premises: [
+      "The tower's lights still cycle — study, laboratory, observatory — though {B} has not been seen at a window in eleven years. Something keeps the schedule.",
+      "Every apprentice {B} ever dismissed received the same letter last month: 'Come and collect what you are owed.' None who went came back out.",
+      "The tower has begun leaking — small impossibilities drifting downhill into the town. The council wants the tap closed, and the tap is {B}.",
+      "{B} bought no food, took no visitors, and paid the land-rent fifty years in advance. The rent ran out on Tuesday, and the landlord wants the tower inspected. Nobody local will do it.",
+    ],
+    rooms: {
+      entrance: [
+        { t: "The Door That Knows You", n: "Front Door", icons: ["🚪"], desc: "The tower door has no lock, only a brass face that opens its eyes when you approach and announces each of you — by name, and by one thing you'd rather it hadn't said." },
+        { t: "The Coat Hall", n: "Coat Hall", icons: ["🗝️"], desc: "A modest entry hall with hooks for coats and a stand for staves. Forty coats hang here. Some of the styles are a century out of date, and all of them are dusted weekly." },
+        { t: "The Delivery Step", n: "Deliveries", icons: ["📦"], desc: "Crates stack neatly by a side door — reagents, glassware, books — signed for in a firm hand, dated three days ago. Somebody, or something, still takes deliveries." },
+      ],
+      fight: [
+        { t: "The Standing Guard", n: "The Guard", feature: "statue", icons: ["⚔️"], desc: "The hall of the tower's guardians, racked and ready. They activate politely — announcing that visitors without appointment are to be escorted out, then enforcing it.", encnotes: "The guardians fight to eject, not to kill — until someone destroys one. Then the courtesy ends." },
+        { t: "The Library Stacks", n: "The Stacks", icons: ["📜"], desc: "Shelves climb out of lamplight into the dark above, and the ladders move themselves. Something hunts between the stacks, and it knows the shelving system.", encnotes: "The stacks are a maze: ranged attacks beyond 20 ft are blocked by shelving unless both creatures are in the same aisle." },
+        { t: "The Laboratory", n: "Laboratory", icons: ["🧪"], desc: "Benches of active glasswork, mid-experiment for eleven years. The defenders fight carefully here. You are advised to as well.", encnotes: "A missed attack that rolls a natural 1 breaks something: the attacker takes 2d6 acid, fire, or lightning (roll)." },
+        { t: "The Portrait Stair", n: "Portrait Stair", icons: ["🗿"], desc: "The spiral stair is hung with portraits of {B} at every age, and every one of them watches you climb. Some of the frames are recently empty.", encnotes: "Count the empty frames — that is how many are already on the stair with you." },
+        { t: "The Half-Made Room", n: "Half-Made", icons: ["🔮"], desc: "A room {B} never finished casting: the far wall is sketched in glowing lines, the floor is solid only where furniture stands. The residents have learned the safe footing.", encnotes: "Unfinished floor is difficult terrain for intruders; the defenders ignore it." },
+        { t: "The Menagerie Landing", n: "Menagerie", icons: ["🧨"], desc: "Cages line the landing, most empty, their little doors ajar. What was kept here is loose in the tower — and this landing is where it comes back to be fed.", encnotes: "Reinforcements arrive from above on round 3 unless the dumbwaiter is jammed (DC 12, one action)." },
+      ],
+      quiet: [
+        { t: "The Apprentice's Room", n: "Apprentice", icons: ["📜"], desc: "A narrow room under the stair: cot, desk, and a half-written letter of resignation dated eleven years ago. A DC 12 Investigation finds the diary — and the night everything in the tower changed.", npcs: "The diary names {B}'s working and where it went wrong — advantage on the party's first check or save against it." },
+        { t: "The Tea Room", n: "Tea Room", icons: ["🙂"], desc: "A warm little room where a tea service sets itself for visitors — the one enchantment in the tower still doing exactly what it was made for. The tea is excellent. Resting here is safe; the tower's things respect the room's old rule." },
+        { t: "The Orrery", n: "Orrery", feature: "circle", icons: ["🔮"], desc: "A brass orrery fills the chamber, planets swinging on silent arms. A DC 13 Arcana read of its setting reveals what {B} was waiting for — and that the date is soon." },
+      ],
+      vault: [
+        { t: "The Reagent Safe", n: "Reagent Safe", desc: "Behind a false shelf: the good reagents, the ones apprentices were never trusted with, packed in velvet and labelled in {B}'s own hand." },
+        { t: "The Escrow Box", n: "Escrow", desc: "A strong-chest holding what {B} owed and never paid — wages, commissions, a dismissed apprentice's confiscated effects. The letters atop it are addressed and stamped, and were never sent." },
+      ],
+      boss: [
+        { t: "The Observatory", n: "Observatory", feature: "circle", desc: "The tower's crown, open to a sky that is not tonight's sky. {B} the {M} stands at the eyepiece of the great instrument and says, without turning: 'You're early.'", encnotes: "{B} has prepared this room for years: once per round, a glyph the party can't see triggers — DC 13 Dexterity save or 2d6 force." },
+        { t: "The Working Chamber", n: "The Working", feature: "circle", desc: "The heart of the tower and of everything wrong in it: a working eleven years incomplete, humming in a circle of light. {B} the {M} will not let it be interrupted now.", encnotes: "Breaking the circle (AC 13, 25 HP) ends the working — and {B}'s reason to fight. What happens to the tower then is another question." },
+        { t: "The Mirror Study", n: "Mirror Study", desc: "A study walled in mirrors, and in every one of them {B} the {M} — reading, pacing, watching you. Only one is real, and it is not the one you think.", encnotes: "Attacks on {B} have a 1-in-4 chance of striking a mirror image until two mirrors are broken (AC 11, 1 HP each)." },
+      ],
+      challenge: [
+        { t: "The Inverted Stair", n: "Inverted Stair", icons: ["🧗"], desc: "Halfway up, the stair decides that down is a matter of opinion. Crossing the inversion is a DC {DC} Dexterity (Acrobatics) check — watching a dropped pebble first grants advantage. Failure is a fall in a direction the room chooses: {DMG} bludgeoning against something that was recently a ceiling." },
+        { t: "The Guessing Door", n: "Guessing Door", icons: ["🚪"], desc: "The landing's only door asks one riddle, politely, once. A DC {DC} Intelligence check answers it. It can be forced instead — DC {DC2} Strength — but the door considers that rude, and says so with {DMG} lightning." },
+        { t: "The Shifting Gallery", n: "Shifting Hall", icons: ["🔮"], desc: "The gallery rearranges itself when unobserved — doors trade places, the exit wanders. Mapping the pattern is a DC {DC} Intelligence (Investigation) check; chalk marks grant advantage. Each failed attempt costs the party a wrong turn and {DMG} psychic worth of headache as the geometry objects." },
+      ],
+    },
+    flavor: ["reagents in velvet, labelled and potent", "a case of scribed but unsigned scrolls", "brass instruments of obvious quality", "a dismissed apprentice's confiscated effects", "books the college would pay to recover"],
+    trophy: ["{B}'s key of office (proof for the council)", "the working's focus-stone (inert now, priceless anyway)", "{B}'s hat (trophy — it is a very good hat)"],
   },
 ];
 
@@ -10939,13 +11160,17 @@ function generateDungeon({ themeKey, roomsN, level, size, difficulty, rng }) {
   const fill = (s2) => String(s2 || "").replace(/\{B\}/g, boss);
   const premise = fill(dgnGenPick(R, theme.premises));
 
-  // roles: entrance + boss always; a quiet room from 5; a hidden vault from 6; a second branch fight from 8
-  const hasVault = N >= 6, branchFight = N >= 8, quiets = N >= 10 ? 2 : N >= 5 ? 1 : 0;
+  // roles: entrance + boss always; a skill challenge from 5; a quiet room and a hidden vault from 6;
+  // a second branch fight from 8; a second challenge from 9; a second quiet from 11
+  const hasVault = N >= 6, branchFight = N >= 8;
+  const challenges = N >= 9 ? 2 : N >= 5 ? 1 : 0;
+  const quiets = N >= 11 ? 2 : N >= 6 ? 1 : 0;
   const spineLen = N - (hasVault ? 1 : 0) - (branchFight ? 1 : 0);
   const spineRoles = ["entrance"];
-  const midFights = spineLen - 2 - quiets;
+  const midFights = spineLen - 2 - quiets - challenges;
   for (let i = 0; i < midFights; i++) spineRoles.push("fight");
-  // quiet rooms sit between fights, not adjacent to the boss door
+  // challenges and quiet rooms sit between fights, not adjacent to the boss door
+  for (let i = 0; i < challenges; i++) spineRoles.splice(1 + Math.floor((i + 1) * (spineRoles.length - 1) / (challenges + 1)), 0, "challenge");
   for (let i = 0; i < quiets; i++) spineRoles.splice(1 + Math.floor((i + 1) * (spineRoles.length - 1) / (quiets + 1)), 0, "quiet");
   spineRoles.push("boss");
 
@@ -10981,7 +11206,12 @@ function generateDungeon({ themeKey, roomsN, level, size, difficulty, rng }) {
   const bossTier = ramp[ramp.length - 1];
   const fightTemplates = ["Horde", "Skirmish", "Skirmish", "Elites"];
 
-  const deal = {}; ["entrance", "fight", "quiet", "vault", "boss"].forEach((k) => { deal[k] = dgnGenDealer(R, theme.rooms[k]); });
+  // challenge tables live beside rooms on the older themes and inside rooms on the newer — take either
+  const deal = {}; ["entrance", "fight", "quiet", "vault", "boss", "challenge"].forEach((k) => { deal[k] = dgnGenDealer(R, theme.rooms[k] || theme[k] || []); });
+  // skill-challenge numbers: the DC follows the difficulty dial, the price of failing follows the level
+  const chDC = { low: 12, moderate: 13, high: 15 }[difficulty] || 13;
+  const chDmg = level >= 17 ? "10d6" : level >= 11 ? "7d6" : level >= 5 ? "4d6" : "2d6";
+  const fillCh = (s2) => fill(s2).replace(/\{DC2\}/g, String(chDC + 2)).replace(/\{DC\}/g, String(chDC)).replace(/\{DMG\}/g, `${chDmg} (${Math.floor(3.5 * parseInt(chDmg, 10))})`); // floor, as the books average dice
   const flavorDeal = dgnGenDealer(R, theme.flavor);
   const rooms = {}; const summary = []; let totalXp = 0; let bossMon = null;
   let fightIdx = 0;
@@ -10991,15 +11221,16 @@ function generateDungeon({ themeKey, roomsN, level, size, difficulty, rng }) {
   const buildRoom = (role, cell, spineIdx) => {
     const v = deal[role]();
     const room = {
-      shape: role === "entrance" ? "hall" : role === "vault" ? "square" : dgnGenPick(R, role === "boss" ? ["hex", "round", "square"] : role === "quiet" ? ["round", "square", "diamond"] : ["hex", "round", "hex", "ytee", "square"]),
+      shape: role === "entrance" ? "hall" : role === "vault" ? "square" : dgnGenPick(R, role === "boss" ? ["hex", "round", "square"] : role === "quiet" ? ["round", "square", "diamond"] : role === "challenge" ? ["hall", "hex", "round"] : ["hex", "round", "hex", "ytee", "square"]),
       color: dgnGenPick(R, theme.colors), texture: dgnGenPick(R, theme.textures),
       title: fill(v.t), dname: fill(v.n).slice(0, DNAME_MAX), icons: v.icons ? [...v.icons] : undefined,
-      notes: { desc: fill(v.desc) },
+      notes: { desc: fillCh(v.desc) },
     };
     if (room.shape === "hall") room.orient = "h";
     if (theme.edge && R() < 0.55) { room.edge = theme.edge; room.caveSeed = Math.floor(R() * 40); }
     if (v.feature) { room.feature = v.feature; room.featurePos = Math.floor(R() * 6); }
     if (v.npcs) room.notes.npcs = fill(v.npcs);
+    if (role === "challenge") summary.push({ role, title: room.title, note: `skill challenge · DC ${chDC}` });
 
     if (role === "fight" || role === "boss") {
       const isBoss = role === "boss";
@@ -11014,8 +11245,8 @@ function generateDungeon({ themeKey, roomsN, level, size, difficulty, rng }) {
         if (isBoss) {
           bossMon = sugg.picks.reduce((a, b) => (b.xp > a.xp ? b : a), sugg.picks[0]).name;
           room.notes.desc = room.notes.desc.replace(/\{M\}/g, bossMon);
-          if (v.encnotes) room.notes.encnotes = fill(v.encnotes).replace(/\{M\}/g, bossMon);
-        } else if (v.encnotes) room.notes.encnotes = fill(v.encnotes);
+          if (v.encnotes) room.notes.encnotes = fillCh(v.encnotes).replace(/\{M\}/g, bossMon);
+        } else if (v.encnotes) room.notes.encnotes = fillCh(v.encnotes);
         if (!isBoss) fightIdx++;
         summary.push({ role, title: room.title, tier, xp: sugg.spent || 0, mons: room.enc.mons.map((m) => `${m.c}× ${m.n}`).join(", ") });
       }
@@ -11094,7 +11325,7 @@ function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
   const [gen, setGen] = useState(null);
   const ready = parseInt(size, 10) > 0 && parseInt(level, 10) > 0;
   const roll = () => setGen(generateDungeon({ themeKey, roomsN, level: parseInt(level, 10) || 3, size: parseInt(size, 10) || 4, difficulty }));
-  const ROLE_ICON = { entrance: "🚪", fight: "⚔️", quiet: "🕯️", vault: "💰", boss: "👑" };
+  const ROLE_ICON = { entrance: "🚪", fight: "⚔️", quiet: "🕯️", vault: "💰", boss: "👑", challenge: "🧗" };
   const TIER_COLOR = { low: "var(--ok)", moderate: "var(--gold)", high: "var(--danger)" };
   return (
     <div className="overlay" onClick={onClose}>
@@ -11109,7 +11340,7 @@ function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
           <span className="ad" style={{ fontSize: 11 }}>Rooms:</span>
           <input type="range" min={4} max={12} value={roomsN} onChange={(e) => { setRoomsN(parseInt(e.target.value, 10)); setGen(null); }} style={{ flex: 1, minWidth: 90, maxWidth: 160 }} />
           <b style={{ minWidth: 18, textAlign: "center" }}>{roomsN}</b>
-          <span className="ad" style={{ fontSize: 10.5, color: "var(--faint)" }}>{roomsN >= 8 ? "spine + side rooms + hidden vault" : roomsN >= 6 ? "spine + a hidden vault" : "a straight crawl"}</span>
+          <span className="ad" style={{ fontSize: 10.5, color: "var(--faint)" }}>{roomsN >= 8 ? "spine, branches, vault & challenges" : roomsN >= 6 ? "spine + vault & a challenge" : roomsN >= 5 ? "spine + a skill challenge" : "a straight crawl"}</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           <span className="ad" style={{ fontSize: 11 }}>Party:</span>
@@ -11128,7 +11359,7 @@ function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
           ))}
         </div>
         <div className="ad" style={{ margin: "0 0 8px", fontSize: 11.5 }}>
-          Fights ramp from easy rooms to a hard boss — the dial shifts the whole ramp. Loot (coins, an item or two, a trophy) is placed as it rolls; everything is editable in the builder afterwards.
+          Fights ramp from easy rooms to a hard boss — the dial shifts the whole ramp (it also sets skill-challenge DCs). Loot (coins, an item or two, a trophy) is placed as it rolls; everything is editable in the builder afterwards.
         </div>
         {!gen && <button className="btn primary" disabled={!ready} title={ready ? undefined : "Pick player count and level first"} onClick={roll}>Generate</button>}
         {gen && (
@@ -11142,6 +11373,7 @@ function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
                   <b style={{ minWidth: 0 }}>{s2.title}</b>
                   {s2.tier && <span style={{ fontSize: 10.5, color: TIER_COLOR[s2.tier] || "var(--faint)", textTransform: "uppercase", letterSpacing: ".06em" }}>{s2.tier}</span>}
                   {s2.mons && <span style={{ color: "var(--faint)", fontSize: 11.5, flexBasis: "100%", paddingLeft: 22 }}>{s2.mons}{s2.xp ? ` · ${s2.xp} XP` : ""}</span>}
+                  {s2.note && <span style={{ color: "var(--faint)", fontSize: 11.5 }}>{s2.note}</span>}
                   {s2.role === "vault" && <span style={{ color: "var(--faint)", fontSize: 11.5 }}>hidden — found from the room it adjoins</span>}
                 </div>
               ))}
@@ -11153,6 +11385,88 @@ function GenerateDungeonModal({ party, playerCount, onCreate, onClose }) {
               <button className="btn" onClick={onClose}>Cancel</button>
               <button className="btn" onClick={roll}>🎲 Reroll</button>
               <button className="btn primary" onClick={() => onCreate(gen.dungeon, { level: parseInt(level, 10) || 3, size: parseInt(size, 10) || 4, difficulty })}>✓ Keep it</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Standalone treasure roller ───────────────────────────────────────────────
+   The dungeon generator's loot machinery, offered on its own: "the party just beat something —
+   what was it carrying?" Coins scale to level, items come rarity-gated from the same SRD list as
+   the compendium, valuables are priced flavor. Each line rerolls by itself, because a DM rejects
+   half of what any generator hands them — the fix is a fresh line, not a fresh hoard. */
+const TREASURE_VALUABLES = [
+  "a pouch of cut gems", "an art object — a chased silver ewer", "a string of river pearls",
+  "a gold ring set with bloodstone", "an ivory-inlaid box", "a small idol of jade",
+  "a fine cloak with silver clasp", "an illuminated prayer book", "a bolt of embroidered silk",
+  "a carved bone drinking horn", "an electrum medallion", "a painted portrait miniature",
+];
+function rollTreasureLine(R, level, kind) {
+  if (kind === "coin") return { kind, it: dgnGenCoin(R, level, 1.2) };
+  if (kind === "valuable") {
+    const tier = level >= 17 ? 2500 : level >= 11 ? 750 : level >= 5 ? 250 : 60;
+    const gp = Math.max(10, Math.round((tier * (0.4 + R() * 1.1)) / 10) * 10);
+    return { kind, it: { n: `${dgnGenPick(R, TREASURE_VALUABLES)} (${gp} gp)` } };
+  }
+  const it = dgnGenItem(R, level, kind); // "consumable" | "keeper"
+  return it ? { kind, it } : { kind: "valuable", it: { n: `${dgnGenPick(R, TREASURE_VALUABLES)} (50 gp)` } };
+}
+const TREASURE_HAULS = {
+  pockets: { label: "Pockets", sub: "what one foe carries", lines: (R) => ["coin", ...(R() < 0.4 ? ["consumable"] : []), ...(R() < 0.35 ? ["valuable"] : [])] },
+  chest: { label: "Chest", sub: "a strongbox or small cache", lines: (R) => ["coin", "consumable", ...(R() < 0.65 ? ["keeper"] : []), "valuable"] },
+  hoard: { label: "Hoard", sub: "a lair's worth", lines: (R) => ["coin", "coin", "consumable", "consumable", "keeper", ...(R() < 0.6 ? ["keeper"] : []), "valuable", "valuable"] },
+};
+function TreasureModal({ party, onStash, hasParty, onClose }) {
+  const [level, setLevel] = useState(party.set ? String(party.level) : "");
+  const [haul, setHaul] = useState("chest");
+  const [lines, setLines] = useState(null);
+  const L = () => parseInt(level, 10) || 3;
+  const rollAll = () => setLines(TREASURE_HAULS[haul].lines(Math.random).map((k) => rollTreasureLine(Math.random, L(), k)));
+  const reroll = (i) => setLines(lines.map((ln, j) => (j === i ? rollTreasureLine(Math.random, L(), ln.kind) : ln)));
+  const drop = (i) => setLines(lines.filter((_, j) => j !== i));
+  const KIND_TAG = { coin: "coin", consumable: "consumable", keeper: "magic item", valuable: "valuables" };
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>💰 Roll treasure</h3>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", margin: "8px 0" }}>
+          <select className="sbook-search" style={{ width: 96, margin: 0, color: level ? "var(--text)" : "var(--faint)", WebkitTextFillColor: level ? "var(--text)" : "var(--faint)", background: "var(--panel)", WebkitAppearance: "none", appearance: "none" }}
+            value={level} onChange={(e) => { setLevel(e.target.value); setLines(null); }}>
+            <option value="">level…</option>
+            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => <option key={n} value={String(n)}>Level {n}</option>)}
+          </select>
+          {Object.entries(TREASURE_HAULS).map(([k, h]) => (
+            <button key={k} className={`lvlchip ${haul === k ? "on" : ""}`} title={h.sub} onClick={() => { setHaul(k); setLines(null); }}>{h.label}</button>
+          ))}
+        </div>
+        <div className="ad" style={{ margin: "0 0 8px", fontSize: 11.5 }}>{TREASURE_HAULS[haul].sub} — coins and item rarity scale with the level. 🎲 rerolls one line; ✕ drops it.</div>
+        {!lines && <button className="btn primary" disabled={!(parseInt(level, 10) > 0)} title={parseInt(level, 10) > 0 ? undefined : "Pick a party level first"} onClick={rollAll}>Roll</button>}
+        {lines && (
+          <>
+            <div style={{ border: "1px solid var(--line2)", borderRadius: 10, padding: "6px 10px", marginBottom: 8 }}>
+              {lines.length === 0 && <div className="trait">Everything dropped — reroll for a fresh haul.</div>}
+              {lines.map((ln, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "baseline", padding: "3px 0", borderBottom: i < lines.length - 1 ? "1px solid var(--line)" : "none" }}>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    {lootName(ln.it)}
+                    <span style={{ color: "var(--faint)", fontSize: 10.5 }}> · {KIND_TAG[ln.kind]}{ln.it.rarity ? ` · ${rarityLabel(ln.it)}` : ""}</span>
+                    {ln.it.d && <div style={{ fontSize: 11, color: "var(--faint)" }}>{ln.it.d}</div>}
+                  </span>
+                  <button className="btn small ghost" title="Reroll just this line" onClick={() => reroll(i)}>🎲</button>
+                  <button className="btn small ghost" title="Drop this line" onClick={() => drop(i)}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button className="btn" onClick={onClose}>Close</button>
+              <button className="btn" onClick={rollAll}>🎲 Reroll all</button>
+              {hasParty && (
+                <button className="btn ok" disabled={!lines.length} title="Add every line to the shared Party fund — hand items on to players from 🎒 Party inventory"
+                  onClick={() => { if (lines.every((ln) => onStash(ln.it))) onClose(); }}>→ Party fund</button>
+              )}
             </div>
           </>
         )}
@@ -16504,6 +16818,7 @@ export default function App() {
                   <button key="gc" onClick={() => setModal({ type: "group-save", preset: { check: true } })}>🎲 Group check…</button>
                 ),
                 canBalance && <button key="bal" onClick={() => setModal({ type: "balance" })}>⚖ Balance encounter…</button>,
+                <button key="treasure" onClick={() => setModal({ type: "treasure" })} title="Roll level-scaled loot on the spot — coins, items and valuables, each line rerollable.">💰 Roll treasure…</button>,
               ]),
               sec("Look it up", [
                 <button key="best" onClick={() => setModal({ type: "bestiary", browse: true })}>🐉 Bestiary…</button>,
@@ -17132,6 +17447,9 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+      {modal?.type === "treasure" && (
+        <TreasureModal party={party} hasParty={!!activeRoster} onStash={addToStash} onClose={() => setModal(null)} />
       )}
       {modal?.type === "dgn-generate" && (
         <GenerateDungeonModal party={party} playerCount={state.combatants.filter((c) => c.type === "player" && !c.dead).length}
