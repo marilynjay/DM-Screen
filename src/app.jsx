@@ -11475,6 +11475,354 @@ function TreasureModal({ party, onStash, hasParty, onClose }) {
   );
 }
 
+/* ── Monster generator ────────────────────────────────────────────────────────
+   The custom-monster form's CR chassis (DMG monster statistics, already trusted by the balancer)
+   plus everything the chassis can't invent: a name, a creature type, traits, defenses, attack
+   flavor and a line of lore. A type is the flavor engine — name tables, damage types, a defense
+   package, which TRAIT_LIBRARY entries can roll. Traits come from the same library the builder
+   uses, in SRD phrasing, so the app's automation (Regeneration, Magic Resistance, riders) works
+   on generated monsters exactly as on printed ones. Output is the ordinary `sb` shape: the
+   preview's Fine-tune button opens CustomMonsterForm on it, and Add walks through addCustom. */
+const MON_GEN_EXTRA_TRAITS = [
+  { n: "Keen Senses", d: "The {n} has Advantage on Wisdom (Perception) checks that rely on smell or hearing." },
+  { n: "Stench", d: "Constitution Saving Throw: DC {DC}, any creature that starts its turn in a 5-foot Emanation originating from the {n}. Failure: The creature has the Poisoned condition until the start of its next turn." },
+  { n: "False Appearance", d: "While the {n} remains motionless, it is indistinguishable from an ordinary object or natural feature." },
+  { n: "Charge", d: "If the {n} moves at least 20 feet straight toward a target and hits it with an attack on the same turn, the target takes an extra 7 (2d6) damage." },
+];
+// traits that genuinely play above the chassis numbers — the preview says so instead of silently nerfing
+const MON_GEN_COSTLY = ["Magic Resistance", "Regeneration", "Undead Fortitude", "Fire Aura", "Incorporeal Movement"];
+const MON_GEN_TYPES = [
+  {
+    key: "beast", name: "Beast", icon: "🐺",
+    adj: ["Dire", "Razorback", "Ash-Pelt", "Iron-Tusk", "Bloodmane", "Thornhide", "Whipcord", "Grey-Eyed"],
+    noun: ["Stalker", "Howler", "Prowler", "Ravager", "Mauler", "Strider", "Boarhound", "Wolfcat"],
+    melee: [["Bite", "piercing"], ["Claw", "slashing"], ["Gore", "piercing"], ["Tail Slam", "bludgeoning"]],
+    ranged: [["Quill Volley", "piercing"], ["Spine Throw", "piercing"]],
+    arcane: ["Primal Howl", "thunder"], senses: "darkvision 60 ft.",
+    defenses: {},
+    traits: ["Pack Tactics", "Blood Frenzy", "Keen Senses", "Charge", "Standing Leap", "Agile"],
+    weird: ["Regeneration", "Stench"],
+    lore: ["Hunts by sound; circles wide before it commits, and flees to water when Bloodied.",
+      "Marks its territory with clawed trees — the party had a mile of warning, had they read it.",
+      "Prefers the smallest target. Shepherds hereabouts pay for its hide in advance.",
+      "Not native. Something drove it down from the high country, and it is hungrier than it should be.",
+      "Fights to eat, not to win — it drags the first one it drops toward the dark.",
+      "Old scars on its flank say someone has already tried, and armed."],
+  },
+  {
+    key: "undead", name: "Undead", icon: "💀",
+    adj: ["Grave", "Pale", "Hollow", "Barrow", "Sallow", "Candle-Eyed", "Shroudbound", "Winter-Rotted"],
+    noun: ["Revenant", "Shambler", "Watcher", "Husk", "Warden", "Choir", "Bride", "Pallbearer"],
+    melee: [["Grave-Cold Touch", "necrotic"], ["Claw", "slashing"], ["Bite", "piercing"]],
+    ranged: [["Bone Shard", "piercing"]],
+    arcane: ["Grave Bolt", "necrotic"], senses: "darkvision 60 ft.",
+    defenses: { immune: ["poison"], resist: ["necrotic"], condImmune: ["Poisoned", "Exhaustion", "Charmed"] },
+    traits: ["Undead Fortitude", "Sunlight Sensitivity", "False Appearance", "Blood Frenzy"],
+    weird: ["Incorporeal Movement", "Regeneration"],
+    lore: ["Still performing the duty it held in life, and hostile to anything that interrupts.",
+      "Follows grave-light: it walks toward candles, lanterns and torches, patiently.",
+      "It remembers one name and says nothing else. Answering to that name confuses it for a round.",
+      "Rises again at the next dusk unless the body is burned or blessed.",
+      "The cold arrives before it does — three heartbeats of warning, every time.",
+      "It does not hate the living. It envies them, which is worse."],
+  },
+  {
+    key: "fiend", name: "Fiend", icon: "😈",
+    adj: ["Ember", "Chain-Scarred", "Sulfur", "Horned", "Whispering", "Bile-Tongued", "Coal-Hearted", "Grinning"],
+    noun: ["Flenser", "Broker", "Herald", "Tormentor", "Legionnaire", "Gaoler", "Accuser", "Debt-Taker"],
+    melee: [["Claw", "slashing"], ["Barbed Whip", "slashing"], ["Bite", "piercing"]],
+    ranged: [["Hurl Flame", "fire"]],
+    arcane: ["Hellfire Bolt", "fire"], senses: "darkvision 120 ft.",
+    defenses: { resist: ["fire"], immune: ["poison"], condImmune: ["Poisoned"] },
+    traits: ["Magic Resistance", "Blood Frenzy", "Charge"],
+    weird: ["Fire Aura", "Death Burst"],
+    lore: ["It offers terms before it fights, and the terms are genuine. That is the trap.",
+      "Bound to this place by a contract someone signed. Kill it, or find the signature.",
+      "It knows one true thing about each intruder and spends them like coins.",
+      "Collects screams the way soldiers collect medals; it will make the loudest one last.",
+      "It cannot lie outright, and resents every minute of it.",
+      "Its orders come from below, and it fears its master far more than it fears you."],
+  },
+  {
+    key: "construct", name: "Construct", icon: "⚙️",
+    adj: ["Rustjaw", "Brass", "Grave-Iron", "Clockwork", "Leaden", "Cracked", "Runebound", "Threadbare"],
+    noun: ["Automaton", "Sentinel", "Colossus", "Warden", "Effigy", "Servitor", "Ledger-Keeper", "Gatekeeper"],
+    melee: [["Slam", "bludgeoning"], ["Crush", "bludgeoning"], ["Piston Fist", "bludgeoning"]],
+    ranged: [["Bolt Thrower", "piercing"]],
+    arcane: ["Force Discharge", "force"], senses: "darkvision 120 ft.",
+    defenses: { immune: ["poison", "psychic"], condImmune: ["Charmed", "Exhaustion", "Frightened", "Paralyzed", "Petrified", "Poisoned"] },
+    traits: ["Immutable Form", "Siege Monster", "False Appearance", "Illumination"],
+    weird: ["Magic Resistance", "Death Burst"],
+    lore: ["Still following its last order. The order was reasonable a century ago.",
+      "It announces each attack in a dead language, politely, a half-second early.",
+      "Winds down without maintenance: every fourth round it loses its bonus action.",
+      "Its maker's mark is legible — and its maker may still be liable.",
+      "It guards a threshold, not a treasure. Step back over the line and it stops.",
+      "Something living is sealed in the chassis, and it is not steering."],
+  },
+  {
+    key: "aberration", name: "Aberration", icon: "👁",
+    adj: ["Many-Eyed", "Inside-Out", "Weeping", "Unfolded", "Whistling", "Backwards", "Moon-Fed", "Hollow-Boned"],
+    noun: ["Horror", "Lurker", "Maw", "Angler", "Thought-Leech", "Fathom", "Nerve-Garden", "Chorus"],
+    melee: [["Tentacle", "bludgeoning"], ["Lash", "slashing"], ["Bite", "piercing"]],
+    ranged: [["Mind Lash", "psychic"]],
+    arcane: ["Mind Blast", "psychic"], senses: "darkvision 120 ft.",
+    defenses: { resist: ["psychic"] },
+    traits: ["Magic Resistance", "Spider Climb", "Amorphous"],
+    weird: ["Regeneration", "Incorporeal Movement"],
+    lore: ["It is learning the party's names by listening. Do not let it finish.",
+      "Geometry bends politely out of its way; corners nearest it are wrong by a few degrees.",
+      "It eats memories, oldest first. Its victims are found happy.",
+      "It sings below hearing — animals within a mile have already left.",
+      "It is a scout. The measurements it is taking are of the party.",
+      "Killing it is easy. Being sure it is dead is the hard part."],
+  },
+  {
+    key: "humanoid", name: "Humanoid", icon: "⚔️",
+    adj: ["Redhand", "Black-Sash", "Oathless", "Saltborn", "Grinning", "Half-Masked", "Ledger", "Lantern"],
+    noun: ["Enforcer", "Reaver", "Zealot", "Duelist", "Warcaller", "Headhunter", "Poacher", "Sellsword"],
+    melee: [["Saber", "slashing"], ["Spear", "piercing"], ["Maul", "bludgeoning"]],
+    ranged: [["Heavy Crossbow", "piercing"], ["Longbow", "piercing"]],
+    arcane: ["Eldritch Dart", "force"], senses: "",
+    defenses: {},
+    traits: ["Pack Tactics", "Agile", "Charge", "Keen Senses"],
+    weird: ["Magic Resistance", "Blood Frenzy"],
+    lore: ["Paid in advance, and thinking about it. Morale breaks at half strength.",
+      "A professional: surrenders when beaten, remembers faces, holds no grudge — probably.",
+      "A true believer. The cause is nonsense, but the conviction is real ammunition.",
+      "Fights for an audience that isn't here. Ask who, and watch the composure go.",
+      "Wanted in three towns under three names. Any of the three would pay for the capture.",
+      "Carries orders in a sealed tube. The orders are worth more than the fight."],
+  },
+  {
+    key: "dragonkin", name: "Dragon-kin", icon: "🐉",
+    adj: ["Cinder", "Verdigris", "Squall", "Umber", "Gloam", "Saltscale", "Furnace", "Hoard-Born"],
+    noun: ["Drake", "Wyrmspawn", "Guivre", "Sootwing", "Scalehound", "Cragworm", "Broodguard", "Tithe-Wyrm"],
+    melee: [["Bite", "piercing"], ["Claw", "slashing"], ["Tail", "bludgeoning"]],
+    ranged: [["Spat Ember", "fire"]],
+    arcane: ["Breath Bolt", "fire"], senses: "darkvision 60 ft.",
+    defenses: {}, // the rolled element fills this in
+    elements: ["fire", "cold", "acid", "lightning", "poison"],
+    breath: true, // gets a recharge breath weapon in its element
+    traits: ["Blood Frenzy", "Charge", "Keen Senses"],
+    weird: ["Fire Aura", "Magic Resistance"],
+    lore: ["Too small to hoard gold, so it hoards something else — teeth, keys, promises.",
+      "Some true dragon's failed clutch or loyal by-blow. It writes letters it cannot send.",
+      "It knows exactly one word of Draconic and uses it as threat, greeting and eulogy.",
+      "Territorial to the inch. Its border is marked, and the party is standing on it.",
+      "It fights like its parent watched — showy, proud, and furious when wounded.",
+      "Whoever it serves feeds it badly. Its loyalty is worth exactly one good meal."],
+  },
+  {
+    key: "plant", name: "Plant / Ooze", icon: "🌿",
+    adj: ["Creeping", "Bog", "Spore", "Weeping", "Grasping", "Cellar", "Marrow", "Lantern-Cap"],
+    noun: ["Tangle", "Shambler", "Bloom", "Mire", "Sludge", "Rootmass", "Gulper", "Compost-King"],
+    melee: [["Vine Lash", "slashing"], ["Pseudopod", "bludgeoning"], ["Engulfing Slam", "bludgeoning"]],
+    ranged: [["Spore Puff", "poison"]],
+    arcane: ["Spore Cloud", "poison"], senses: "blindsight 30 ft.",
+    defenses: { resist: ["poison"], condImmune: ["Blinded", "Deafened", "Frightened"] },
+    traits: ["False Appearance", "Amorphous", "Spider Climb", "Stench"],
+    weird: ["Regeneration", "Death Burst"],
+    lore: ["It was the garden, once. It still deadheads the roses between meals.",
+      "Grows toward warmth. Camping within a mile counts as an invitation.",
+      "Everything it digests joins the chorus — listen closely and the voices are still there.",
+      "It cannot be angry. It cannot be merciful. It can only be hungry or full.",
+      "Cutting it spreads it: every lopped piece is a seed. Fire settles the question.",
+      "The locals leave it offerings and call it old names. It has noticed the habit."],
+  },
+];
+// "match my party" seats: a rough CR for what one such creature should be in the intended fight
+const MON_GEN_SEATS = [
+  { key: "fodder", label: "Fodder", sub: "one of many", f: (L) => L / 6 },
+  { key: "troop", label: "Troop", sub: "one of several", f: (L) => L / 3 },
+  { key: "elite", label: "Elite", sub: "one of a pair", f: (L) => (L * 2) / 3 },
+  { key: "boss", label: "Boss", sub: "the whole fight", f: (L) => L + 2 },
+];
+const nearestCrLabel = (x) => CR_LABELS.reduce((a, b) => (Math.abs(crToNum(b) - x) < Math.abs(crToNum(a) - x) ? b : a), "0");
+function generateMonster({ typeKey, roleKey, crLabel, flies, ranged, venom, legendary, weird, rng }) {
+  const R = rng || Math.random;
+  const T = MON_GEN_TYPES.find((t) => t.key === typeKey) || MON_GEN_TYPES[0];
+  const ch = chassisFor(crLabel, roleKey);
+  if (!ch) return null;
+  const crNum = crToNum(crLabel);
+  const name = `${dgnGenPick(R, T.adj)} ${dgnGenPick(R, T.noun)}`;
+  const ln = name.toLowerCase();
+  const element = T.elements ? dgnGenPick(R, T.elements) : null;
+
+  // attacks: the chassis budget split as the role says; names and damage types from the type
+  const isRangedRole = roleKey === "artillery";
+  const pool2 = roleKey === "caster" ? [T.arcane] : (isRangedRole ? T.ranged : T.melee);
+  let [atkName, dtype] = dgnGenPick(R, pool2);
+  if (element && (roleKey === "caster" || isRangedRole)) dtype = element;
+  const actions = [{ n: atkName, kind: "atk", hit: ch.hit, dmg: ch.dmg, dtype }];
+  if (ranged && !isRangedRole && roleKey !== "caster") {
+    const [rn, rdt] = dgnGenPick(R, T.ranged);
+    actions.push({ n: rn, kind: "atk", hit: ch.hit, dmg: ch.dmg, dtype: element || rdt });
+  }
+  // statblock-style "12 (2d8+3)" damage text — floored average, as the books print it
+  const avgTxt = (f) => (/d/.test(f) ? `${Math.floor(avgOfFormula(f))} (${f})` : f);
+  if (venom) {
+    const vd = diceForAvg(ch.dpr * 0.5);
+    actions.push({ n: "Venom", kind: "save", save: { ability: "CON", dc: ch.dc }, dmg: vd, dtype: "poison",
+      d: `Constitution Saving Throw: DC ${ch.dc}, one creature the ${ln} can see within 30 feet. Failure: ${avgTxt(vd)} Poison damage, and the target has the Poisoned condition until the end of its next turn. Success: Half damage.` });
+  }
+  if (T.breath) {
+    // the chassis dpr is the whole round's output; the breath trades that round for an AoE with a
+    // save for half, so it sits just above 1x rather than stacking on top
+    const bd = diceForAvg(ch.dpr * 1.1);
+    const el = element || "fire";
+    actions.push({ n: `${el[0].toUpperCase()}${el.slice(1)} Breath`, kind: "save", save: { ability: "DEX", dc: ch.dc }, dmg: bd, dtype: el, rech: 5,
+      d: `Dexterity Saving Throw: DC ${ch.dc}, each creature in a 30-foot Cone. Failure: ${avgTxt(bd)} ${el[0].toUpperCase()}${el.slice(1)} damage. Success: Half damage.` });
+  }
+
+  // traits: 1-2 rolls from the type's list (the weird pool joins in when asked), library phrasing
+  // so the app's automation reads them; Regeneration is rescaled to the CR
+  const lib = [...TRAIT_LIBRARY, ...MON_GEN_EXTRA_TRAITS];
+  const allowed = [...T.traits, ...(weird ? T.weird : [])].filter((n2) => !(n2 === "Fire Aura" && element && element !== "fire"));
+  const picks = [...allowed].sort(() => R() - 0.5).slice(0, crNum >= 3 ? 2 : 1);
+  const traits = picks.map((n2) => {
+    const t = lib.find((x) => x.n === n2); if (!t) return null;
+    let d = t.d.replace(/\{n\}/g, ln).replace(/\{DC\}/g, String(ch.dc));
+    if (n2 === "Regeneration") { const amt = crNum >= 14 ? 20 : crNum >= 8 ? 15 : crNum >= 3 ? 10 : 5; d = d.replace(/regains 10 Hit Points/, `regains ${amt} Hit Points`); }
+    return { n: n2, d };
+  }).filter(Boolean);
+  const costly = traits.filter((t) => MON_GEN_COSTLY.includes(t.n)).map((t) => t.n);
+
+  const sb = {
+    name, cr: crLabel, ac: ch.ac, hp: ch.hp, mods: { ...ch.mods },
+    saves: {}, traits, bonus: [], reactions: [],
+    resist: [...(T.defenses.resist || []), ...(element ? [element] : [])],
+    immune: [...(T.defenses.immune || [])], vuln: [...(T.defenses.vuln || [])],
+    condImmune: [...(T.defenses.condImmune || [])],
+    actions, multi: ch.atkN > 1 ? `The ${ln} makes ${ch.atkN} attacks.` : null,
+    spd: flies ? "30 ft., fly 60 ft." : "30 ft.",
+    fl: dgnGenPick(R, T.lore),
+  };
+  if (T.senses) sb.senses = T.senses;
+  if (flies && !traits.some((t) => t.n === "Flyby") && R() < 0.5) {
+    const fb = lib.find((x) => x.n === "Flyby");
+    if (fb) sb.traits = [...traits, { n: "Flyby", d: fb.d.replace(/\{n\}/g, ln) }];
+  }
+  if (legendary) {
+    sb.legendary = { count: 3, options: [
+      { n: "Move", d: `The ${ln} moves up to its Speed without provoking Opportunity Attacks.` },
+      { n: "Attack", d: `The ${ln} makes one attack.` },
+    ] };
+    sb.legRes = crNum >= 10 ? 3 : 2;
+  }
+  return { sb, costly };
+}
+
+/* The generator's front door: a few chips and toggles, a statblock preview, and three exits —
+   reroll it, fine-tune it in the full builder, or put it straight on the board. */
+function MonsterGenModal({ party, onAdd, onEdit, onClose }) {
+  const [typeKey, setTypeKey] = useState("beast");
+  const [roleKey, setRoleKey] = useState("brute");
+  const [strengthMode, setStrengthMode] = useState("party"); // "party" | "cr"
+  const [level, setLevel] = useState(party.set ? String(party.level) : "");
+  const [seat, setSeat] = useState("troop");
+  const [cr, setCr] = useState("2");
+  const [flies, setFlies] = useState(false);
+  const [ranged, setRanged] = useState(false);
+  const [venom, setVenom] = useState(false);
+  const [legendary, setLegendary] = useState(false);
+  const [weird, setWeird] = useState(false);
+  const [count, setCount] = useState(1);
+  const [saveToo, setSaveToo] = useState(false);
+  const [gen, setGen] = useState(null);
+  const crLabel = strengthMode === "cr" ? cr
+    : nearestCrLabel((MON_GEN_SEATS.find((s2) => s2.key === seat) || MON_GEN_SEATS[1]).f(parseInt(level, 10) || 3));
+  const ready = strengthMode === "cr" || parseInt(level, 10) > 0;
+  const roll = () => setGen(generateMonster({ typeKey, roleKey, crLabel, flies, ranged, venom, legendary, weird }));
+  const clear = () => setGen(null);
+  const roles = CR_ROLES.filter((r) => r.key !== "none");
+  const dmgOf = (a) => (a.dmg ? `${a.dmg} ${a.dtype}` : "");
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal peekmodal" onClick={(e) => e.stopPropagation()}>
+        <h3>🧬 Generate a monster</h3>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "8px 0" }}>
+          {MON_GEN_TYPES.map((t) => (
+            <button key={t.key} className={`lvlchip ${typeKey === t.key ? "on" : ""}`} onClick={() => { setTypeKey(t.key); clear(); }}>{t.icon} {t.name}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+          {roles.map((r) => (
+            <button key={r.key} className={`lvlchip ${roleKey === r.key ? "on" : ""}`} title={r.name} onClick={() => { setRoleKey(r.key); clear(); }}>{r.icon} {r.name}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 4 }}>
+          <button className={`lvlchip ${strengthMode === "party" ? "on" : ""}`} onClick={() => { setStrengthMode("party"); clear(); }}>match my party</button>
+          <button className={`lvlchip ${strengthMode === "cr" ? "on" : ""}`} onClick={() => { setStrengthMode("cr"); clear(); }}>pick a CR</button>
+          {strengthMode === "cr" ? (
+            <select className="sbook-search" style={{ width: 84, margin: 0, background: "var(--panel)", WebkitAppearance: "none", appearance: "none" }} value={cr} onChange={(e) => { setCr(e.target.value); clear(); }}>
+              {CR_LABELS.map((l) => <option key={l} value={l}>CR {l}</option>)}
+            </select>
+          ) : (
+            <select className="sbook-search" style={{ width: 96, margin: 0, color: level ? "var(--text)" : "var(--faint)", WebkitTextFillColor: level ? "var(--text)" : "var(--faint)", background: "var(--panel)", WebkitAppearance: "none", appearance: "none" }}
+              value={level} onChange={(e) => { setLevel(e.target.value); clear(); }}>
+              <option value="">level…</option>
+              {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => <option key={n} value={String(n)}>Level {n}</option>)}
+            </select>
+          )}
+        </div>
+        {strengthMode === "party" && (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 4 }}>
+            {MON_GEN_SEATS.map((s2) => (
+              <button key={s2.key} className={`lvlchip ${seat === s2.key ? "on" : ""}`} title={s2.sub} onClick={() => { setSeat(s2.key); clear(); }}>{s2.label}<span style={{ color: "var(--faint)", fontSize: 10 }}> · {s2.sub}</span></button>
+            ))}
+          </div>
+        )}
+        <div className="ad" style={{ margin: "0 0 6px", fontSize: 11 }}>{ready ? `Lands on CR ${crLabel}.` : "Pick a party level first."}</div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+          {[["flies", flies, setFlies], ["ranged attack", ranged, setRanged], ["venomous", venom, setVenom], ["legendary", legendary, setLegendary], ["keep it weird", weird, setWeird]].map(([lbl, v, set2]) => (
+            <button key={lbl} className={`lvlchip ${v ? "on" : ""}`} onClick={() => { set2(!v); clear(); }}>{v ? "✓ " : ""}{lbl}</button>
+          ))}
+        </div>
+        {!gen && <button className="btn primary" disabled={!ready} onClick={roll}>Generate</button>}
+        {gen && (
+          <>
+            <div style={{ border: "1px solid var(--line2)", borderRadius: 10, padding: "8px 10px", marginBottom: 8 }}>
+              <div style={{ fontFamily: "var(--disp)", fontSize: 16, color: "var(--gold)" }}>{gen.sb.name}</div>
+              <div className="statline"><b>CR</b> {gen.sb.cr} · <b>AC</b> {gen.sb.ac} · <b>HP</b> {gen.sb.hp} · <b>Speed</b> {gen.sb.spd}{gen.sb.senses ? ` · ${gen.sb.senses}` : ""}</div>
+              {gen.costly.length > 0 && (
+                <div className="trait" style={{ color: "var(--gold)", fontSize: 11.5 }}>⚖ {gen.costly.join(" and ")} — plays about a CR above its numbers.</div>
+              )}
+              {gen.sb.traits.map((t) => <div className="trait" key={t.n} style={{ fontSize: 12 }}><b>{t.n}.</b> {t.d}</div>)}
+              {gen.sb.multi && <div className="trait" style={{ fontSize: 12 }}><b>Multiattack.</b> {gen.sb.multi}</div>}
+              {gen.sb.actions.map((a) => (
+                <div className="trait" key={a.n} style={{ fontSize: 12 }}>
+                  <b>{a.n}{a.rech ? ` (Recharge ${a.rech}–6)` : ""}.</b> {a.kind === "atk" ? `+${a.hit} to hit, ${dmgOf(a)}.` : a.d}
+                </div>
+              ))}
+              {(gen.sb.resist.length > 0 || gen.sb.immune.length > 0 || gen.sb.condImmune.length > 0) && (
+                <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)" }}>
+                  {gen.sb.resist.length ? `Resist ${gen.sb.resist.join(", ")}. ` : ""}{gen.sb.immune.length ? `Immune ${gen.sb.immune.join(", ")}. ` : ""}{gen.sb.condImmune.length ? `Cond. immune ${gen.sb.condImmune.join(", ")}.` : ""}
+                </div>
+              )}
+              {gen.sb.legendary && <div className="trait" style={{ fontSize: 11.5, color: "var(--faint)" }}>Legendary: {gen.sb.legendary.count} actions (Move, Attack) · {gen.sb.legRes} legendary resistances</div>}
+              <div className="trait" style={{ fontStyle: "italic", marginTop: 4 }}>{gen.sb.fl}</div>
+            </div>
+            <div className="frow" style={{ alignItems: "center", gap: 8 }}>
+              <label style={{ minWidth: 0 }}>×</label>
+              <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)))} style={{ maxWidth: 64 }} />
+              <label style={{ minWidth: 0, flex: 1 }}>
+                <input type="checkbox" checked={saveToo} onChange={(e) => setSaveToo(e.target.checked)} /> Also save to my bestiary
+              </label>
+            </div>
+            <div className="frow" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button className="btn" onClick={onClose}>Cancel</button>
+              <button className="btn" onClick={roll}>🎲 Reroll</button>
+              <button className="btn" title="Open this monster in the full builder to tweak anything" onClick={() => onEdit(gen.sb)}>✎ Fine-tune</button>
+              <button className="btn primary" onClick={() => onAdd(gen.sb, count, saveToo)}>Add{count > 1 ? ` ${count}` : ""}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // At-a-glance map icons the DM can drop on a hex (user's set + a few common dungeon needs)
 const ROOM_ICONS = ["😈", "📜", "⭐️", "💰", "🙂", "💥", "🧨", "🍖", "💦", "🌿", "🔥", "🍄", "🪦", "💀", "🚪", "🗝️", "⚔️", "🔮", "🧪", "👑", "🕸️", "🗿", "🕳️", "💎"];
 const ROOM_ICON_MAX = 3; // how many icons a single hex may show
@@ -16747,6 +17095,10 @@ export default function App() {
               </button>
               <button data-tut="addbestiary" className={tutPress === "addbestiary" ? "demo-press" : ""} onClick={() => setModal({ type: "bestiary" })}>Monster from bestiary…</button>
               <button onClick={() => setModal({ type: "custom" })}>Custom monster…</button>
+              <button onClick={() => setModal({ type: "mon-generate" })}>
+                🧬 Generate monster…
+                <span className="menu-sub">a few questions roll a whole creature</span>
+              </button>
               <button onClick={() => setModal({ type: "notebook" })}>👤 NPC (build or add)…</button>
               {/* Below the NPC entry, and named for what it is. It used to head the list as
                   "Player / ally…", which read as *the* way to add a player and quietly dropped their
@@ -17447,6 +17799,12 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+      {modal?.type === "mon-generate" && (
+        <MonsterGenModal party={party}
+          onEdit={(sb) => setModal({ type: "custom", from: sb })}
+          onAdd={(sb, count, saveToo) => { addCustom(sb, count, "enemy", undefined, saveToo, false); setModal(null); }}
+          onClose={() => setModal(null)} />
       )}
       {modal?.type === "treasure" && (
         <TreasureModal party={party} hasParty={!!activeRoster} onStash={addToStash} onClose={() => setModal(null)} />
